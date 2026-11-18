@@ -199,7 +199,7 @@ internal fun RuVideoHubTvScreen(
             error = "Плеер пока подключается. Попробуйте ещё раз."
             return
         }
-        playbackError = null
+        streamRefreshError = null
         selected = channel
         val media = MediaItem.Builder()
             .setMediaId("ruvideo:" + channel.id)
