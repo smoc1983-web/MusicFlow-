@@ -65,6 +65,7 @@ internal fun TvPlayerDialog(
     refreshError: String?,
     onSelectChannel: (TvChannel) -> Unit,
     onReload: () -> Unit,
+    onOpenExternal: (TvChannel) -> Unit,
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
@@ -189,6 +190,7 @@ internal fun TvPlayerDialog(
                             color = TvAccent
                         )
                     }
+                    TextButton(onClick = { onOpenExternal(channel) }) { Text("Внешний") }
                     TextButton(onClick = { showChannels = !showChannels }) {
                         Text(if (showChannels) "Эфир" else "Каналы")
                     }

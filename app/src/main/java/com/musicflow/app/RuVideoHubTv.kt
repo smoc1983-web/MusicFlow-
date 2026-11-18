@@ -43,6 +43,7 @@ import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicInteger
 
 private const val PLAYLIST_URL =
     "https://raw.githubusercontent.com/ByteBudda/RuVideoHub/main/playlist_iptv.m3u8"
@@ -165,17 +166,41 @@ internal fun RuVideoHubTvScreen(
     var selected by remember { mutableStateOf<TvChannel?>(null) }
     var streamRefreshing by remember { mutableStateOf(false) }
     var streamRefreshError by remember { mutableStateOf<String?>(null) }
+    val userSources = remember(context) {
+        mutableStateListOf<IptvSource>().also { it.addAll(loadIptvSources(context)) }
+    }
+    var activeSourceId by remember { mutableStateOf("ruvideohub") }
+    val loadSequence = remember { AtomicInteger(0) }
+    var showAddSource by remember { mutableStateOf(false) }
+    var showDeleteSource by remember { mutableStateOf(false) }
+    var addName by remember { mutableStateOf("") }
+    var addUrl by remember { mutableStateOf("") }
+    var addKind by remember { mutableStateOf(IptvSourceKind.PLAYLIST) }
+    var sourceInputError by remember { mutableStateOf<String?>(null) }
 
-    fun refresh() {
+    fun refresh(sourceId: String = activeSourceId) {
+        val request = loadSequence.incrementAndGet()
         scope.launch {
             loading = true
             error = null
             try {
-                channels = retrieveChannels()
+                val items = if (sourceId == "ruvideohub") retrieveChannels()
+                    else {
+                        val custom = userSources.firstOrNull { it.id == sourceId }
+                            ?: throw IllegalStateException("Этот источник больше не существует")
+                        fetchIptvSource(custom)
+                    }
+                if (request == loadSequence.get()) {
+                    channels = items
+                    group = "Все"
+                }
             } catch (e: Exception) {
-                error = e.message ?: "Не удалось загрузить каналы"
+                if (request == loadSequence.get()) {
+                    channels = emptyList()
+                    error = e.message ?: "Не удалось загрузить каналы"
+                }
             } finally {
-                loading = false
+                if (request == loadSequence.get()) loading = false
             }
         }
     }
@@ -201,11 +226,16 @@ internal fun RuVideoHubTvScreen(
         }
         streamRefreshError = null
         selected = channel
-        val media = MediaItem.Builder()
+        val path = Uri.parse(channel.streamUrl).path.orEmpty().lowercase()
+        val mediaBuilder = MediaItem.Builder()
             .setMediaId("ruvideo:" + channel.id)
             .setUri(channel.streamUrl)
-            .setMimeType(MimeTypes.APPLICATION_M3U8)
-            .setMediaMetadata(
+        when {
+            path.endsWith(".m3u8") -> mediaBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
+            path.endsWith(".mpd") -> mediaBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
+            path.endsWith(".ism") -> mediaBuilder.setMimeType(MimeTypes.APPLICATION_SS)
+        }
+        val media = mediaBuilder.setMediaMetadata(
                 MediaMetadata.Builder()
                     .setTitle(channel.title)
                     .setArtist("RuVideoHub · IPTV")
@@ -223,7 +253,12 @@ internal fun RuVideoHubTvScreen(
             streamRefreshing = true
             streamRefreshError = null
             try {
-                val reloaded = retrieveChannels()
+                val reloaded = if (activeSourceId == "ruvideohub") retrieveChannels()
+                    else {
+                        val custom = userSources.firstOrNull { it.id == activeSourceId }
+                            ?: throw IllegalStateException("Источник удалён")
+                        fetchIptvSource(custom)
+                    }
                 channels = reloaded
                 val replacement = reloaded.firstOrNull { it.id == channel.id }
                 if (replacement == null) {
@@ -240,12 +275,69 @@ internal fun RuVideoHubTvScreen(
     }
 
     Column(modifier = modifier) {
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Источники IPTV", style = MaterialTheme.typography.titleMedium,
+                 modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+            TextButton(onClick = {
+                sourceInputError = null
+                addName = ""
+                addUrl = ""
+                addKind = IptvSourceKind.PLAYLIST
+                showAddSource = true
+            }) { Text("+ Добавить") }
+            if (activeSourceId != "ruvideohub") {
+                TextButton(onClick = { showDeleteSource = true }) { Text("Удалить") }
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            FilterChip(
+                selected = activeSourceId == "ruvideohub",
+                onClick = {
+                    activeSourceId = "ruvideohub"
+                    refresh("ruvideohub")
+                },
+                label = { Text("RuVideoHub") }
+            )
+            userSources.forEach { item ->
+                FilterChip(
+                    selected = activeSourceId == item.id,
+                    onClick = {
+                        activeSourceId = item.id
+                        refresh(item.id)
+                    },
+                    label = { Text(item.name, maxLines = 1) }
+                )
+            }
+        }
+        if (activeSourceId == "ruvideohub") {
+            Text(
+                "CUB IPTV — плагин Lampa, не плейлист. Свои ссылки M3U и M3U8 добавляй кнопкой выше.",
+                color = Color.LightGray, style = MaterialTheme.typography.labelSmall
+            )
+            TextButton(onClick = {
+                runCatching {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse("https://cub.red/iptv"))
+                    )
+                }
+            }) { Text("Настройка плейлистов в CUB") }
+        }
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Прямой эфир", style = MaterialTheme.typography.titleLarge,
                      fontWeight = FontWeight.SemiBold)
-                Text("Плейлист RuVideoHub · " + channels.size + " каналов",
+                Text(
+                    (if (activeSourceId == "ruvideohub") "RuVideoHub"
+                     else userSources.firstOrNull { it.id == activeSourceId }?.name ?: "Мой IPTV") +
+                        " · " + channels.size + " каналов",
                      color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
             }
             TextButton(onClick = { refresh() }, enabled = !loading) { Text("Обновить") }
@@ -317,6 +409,10 @@ internal fun RuVideoHubTvScreen(
                         }
                     }
                     Text("▶", color = TV_ACCENT, style = MaterialTheme.typography.titleLarge)
+                    TextButton(onClick = {
+                        player?.pause()
+                        openTvExternal(context, channel)?.let { error = it }
+                    }) { Text("Внешний") }
                 }
             }
             if (filtered.isEmpty() && !loading && error == null) {
@@ -338,6 +434,89 @@ internal fun RuVideoHubTvScreen(
         }
     }
 
+    if (showAddSource) {
+        AlertDialog(
+            onDismissRequest = { showAddSource = false },
+            title = { Text("Добавить IPTV") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Тип ссылки:", style = MaterialTheme.typography.bodySmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = addKind == IptvSourceKind.PLAYLIST,
+                            onClick = { addKind = IptvSourceKind.PLAYLIST },
+                            label = { Text("M3U-плейлист") }
+                        )
+                        FilterChip(
+                            selected = addKind == IptvSourceKind.CHANNEL,
+                            onClick = { addKind = IptvSourceKind.CHANNEL },
+                            label = { Text("Один канал") }
+                        )
+                    }
+                    OutlinedTextField(
+                        value = addName,
+                        onValueChange = { addName = it },
+                        label = { Text("Название") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = addUrl,
+                        onValueChange = { addUrl = it },
+                        label = { Text(if (addKind == IptvSourceKind.CHANNEL)
+                            "Ссылка на поток M3U8 / MP4 / TS" else "Прямая ссылка M3U") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        "HTTP не защищён шифрованием. Ссылки с токенами хранятся на устройстве.",
+                        color = Color.LightGray,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                    sourceInputError?.let {
+                        Text(it, color = Color(0xFFFFB3A8),
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val attempt = runCatching { newIptvSource(addName, addUrl, addKind) }
+                    attempt.onSuccess { item ->
+                        if (userSources.size >= 40) {
+                            sourceInputError = "Максимум 40 источников."
+                        } else {
+                            userSources.add(item)
+                            saveIptvSources(context, userSources.toList())
+                            activeSourceId = item.id
+                            showAddSource = false
+                            refresh(item.id)
+                        }
+                    }.onFailure { sourceInputError = it.message ?: "Неверная ссылка" }
+                }) { Text("Сохранить") }
+            },
+            dismissButton = { TextButton(onClick = { showAddSource = false }) { Text("Отмена") } }
+        )
+    }
+    if (showDeleteSource) {
+        val current = userSources.firstOrNull { it.id == activeSourceId }
+        AlertDialog(
+            onDismissRequest = { showDeleteSource = false },
+            title = { Text("Удалить источник?") },
+            text = { Text(current?.name ?: "Выбранный источник") },
+            confirmButton = {
+                TextButton(onClick = {
+                    userSources.removeAll { it.id == activeSourceId }
+                    saveIptvSources(context, userSources.toList())
+                    showDeleteSource = false
+                    activeSourceId = "ruvideohub"
+                    refresh("ruvideohub")
+                }) { Text("Удалить") }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteSource = false }) { Text("Отмена") } }
+        )
+    }
+
     selected?.let { channel ->
         val controller = player
         if (controller != null) {
@@ -349,6 +528,12 @@ internal fun RuVideoHubTvScreen(
                 refreshError = streamRefreshError,
                 onSelectChannel = { playChannel(it) },
                 onReload = { refreshPlayingChannel() },
+                onOpenExternal = { current ->
+                    controller.pause()
+                    val launchError = openTvExternal(context, current)
+                    if (launchError == null) selected = null
+                    else streamRefreshError = launchError
+                },
                 onClose = {
                     if (controller.currentMediaItem?.mediaId == "ruvideo:" + channel.id) {
                         controller.pause()
