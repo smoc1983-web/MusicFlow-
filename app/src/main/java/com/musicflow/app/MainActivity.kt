@@ -43,8 +43,6 @@ import androidx.media3.session.SessionToken
 import coil.compose.rememberAsyncImagePainter
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -111,7 +109,7 @@ class MainActivity : ComponentActivity() {
             val obj = array.optJSONObject(index) ?: return@mapNotNull null
             val id = obj.optString("id")
             val stream = obj.optString("stream")
-            if (id.isBlank() || !stream.startsWith("https://")) null
+            if (id.isBlank() || id.startsWith("archive:") || !stream.startsWith("https://")) null
             else Track(
                 id, obj.optString("title"), obj.optString("artist"),
                 obj.optString("artwork").takeIf { it.startsWith("https://") },
@@ -151,7 +149,6 @@ private fun MusicScreen(
     val searchSequence = remember { AtomicInteger(0) }
     val favorites = remember { mutableStateListOf<Track>().also { it.addAll(saved()) } }
     var tracks by remember { mutableStateOf<List<Track>>(emptyList()) }
-    var source by remember { mutableIntStateOf(0) }
     var search by remember { mutableStateOf("") }
     var appliedSearch by remember { mutableStateOf("") }
     var searchMode by remember { mutableStateOf(SearchMode.ALL) }
@@ -169,33 +166,20 @@ private fun MusicScreen(
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
 
-    fun fetch(query: String = "", which: Int = source, mode: SearchMode = searchMode) {
+    fun fetch(query: String = "") {
         val requestNumber = searchSequence.incrementAndGet()
         scope.launch {
             busy = true
             problem = null
             try {
-                val (found, errors) = coroutineScope {
-                    val audius = if (which != 2) async { runCatching { audiusTracks(query) } } else null
-                    val archive = if (which != 1) async { runCatching { archiveTracks(query, mode) } } else null
-                    val first = audius?.await()
-                    val second = archive?.await()
-                    val problems = mutableListOf<String>()
-                    first?.exceptionOrNull()?.let { problems += "Audius: " + (it.message ?: "ошибка") }
-                    second?.exceptionOrNull()?.let { problems += "Archive: " + (it.message ?: "ошибка") }
-                    Pair(first?.getOrNull().orEmpty() + second?.getOrNull().orEmpty(), problems)
-                }
+                val found = audiusTracks(query)
                 if (requestNumber == searchSequence.get()) {
                     tracks = found.distinctBy { it.id }
                     appliedSearch = query.trim()
-                    if (errors.isNotEmpty()) {
-                        problem = if (tracks.isEmpty()) errors.joinToString("\n")
-                                  else "Часть источников недоступна: " + errors.joinToString("; ")
-                    }
                 }
             } catch (e: Exception) {
                 if (requestNumber == searchSequence.get()) {
-                    problem = e.message ?: "Ошибка загрузки"
+                    problem = "Audius: " + (e.message ?: "Нет соединения. Проверь VPN и интернет.")
                 }
             } finally {
                 if (requestNumber == searchSequence.get()) busy = false
@@ -271,8 +255,8 @@ private fun MusicScreen(
             .padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(20.dp))
-        Text("MusicFlow Player Preview", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-        Text("Онлайн · Audius + Live Music Archive", color = Color.LightGray)
+        Text("MusicFlow Audius", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+        Text("Онлайн-музыка · Audius", color = Color.LightGray)
         Spacer(Modifier.height(18.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -287,21 +271,6 @@ private fun MusicScreen(
                 )
             }
         }
-        if (tab != 2) {
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("Все", "Audius", "Archive").forEachIndexed { index, text ->
-                    FilterChip(
-                        selected = source == index,
-                        onClick = {
-                            source = index
-                            fetch(if (tab == 1) search else "", index)
-                        },
-                        label = { Text(text) }
-                    )
-                }
-            }
-        }
         if (tab == 1) {
             Spacer(Modifier.height(6.dp))
             Row(
@@ -311,10 +280,7 @@ private fun MusicScreen(
                 SearchMode.entries.forEach { mode ->
                     FilterChip(
                         selected = searchMode == mode,
-                        onClick = {
-                            searchMode = mode
-                            fetch(search, source, mode)
-                        },
+                        onClick = { searchMode = mode },
                         label = { Text(mode.label) }
                     )
                 }
@@ -323,7 +289,7 @@ private fun MusicScreen(
             OutlinedTextField(
                 value = search,
                 onValueChange = { search = it },
-                label = { Text("Исполнитель, песня или концерт") },
+                label = { Text("Исполнитель или название песни") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
@@ -353,13 +319,6 @@ private fun MusicScreen(
                         label = { Text(mode.label) }
                     )
                 }
-            }
-            if (source != 1 && searchMode == SearchMode.TITLE) {
-                Text(
-                    "В Archive поиск по названию относится прежде всего к названию концерта.",
-                    color = Color.LightGray,
-                    style = MaterialTheme.typography.labelSmall
-                )
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -417,7 +376,7 @@ private fun MusicScreen(
                                  color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
                         }
                         Text(
-                            (if (track.id.startsWith("archive:")) "Archive" else "Audius") +
+                            "Audius" +
                             (if (track.durationSec > 0L) " · " + formatTrackDuration(track.durationSec) else ""),
                             color = Violet, style = MaterialTheme.typography.labelSmall
                         )

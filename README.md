@@ -1,43 +1,20 @@
-# MusicFlow
+# MusicFlow · Audius Preview
 
-Independent Android online music player. **Does not modify or depend on AudioBook.**
+An independent Android online music player. **AudioBook is not affected.**
 
-- Kotlin + Jetpack Compose
-- Audius public music catalog: trending, search, audio streaming
-- Media3 background player with media notification and lock-screen controls
-- Favorites and queue, stored locally as metadata only
-- No track downloading or offline audio storage
+## Version 0.4.2 Preview (Audius only)
+- **Audius is the sole online catalog**: trending tracks, artist/title search, sorting and favorites.
+- Media3 online playback in background, media notification and lock-screen controls.
+- Full-screen now-playing interface with artwork, player queue, shuffle, repeat, and favorite toggle.
+- Smooth seeking: the slider follows the finger; a single seek is submitted on drag completion.
+- Removed the Internet Archive / Live Music Archive source, its source filter, and source implementation.
+- No track downloading or offline music storage.
 
-## Build APK without a PC
+This preview installs separately as `com.musicflow.audiuspreview`.
+The last tested multi-source build remains preserved in branch `stable/v0.4.1-preview`.
 
-Open **Actions → Build MusicFlow APK**. After successful run, open its **Artifacts** section and download `MusicFlow-debug-apk`. Extract the ZIP and install `app-debug.apk` on Android (allow installation from the selected source).
+## Build
+GitHub Actions → Build MusicFlow APK → latest successful run → Artifacts → MusicFlow-preview-apk.
+Debug APK signing is not guaranteed to be persistent across runner instances. Use a protected release signing key for distributed app updates.
 
-Workflow builds an unsigned-for-release but debug-signed APK. For public distribution, a separate protected release signing workflow is required.
-
-**Audius catalog availability may vary.** This project has no access to subscription music services.
-
-
-## Search Preview v0.3.0 (branch `feature/search-v0.3.0-preview`)
-
-Installs **alongside** MusicFlow 0.2.0 Preview using the distinct application ID `com.musicflow.searchpreview`.
-
-- Search by artist, title/concert, or all fields.
-- Sort by relevance, song title, artist, and descending duration.
-- Distinguish album/concert metadata when provided, and display track lengths.
-- Avoid stale concurrent search responses overwriting newer results.
-- Existing Audius and Live Music Archive streaming, background playback, queue and favorites retained.
-- No downloads.
-
-Notes: Archive indexes concert/collection titles, not every individual song name. Not every Audius track has album metadata. Android runtime still needs on-device validation.
-
-
-## Player Preview v0.4.0
-
-Built from the verified search preview v0.3.0. Installs beside stable builds under `com.musicflow.playerpreview`.
-
-- Expandable now-playing screen with artwork and seek bar.
-- Skip previous/next, play/pause, shuffle and repeat (off, one track, entire queue).
-- Queue sheet with current track highlighting and tap to jump.
-- Favorite the current track, with metadata fallback after controller reconnection.
-- Existing Audius / Live Music Archive, field-aware search, sorting and background Media3 playback retained.
-- No offline downloading.
+Audius availability depends on connectivity and may require VPN in some networks.
