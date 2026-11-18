@@ -29,3 +29,15 @@ Installs **alongside** MusicFlow 0.2.0 Preview using the distinct application ID
 - No downloads.
 
 Notes: Archive indexes concert/collection titles, not every individual song name. Not every Audius track has album metadata. Android runtime still needs on-device validation.
+
+
+## Player Preview v0.4.0
+
+Built from the verified search preview v0.3.0. Installs beside stable builds under `com.musicflow.playerpreview`.
+
+- Expandable now-playing screen with artwork and seek bar.
+- Skip previous/next, play/pause, shuffle and repeat (off, one track, entire queue).
+- Queue sheet with current track highlighting and tap to jump.
+- Favorite the current track, with metadata fallback after controller reconnection.
+- Existing Audius / Live Music Archive, field-aware search, sorting and background Media3 playback retained.
+- No offline downloading.

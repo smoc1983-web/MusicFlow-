@@ -7,11 +7,11 @@ android {
     namespace = "com.musicflow.app"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.musicflow.searchpreview"
+        applicationId = "com.musicflow.playerpreview"
         minSdk = 26
         targetSdk = 35
-        versionCode = 30
-        versionName = "0.3.0-preview"
+        versionCode = 40
+        versionName = "0.4.0-preview"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

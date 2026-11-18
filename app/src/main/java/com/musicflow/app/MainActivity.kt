@@ -8,6 +8,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
@@ -155,7 +159,11 @@ private fun MusicScreen(
     var tab by remember { mutableIntStateOf(0) }
     var busy by remember { mutableStateOf(true) }
     var problem by remember { mutableStateOf<String?>(null) }
+    var expandedPlayer by remember { mutableStateOf(false) }
+    var queueCatalog by remember { mutableStateOf<List<Track>>(emptyList()) }
     var playing by remember { mutableStateOf(false) }
+    var currentArtwork by remember { mutableStateOf<String?>(null) }
+    var currentMediaId by remember { mutableStateOf("") }
     var trackTitle by remember { mutableStateOf("") }
     var trackArtist by remember { mutableStateOf("") }
     var positionMs by remember { mutableLongStateOf(0L) }
@@ -198,6 +206,8 @@ private fun MusicScreen(
     LaunchedEffect(player) {
         while (player != null) {
             playing = player.isPlaying
+            currentMediaId = player.currentMediaItem?.mediaId.orEmpty()
+            currentArtwork = player.currentMediaItem?.mediaMetadata?.artworkUri?.toString()
             trackTitle = player.currentMediaItem?.mediaMetadata?.title?.toString() ?: ""
             trackArtist = player.currentMediaItem?.mediaMetadata?.artist?.toString() ?: ""
             positionMs = player.currentPosition.coerceAtLeast(0)
@@ -211,6 +221,7 @@ private fun MusicScreen(
             problem = "Плеер подключается. Повторите попытку."
             return
         }
+        queueCatalog = list.toList()
         p.setMediaItems(list.map { t ->
             MediaItem.Builder()
                 .setMediaId(t.id)
@@ -227,6 +238,29 @@ private fun MusicScreen(
         p.play()
     }
 
+    fun toggleCurrentFavorite() {
+        val item = player?.currentMediaItem ?: return
+        val id = item.mediaId
+        if (favorites.any { it.id == id }) {
+            favorites.removeAll { it.id == id }
+        } else {
+            val existing = queueCatalog.firstOrNull { it.id == id }
+                ?: tracks.firstOrNull { it.id == id }
+            val currentTrack = existing ?: item.localConfiguration?.uri?.toString()?.let { uri ->
+                Track(
+                    id = id,
+                    title = item.mediaMetadata.title?.toString() ?: "Без названия",
+                    artist = item.mediaMetadata.artist?.toString() ?: "Неизвестный исполнитель",
+                    artwork = item.mediaMetadata.artworkUri?.toString(),
+                    stream = uri,
+                    durationSec = player.duration.coerceAtLeast(0) / 1000
+                )
+            }
+            if (currentTrack != null) favorites.add(0, currentTrack)
+        }
+        save(favorites.toList())
+    }
+
     val visible = when (tab) {
         2 -> favorites.toList()
         1 -> filterAndSortTracks(tracks, appliedSearch, searchMode, sortMode)
@@ -237,7 +271,7 @@ private fun MusicScreen(
             .padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(20.dp))
-        Text("MusicFlow Search Preview", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+        Text("MusicFlow Player Preview", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Text("Онлайн · Audius + Live Music Archive", color = Color.LightGray)
         Spacer(Modifier.height(18.dp))
 
@@ -404,32 +438,78 @@ private fun MusicScreen(
         }
         if (trackTitle.isNotBlank()) {
             Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                    .background(Panel).padding(14.dp)
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(Panel).padding(10.dp)
             ) {
-                Text(trackTitle, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(trackArtist, color = Color.LightGray, maxLines = 1)
-                val end = durationMs.coerceAtLeast(1L)
-                Slider(
-                    value = positionMs.coerceIn(0L, end).toFloat(),
-                    onValueChange = { player?.seekTo(it.toLong()) },
-                    valueRange = 0f..end.toFloat(),
-                    modifier = Modifier.fillMaxWidth()
-                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(onClick = { player?.seekToPreviousMediaItem() }) { Text("⏮") }
-                    Button(onClick = { if (playing) player?.pause() else player?.play() }) {
-                        Text(if (playing) "Пауза" else "Слушать")
+                    Row(
+                        modifier = Modifier.weight(1f).clickable { expandedPlayer = true },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Image(
+                            painter = rememberAsyncImagePainter(currentArtwork),
+                            contentDescription = "Обложка текущей композиции",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(54.dp).clip(RoundedCornerShape(10.dp))
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(trackTitle, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis)
+                            Text(trackArtist, color = Color.LightGray, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.bodySmall)
+                            Text("Открыть плеер", color = Violet,
+                                style = MaterialTheme.typography.labelSmall)
+                        }
                     }
-                    TextButton(onClick = { player?.seekToNextMediaItem() }) { Text("⏭") }
+                    IconButton(onClick = {
+                        if (playing) player?.pause() else player?.play()
+                    }) {
+                        Icon(
+                            if (playing) androidx.compose.material.icons.Icons.Filled.Pause
+                            else androidx.compose.material.icons.Icons.Filled.PlayArrow,
+                            contentDescription = if (playing) "Пауза" else "Воспроизвести",
+                            tint = Color.White
+                        )
+                    }
+                    IconButton(onClick = { player?.seekToNextMediaItem() }) {
+                        Icon(
+                            androidx.compose.material.icons.Icons.Filled.SkipNext,
+                            contentDescription = "Следующий трек",
+                            tint = Color.White
+                        )
+                    }
                 }
+                LinearProgressIndicator(
+                    progress = { if (durationMs > 0L) {
+                        (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+                    } else 0f },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    color = Violet,
+                    trackColor = Color(0xFF3F3550)
+                )
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
         }
+
+    }
+    if (expandedPlayer && player != null && trackTitle.isNotBlank()) {
+        FullPlayerDialog(
+            player = player,
+            title = trackTitle,
+            artist = trackArtist,
+            artwork = currentArtwork,
+            playing = playing,
+            positionMs = positionMs,
+            durationMs = durationMs,
+            favorite = favorites.any { it.id == currentMediaId },
+            onFavorite = { toggleCurrentFavorite() },
+            onClose = { expandedPlayer = false }
+        )
     }
 }
 
