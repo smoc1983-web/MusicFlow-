@@ -1,7 +1,7 @@
 name: Build MusicFlow APK
 on:
   push:
-    branches: [main]
+    branches: [main, "feature/**"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -35,13 +35,21 @@ jobs:
               echo ""
             done
           done
+      - name: Check Archive API accessibility
+        shell: bash
+        run: |
+          echo "Checking Archive search (diagnostic only)"
+          curl -L -sS --max-time 20 -o /tmp/archive-response.json -w 'HTTP %{http_code}\n' \
+            'https://archive.org/advancedsearch.php?q=collection%3Aetree%20AND%20mediatype%3Aetree&fl%5B%5D=identifier&rows=1&output=json' || true
+          head -c 300 /tmp/archive-response.json || true
+          echo ""
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: MusicFlow-debug-apk
+          name: MusicFlow-preview-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30

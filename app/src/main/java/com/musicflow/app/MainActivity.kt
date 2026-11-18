@@ -33,6 +33,8 @@ import androidx.media3.session.SessionToken
 import coil.compose.rememberAsyncImagePainter
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -44,7 +46,7 @@ import java.net.URL
 private val Violet = Color(0xFFAC80FF)
 private val Panel = Color(0xFF201B2C)
 
-private data class Track(
+internal data class Track(
     val id: String,
     val title: String,
     val artist: String,
@@ -133,6 +135,7 @@ private fun MusicScreen(
     val context = LocalContext.current
     val favorites = remember { mutableStateListOf<Track>().also { it.addAll(saved()) } }
     var tracks by remember { mutableStateOf<List<Track>>(emptyList()) }
+    var source by remember { mutableIntStateOf(0) }
     var search by remember { mutableStateOf("") }
     var tab by remember { mutableIntStateOf(0) }
     var busy by remember { mutableStateOf(true) }
@@ -143,14 +146,27 @@ private fun MusicScreen(
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
 
-    fun fetch(query: String = "") {
+    fun fetch(query: String = "", which: Int = source) {
         scope.launch {
             busy = true
             problem = null
             try {
-                tracks = audiusTracks(query)
+                val (found, errors) = coroutineScope {
+                    val audius = if (which != 2) async { runCatching { audiusTracks(query) } } else null
+                    val archive = if (which != 1) async { runCatching { archiveTracks(query) } } else null
+                    val first = audius?.await()
+                    val second = archive?.await()
+                    val problems = mutableListOf<String>()
+                    first?.exceptionOrNull()?.let { problems += "Audius: " + (it.message ?: "ошибка") }
+                    second?.exceptionOrNull()?.let { problems += "Archive: " + (it.message ?: "ошибка") }
+                    Pair(first?.getOrNull().orEmpty() + second?.getOrNull().orEmpty(), problems)
+                }
+                tracks = found.distinctBy { it.id }
+                if (errors.isNotEmpty()) {
+                    problem = if (tracks.isEmpty()) errors.joinToString("\n") else "Часть источников недоступна: " + errors.joinToString("; ")
+                }
             } catch (e: Exception) {
-                problem = "Не удалось загрузить каталог. " + (e.message ?: "Проверьте интернет и DNS")
+                problem = e.message ?: "Ошибка загрузки"
             } finally {
                 busy = false
             }
@@ -195,17 +211,35 @@ private fun MusicScreen(
             .padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(20.dp))
-        Text("MusicFlow", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-        Text("Музыка онлайн · Audius", color = Color.LightGray)
+        Text("MusicFlow Preview", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+        Text("Онлайн · Audius + Live Music Archive", color = Color.LightGray)
         Spacer(Modifier.height(18.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("Главная", "Поиск", "Избранное").forEachIndexed { index, title ->
                 FilterChip(
                     selected = tab == index,
-                    onClick = { tab = index },
+                    onClick = {
+                        tab = index
+                        if (index != 2) fetch(if (index == 1) search else "")
+                    },
                     label = { Text(title) }
                 )
+            }
+        }
+        if (tab != 2) {
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("Все", "Audius", "Archive").forEachIndexed { index, text ->
+                    FilterChip(
+                        selected = source == index,
+                        onClick = {
+                            source = index
+                            fetch(if (tab == 1) search else "", index)
+                        },
+                        label = { Text(text) }
+                    )
+                }
             }
         }
         if (tab == 1) {
@@ -248,7 +282,7 @@ private fun MusicScreen(
             }
         }
         Text(
-            if (tab == 2) "Сохранённые треки" else if (tab == 1) "Результаты поиска" else "Популярное сейчас",
+            if (tab == 2) "Сохранённые треки" else if (tab == 1) "Результаты поиска" else "Музыка онлайн",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(bottom = 8.dp)
@@ -274,6 +308,8 @@ private fun MusicScreen(
                     Column(Modifier.weight(1f)) {
                         Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
                         Text(track.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.LightGray)
+                        Text(if (track.id.startsWith("archive:")) "Live Music Archive" else "Audius",
+                            color = Violet, style = MaterialTheme.typography.labelSmall)
                     }
                     TextButton(onClick = {
                         if (isFavorite) favorites.removeAll { it.id == track.id }
