@@ -1,6 +1,7 @@
 package com.musicflow.app
 
 import android.content.ComponentName
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -20,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -128,6 +130,7 @@ private fun MusicScreen(
     save: (List<Track>) -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val favorites = remember { mutableStateListOf<Track>().also { it.addAll(saved()) } }
     var tracks by remember { mutableStateOf<List<Track>>(emptyList()) }
     var search by remember { mutableStateOf("") }
@@ -147,7 +150,7 @@ private fun MusicScreen(
             try {
                 tracks = audiusTracks(query)
             } catch (e: Exception) {
-                problem = "Ошибка Audius: " + (e.message ?: "Проверьте интернет") + (e.cause?.message?.let { " · $it" } ?: "")
+                problem = "Не удалось загрузить каталог. " + (e.message ?: "Проверьте интернет и DNS")
             } finally {
                 busy = false
             }
@@ -226,8 +229,22 @@ private fun MusicScreen(
         if (busy && tab != 2) LinearProgressIndicator(Modifier.fillMaxWidth())
         problem?.let {
             Text(it, color = Color(0xFFFFB3A8), modifier = Modifier.padding(vertical = 10.dp))
-            TextButton(onClick = { fetch(if (tab == 1) search else "") }) {
-                Text("Повторить")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { fetch(if (tab == 1) search else "") }) {
+                    Text("Повторить")
+                }
+                TextButton(onClick = {
+                    runCatching {
+                        context.startActivity(
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse("https://api.audius.co/v1/tracks/trending?app_name=MusicFlowAndroid&limit=2")
+                            )
+                        )
+                    }
+                }) {
+                    Text("Проверить API")
+                }
             }
         }
         Text(
@@ -305,7 +322,7 @@ private fun MusicScreen(
 
 private suspend fun audiusTracks(query: String): List<Track> = withContext(Dispatchers.IO) {
     val hosts = listOf("https://api.audius.co/v1", "https://discoveryprovider.audius.co/v1")
-    var lastFailure: Exception? = null
+    val diagnostics = mutableListOf<String>()
     for (host in hosts) {
         try {
             val url = Uri.parse(host + if (query.isBlank()) "/tracks/trending" else "/tracks/search")
@@ -320,7 +337,10 @@ private suspend fun audiusTracks(query: String): List<Track> = withContext(Dispa
                 setRequestProperty("Accept", "application/json")
             }
             val payload = try {
-                if (conn.responseCode !in 200..299) error("HTTP " + conn.responseCode)
+                if (conn.responseCode !in 200..299) {
+                    val snippet = conn.errorStream?.bufferedReader()?.use { it.readText().take(100) } ?: ""
+                    error("HTTP " + conn.responseCode + (if (snippet.isBlank()) "" else ": " + snippet))
+                }
                 conn.inputStream.bufferedReader().use { it.readText() }
             } finally {
                 conn.disconnect()
@@ -349,8 +369,15 @@ private suspend fun audiusTracks(query: String): List<Track> = withContext(Dispa
             }
             return@withContext result.distinctBy { it.id }
         } catch (failure: Exception) {
-            lastFailure = failure
+            val reason = when (failure) {
+                is java.net.UnknownHostException -> "DNS: адрес не найден"
+                is java.net.SocketTimeoutException -> "превышено время ожидания"
+                is javax.net.ssl.SSLException -> "ошибка TLS/SSL"
+                is java.net.ConnectException -> "соединение отклонено"
+                else -> (failure.message ?: failure.javaClass.simpleName).take(150)
+            }
+            diagnostics.add(host.substringAfter("https://").substringBefore("/") + ": " + reason)
         }
     }
-    throw IllegalStateException("Недоступен музыкальный каталог", lastFailure)
+    throw IllegalStateException(diagnostics.joinToString("; ").ifBlank { "Нет ответа от Audius" })
 }
