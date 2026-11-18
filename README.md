@@ -18,3 +18,20 @@ GitHub Actions → Build MusicFlow APK → latest successful run → Artifacts �
 Debug APK signing is not guaranteed to be persistent across runner instances. Use a protected release signing key for distributed app updates.
 
 Audius availability depends on connectivity and may require VPN in some networks.
+
+
+## v0.5.0 Preview: RuVideoHub IPTV
+
+- Separate **ТВ** tab with search, groups and an optional music-channel filter.
+- Loads the **external** community-maintained M3U8 playlist at runtime from:
+  https://github.com/ByteBudda/RuVideoHub/blob/main/playlist_iptv.m3u8
+- Uses AndroidX Media3 HLS and PlayerView for live television/radio.
+- Stream playback is available only when the provided stream is still valid and accessible.
+- Shows expired stream-link hints, error messages and a refresh control.
+- Does **not** bundle, download or redistribute the playlist or RuVideoHub Android code.
+- RuVideoHub's README advertises many features, but no Android source code was available in the inspected repository; only the playlist was integrated.
+- Audio search and playback remain Audius-only; Internet Archive is not reintroduced.
+- The preview has an isolated package name, com.musicflow.tvpreview.
+
+Original playlist and project © RuVideoHub / ByteBudda. See their License.md.
+The repository contains GPLv3 language as well as additional non-commercial restrictions, so do not redistribute third-party material commercially without separate rights clarification.

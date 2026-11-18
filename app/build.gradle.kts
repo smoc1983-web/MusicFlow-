@@ -7,11 +7,11 @@ android {
     namespace = "com.musicflow.app"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.musicflow.audiuspreview"
+        applicationId = "com.musicflow.tvpreview"
         minSdk = 26
         targetSdk = 35
-        versionCode = 42
-        versionName = "0.4.2-preview"
+        versionCode = 50
+        versionName = "0.5.0-preview"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -30,5 +30,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.8.0")
     implementation("androidx.media3:media3-session:1.8.0")
     implementation("androidx.media3:media3-common:1.8.0")
+    implementation("androidx.media3:media3-ui:1.8.0")
+    implementation("androidx.media3:media3-exoplayer-hls:1.8.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
 }

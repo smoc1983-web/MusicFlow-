@@ -255,22 +255,25 @@ private fun MusicScreen(
             .padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(20.dp))
-        Text("MusicFlow Audius", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-        Text("Онлайн-музыка · Audius", color = Color.LightGray)
+        Text("MusicFlow TV Preview", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+        Text("Audius · RuVideoHub IPTV", color = Color.LightGray)
         Spacer(Modifier.height(18.dp))
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Главная", "Поиск", "Избранное").forEachIndexed { index, title ->
+        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("Главная", "Поиск", "Избранное", "ТВ").forEachIndexed { index, title ->
                 FilterChip(
                     selected = tab == index,
                     onClick = {
                         tab = index
-                        if (index != 2) fetch(if (index == 1) search else "")
+                        if (index == 0 || index == 1) fetch(if (index == 1) search else "")
                     },
                     label = { Text(title) }
                 )
             }
         }
+        if (tab == 3) {
+            RuVideoHubTvScreen(player = player, modifier = Modifier.weight(1f))
+        } else {
         if (tab == 1) {
             Spacer(Modifier.height(6.dp))
             Row(
@@ -395,7 +398,7 @@ private fun MusicScreen(
                 )
             }
         }
-        if (trackTitle.isNotBlank()) {
+        if (trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
             Column(
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
                     .background(Panel).padding(10.dp)
@@ -455,8 +458,9 @@ private fun MusicScreen(
             Spacer(Modifier.height(8.dp))
         }
 
+        }
     }
-    if (expandedPlayer && player != null && trackTitle.isNotBlank()) {
+    if (expandedPlayer && player != null && trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
         FullPlayerDialog(
             player = player,
             title = trackTitle,

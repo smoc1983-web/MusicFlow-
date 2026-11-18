@@ -35,6 +35,12 @@ jobs:
               echo ""
             done
           done
+      - name: Check RuVideoHub playlist (diagnostic)
+        shell: bash
+        run: |
+          curl -L -sS --max-time 20 -o /tmp/ruvideo.m3u8 -w 'RuVideoHub playlist: HTTP %{http_code}\n' \
+            'https://raw.githubusercontent.com/ByteBudda/RuVideoHub/main/playlist_iptv.m3u8' || true
+          grep -c '^#EXTINF:' /tmp/ruvideo.m3u8 || true
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Upload APK
