@@ -72,11 +72,13 @@ class MainActivity : ComponentActivity() {
                 onSurface = Color.White
             )
             MaterialTheme(colorScheme = scheme) {
+                Surface(color = scheme.background) {
                 MusicScreen(
                     player = playerState.value,
                     saved = { loadFavorites() },
                     save = { saveFavorites(it) }
                 )
+                }
             }
         }
     }
@@ -145,7 +147,7 @@ private fun MusicScreen(
             try {
                 tracks = audiusTracks(query)
             } catch (e: Exception) {
-                problem = "Ошибка Audius: " + (e.message ?: "Проверьте интернет")
+                problem = "Ошибка Audius: " + (e.message ?: "Проверьте интернет") + (e.cause?.message?.let { " · $it" } ?: "")
             } finally {
                 busy = false
             }
