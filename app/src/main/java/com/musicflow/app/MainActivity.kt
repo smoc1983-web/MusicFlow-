@@ -372,7 +372,7 @@ private fun MusicScreen(
                         Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
                         Text(track.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.LightGray)
                         track.collectionTitle?.takeIf { it.isNotBlank() }?.let {
-                            Text("Альбом / концерт: " + it, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            Text("Альбом: " + it, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                  color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
                         }
                         Text(
