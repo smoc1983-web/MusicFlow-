@@ -40,6 +40,12 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.net.UnknownHostException
+import java.net.SocketTimeoutException
+import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 private val Violet = Color(0xFFAC80FF)
 private val Panel = Color(0xFF201B2C)
@@ -229,6 +235,11 @@ private fun MusicScreen(
         if (busy && tab != 2) LinearProgressIndicator(Modifier.fillMaxWidth())
         problem?.let {
             Text(it, color = Color(0xFFFFB3A8), modifier = Modifier.padding(vertical = 10.dp))
+            Text(
+                "Если ссылка открывается в браузере, но приложение не подключается, проверьте, включён ли MusicFlow в VPN или списке разрешённых приложений для сети.",
+                color = Color.LightGray,
+                style = MaterialTheme.typography.bodySmall
+            )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { fetch(if (tab == 1) search else "") }) {
                     Text("Повторить")
@@ -320,64 +331,108 @@ private fun MusicScreen(
     }
 }
 
+
+private val audiusClient: OkHttpClient = OkHttpClient.Builder()
+    .connectTimeout(10, TimeUnit.SECONDS)
+    .readTimeout(15, TimeUnit.SECONDS)
+    .callTimeout(20, TimeUnit.SECONDS)
+    .followRedirects(true)
+    .build()
+
+private fun requestAudiusOkHttp(url: String): String {
+    val request = Request.Builder()
+        .url(url)
+        .header("Accept", "application/json")
+        .header("User-Agent", "MusicFlow/0.1.3 Android")
+        .get()
+        .build()
+    return audiusClient.newCall(request).execute().use { response ->
+        if (!response.isSuccessful) {
+            throw IOException("HTTP " + response.code + " " + (response.body?.string()?.take(80) ?: ""))
+        }
+        response.body?.string() ?: throw IOException("Пустой ответ от сервера")
+    }
+}
+
+private fun requestAudiusHttpUrlConnection(url: String): String {
+    val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+        connectTimeout = 10_000
+        readTimeout = 15_000
+        instanceFollowRedirects = true
+        setRequestProperty("Accept", "application/json")
+        setRequestProperty("User-Agent", "MusicFlow/0.1.3 Android")
+    }
+    return try {
+        if (conn.responseCode !in 200..299) {
+            val msg = conn.errorStream?.bufferedReader()?.use { it.readText().take(80) } ?: ""
+            throw IOException("HTTP " + conn.responseCode + " " + msg)
+        }
+        conn.inputStream.bufferedReader().use { it.readText() }
+    } finally {
+        conn.disconnect()
+    }
+}
+
+private fun decodeAudiusTracks(json: String, host: String): List<Track> {
+    val array = JSONObject(json).optJSONArray("data") ?: throw IOException("Ответ API не содержит массива data")
+    val results = mutableListOf<Track>()
+    for (index in 0 until array.length()) {
+        val item = array.optJSONObject(index) ?: continue
+        val id = item.optString("id")
+        val title = item.optString("title")
+        if (id.isBlank() || title.isBlank() || !item.optBoolean("is_streamable", true)) continue
+        val access = item.optJSONObject("access")
+        if (access != null && !access.optBoolean("stream", true)) continue
+
+        val artist = item.optJSONObject("user")?.optString("name")
+            ?.takeIf(String::isNotBlank) ?: "Неизвестный исполнитель"
+        val art = item.optJSONObject("artwork")
+        val cover = listOf("480x480", "1000x1000", "150x150")
+            .firstNotNullOfOrNull { key ->
+                art?.optString(key)?.takeIf { it.startsWith("https://") }
+            }
+
+        // Keep a stable public stream endpoint. Signed stream.url from list results can expire.
+        val stableStream = Uri.parse(host + "/tracks/" + Uri.encode(id) + "/stream")
+            .buildUpon().appendQueryParameter("app_name", "MusicFlowAndroid")
+            .build().toString()
+
+        results.add(Track(id, title, artist, cover, stableStream, item.optLong("duration")))
+    }
+    return results.distinctBy { it.id }
+}
+
+private fun errorReason(e: Exception): String = when (e) {
+    is UnknownHostException -> "DNS: сервер не найден"
+    is SocketTimeoutException -> "тайм-аут соединения"
+    is javax.net.ssl.SSLException -> "ошибка TLS: " + (e.message ?: "сертификат")
+    is java.net.ConnectException -> "соединение отклонено"
+    else -> (e.message ?: e.javaClass.simpleName).take(150)
+}
+
 private suspend fun audiusTracks(query: String): List<Track> = withContext(Dispatchers.IO) {
     val hosts = listOf("https://api.audius.co/v1", "https://discoveryprovider.audius.co/v1")
-    val diagnostics = mutableListOf<String>()
+    val failures = mutableListOf<String>()
     for (host in hosts) {
-        try {
-            val url = Uri.parse(host + if (query.isBlank()) "/tracks/trending" else "/tracks/search")
-                .buildUpon().appendQueryParameter("app_name", "MusicFlowAndroid")
-                .appendQueryParameter("limit", "40").apply {
-                    if (query.isNotBlank()) appendQueryParameter("query", query.trim())
-                }.build().toString()
-            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 12_000
-                readTimeout = 15_000
-                instanceFollowRedirects = true
-                setRequestProperty("Accept", "application/json")
+        val path = if (query.isBlank()) "/tracks/trending" else "/tracks/search"
+        val requestUrl = Uri.parse(host + path).buildUpon()
+            .appendQueryParameter("app_name", "MusicFlowAndroid")
+            .appendQueryParameter("limit", "40")
+            .apply { if (query.isNotBlank()) appendQueryParameter("query", query.trim()) }
+            .build().toString()
+        val domain = Uri.parse(host).host ?: host
+        for (transport in 0..1) {
+            val method = if (transport == 0) "OkHttp" else "Android HTTP"
+            try {
+                val json = if (transport == 0) requestAudiusOkHttp(requestUrl)
+                           else requestAudiusHttpUrlConnection(requestUrl)
+                val tracks = decodeAudiusTracks(json, host)
+                if (tracks.isNotEmpty() || query.isNotBlank()) return@withContext tracks
+                failures.add(domain + " / " + method + ": пустой каталог")
+            } catch (failure: Exception) {
+                failures.add(domain + " / " + method + ": " + errorReason(failure))
             }
-            val payload = try {
-                if (conn.responseCode !in 200..299) {
-                    val snippet = conn.errorStream?.bufferedReader()?.use { it.readText().take(100) } ?: ""
-                    error("HTTP " + conn.responseCode + (if (snippet.isBlank()) "" else ": " + snippet))
-                }
-                conn.inputStream.bufferedReader().use { it.readText() }
-            } finally {
-                conn.disconnect()
-            }
-            val array = JSONObject(payload).optJSONArray("data")
-                ?: error("Некорректный ответ каталога")
-            val result = mutableListOf<Track>()
-            for (index in 0 until array.length()) {
-                val item = array.optJSONObject(index) ?: continue
-                val id = item.optString("id")
-                val title = item.optString("title")
-                if (id.isBlank() || title.isBlank() || !item.optBoolean("is_streamable", true)) continue
-                val access = item.optJSONObject("access")
-                if (access != null && !access.optBoolean("stream", true)) continue
-                val artist = item.optJSONObject("user")?.optString("name")
-                    ?.takeIf(String::isNotBlank) ?: "Неизвестный исполнитель"
-                val art = item.optJSONObject("artwork")
-                val artwork = listOf("480x480", "1000x1000", "150x150")
-                    .firstNotNullOfOrNull { key ->
-                        art?.optString(key)?.takeIf { it.startsWith("https://") }
-                    }
-                val stream = Uri.parse(host + "/tracks/" + Uri.encode(id) + "/stream")
-                    .buildUpon().appendQueryParameter("app_name", "MusicFlowAndroid")
-                    .build().toString()
-                result.add(Track(id, title, artist, artwork, stream, item.optLong("duration")))
-            }
-            return@withContext result.distinctBy { it.id }
-        } catch (failure: Exception) {
-            val reason = when (failure) {
-                is java.net.UnknownHostException -> "DNS: адрес не найден"
-                is java.net.SocketTimeoutException -> "превышено время ожидания"
-                is javax.net.ssl.SSLException -> "ошибка TLS/SSL"
-                is java.net.ConnectException -> "соединение отклонено"
-                else -> (failure.message ?: failure.javaClass.simpleName).take(150)
-            }
-            diagnostics.add(host.substringAfter("https://").substringBefore("/") + ": " + reason)
         }
     }
-    throw IllegalStateException(diagnostics.joinToString("; ").ifBlank { "Нет ответа от Audius" })
+    throw IOException(failures.joinToString("\n").ifBlank { "Нет ответа Audius" })
 }
