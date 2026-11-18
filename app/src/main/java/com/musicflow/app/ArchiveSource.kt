@@ -35,13 +35,13 @@ internal suspend fun archiveTracks(query: String): List<Track> = withContext(Dis
     val docs = JSONObject(archiveGet(searchUrl)).optJSONObject("response")?.optJSONArray("docs")
         ?: return@withContext emptyList()
     coroutineScope {
-        val tasks = (0 until docs.length()).mapNotNull { index ->
-            val doc = docs.optJSONObject(index) ?: return@mapNotNull null
-            val identifier = doc.optString("identifier").takeIf { it.isNotBlank() }
-                ?: return@mapNotNull null
-            async(Dispatchers.IO) {
+        val tasks = mutableListOf<kotlinx.coroutines.Deferred<List<Track>>>()
+        for (index in 0 until docs.length()) {
+            val doc = docs.optJSONObject(index) ?: continue
+            val identifier = doc.optString("identifier").takeIf { it.isNotBlank() } ?: continue
+            tasks.add(async(Dispatchers.IO) {
                 runCatching { archiveItemTracks(identifier, doc) }.getOrDefault(emptyList())
-            }
+            })
         }
         tasks.awaitAll().flatten().distinctBy { it.id }
     }
