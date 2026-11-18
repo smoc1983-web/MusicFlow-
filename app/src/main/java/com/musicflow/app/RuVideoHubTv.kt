@@ -368,7 +368,7 @@ internal fun RuVideoHubTvScreen(
                                 PlayerView(context).apply {
                                     useController = true
                                     setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
-                                    player = controller
+                                    this.player = controller
                                 }
                             },
                             update = { view -> view.player = controller },
