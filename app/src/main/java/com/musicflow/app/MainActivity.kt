@@ -255,7 +255,7 @@ private fun MusicScreen(
             .padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(20.dp))
-        Text("MusicFlow TV Preview", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+        Text("MusicFlow TV+ Preview", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Text("Audius · RuVideoHub IPTV", color = Color.LightGray)
         Spacer(Modifier.height(18.dp))
 

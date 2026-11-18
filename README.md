@@ -35,3 +35,14 @@ Audius availability depends on connectivity and may require VPN in some networks
 
 Original playlist and project © RuVideoHub / ByteBudda. See their License.md.
 The repository contains GPLv3 language as well as additional non-commercial restrictions, so do not redistribute third-party material commercially without separate rights clarification.
+
+
+## v0.5.1 Preview — TV player improvements
+
+- Full-screen TV player with optional landscape rotation.
+- Previous/next channel controls and in-player searchable channel list.
+- Keep screen awake for TV viewing; restore orientation on close.
+- Fit/zoom video display, pause/resume and live buffering/error indicators.
+- One-tap retry or reload the RuVideoHub M3U8 playlist to refresh signed channel links.
+- TV playback remains online-only, with Audius music untouched.
+- Isolated application ID: `com.musicflow.tvplayerpreview`; v0.5.0 remains under `stable/v0.5.0-preview`.

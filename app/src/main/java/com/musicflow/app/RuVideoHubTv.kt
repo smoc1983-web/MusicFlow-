@@ -163,7 +163,8 @@ internal fun RuVideoHubTvScreen(
     var query by remember { mutableStateOf("") }
     var group by remember { mutableStateOf("Все") }
     var selected by remember { mutableStateOf<TvChannel?>(null) }
-    var playbackError by remember { mutableStateOf<String?>(null) }
+    var streamRefreshing by remember { mutableStateOf(false) }
+    var streamRefreshError by remember { mutableStateOf<String?>(null) }
 
     fun refresh() {
         scope.launch {
@@ -214,6 +215,28 @@ internal fun RuVideoHubTvScreen(
         controller.setMediaItem(media)
         controller.prepare()
         controller.play()
+    }
+
+    fun refreshPlayingChannel() {
+        val channel = selected ?: return
+        scope.launch {
+            streamRefreshing = true
+            streamRefreshError = null
+            try {
+                val reloaded = retrieveChannels()
+                channels = reloaded
+                val replacement = reloaded.firstOrNull { it.id == channel.id }
+                if (replacement == null) {
+                    streamRefreshError = "Канал исчез из обновлённого плейлиста."
+                } else {
+                    playChannel(replacement)
+                }
+            } catch (e: Exception) {
+                streamRefreshError = "Не удалось обновить эфир: " + (e.message ?: "ошибка сети")
+            } finally {
+                streamRefreshing = false
+            }
+        }
     }
 
     Column(modifier = modifier) {
@@ -318,91 +341,21 @@ internal fun RuVideoHubTvScreen(
     selected?.let { channel ->
         val controller = player
         if (controller != null) {
-            DisposableEffect(controller, channel.id) {
-                val listener = object : Player.Listener {
-                    override fun onPlayerError(errorDetail: PlaybackException) {
-                        playbackError = errorDetail.errorCodeName + ": " +
-                            (errorDetail.cause?.message ?: errorDetail.message.orEmpty()).take(150)
-                    }
-                }
-                controller.addListener(listener)
-                onDispose { controller.removeListener(listener) }
-            }
-            Dialog(
-                onDismissRequest = {
-                    if (controller.currentMediaItem?.mediaId == "ruvideo:" + channel.id)
+            TvPlayerDialog(
+                channel = channel,
+                channels = channels,
+                player = controller,
+                refreshing = streamRefreshing,
+                refreshError = streamRefreshError,
+                onSelectChannel = { playChannel(it) },
+                onReload = { refreshPlayingChannel() },
+                onClose = {
+                    if (controller.currentMediaItem?.mediaId == "ruvideo:" + channel.id) {
                         controller.pause()
-                    selected = null
-                },
-                properties = DialogProperties(usePlatformDefaultWidth = false)
-            ) {
-                Surface(
-                    color = Color(0xFF110F18),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxSize()
-                            .statusBarsPadding()
-                            .navigationBarsPadding()
-                            .padding(horizontal = 12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            TextButton(onClick = {
-                                controller.pause()
-                                selected = null
-                            }) { Text("Назад") }
-                            Text(
-                                channel.title,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        AndroidView(
-                            factory = { context ->
-                                PlayerView(context).apply {
-                                    useController = true
-                                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
-                                    this.player = controller
-                                }
-                            },
-                            update = { view -> view.player = controller },
-                            onRelease = { view -> view.player = null },
-                            modifier = Modifier.fillMaxWidth()
-                                .aspectRatio(16f / 9f)
-                                .background(Color.Black)
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            "Прямой эфир · " + channel.group,
-                            color = TV_ACCENT, style = MaterialTheme.typography.titleMedium
-                        )
-                        playbackError?.let {
-                            Spacer(Modifier.height(12.dp))
-                            Text("Ошибка воспроизведения: " + it,
-                                 color = Color(0xFFFFB3A8))
-                        }
-                        if (channel.isExpired) {
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                "У этого канала истёк срок действия ссылки в исходном плейлисте.",
-                                color = Color(0xFFFFB3A8)
-                            )
-                        }
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            "Ссылки предоставлены RuVideoHub. MusicFlow не хранит и не скачивает эфиры.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.LightGray
-                        )
                     }
+                    selected = null
                 }
-            }
+            )
         }
     }
 }
