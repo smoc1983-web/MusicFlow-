@@ -8,10 +8,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -22,8 +26,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
@@ -42,6 +48,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.atomic.AtomicInteger
 
 private val Violet = Color(0xFFAC80FF)
 private val Panel = Color(0xFF201B2C)
@@ -52,7 +59,8 @@ internal data class Track(
     val artist: String,
     val artwork: String?,
     val stream: String,
-    val durationSec: Long
+    val durationSec: Long,
+    val collectionTitle: String? = null
 )
 
 class MainActivity : ComponentActivity() {
@@ -103,7 +111,8 @@ class MainActivity : ComponentActivity() {
             else Track(
                 id, obj.optString("title"), obj.optString("artist"),
                 obj.optString("artwork").takeIf { it.startsWith("https://") },
-                stream, obj.optLong("durationSec")
+                stream, obj.optLong("durationSec"),
+                obj.optString("collectionTitle").takeIf { it.isNotBlank() }
             )
         }
     }.getOrDefault(emptyList())
@@ -118,6 +127,7 @@ class MainActivity : ComponentActivity() {
                 put("artwork", t.artwork ?: "")
                 put("stream", t.stream)
                 put("durationSec", t.durationSec)
+                put("collectionTitle", t.collectionTitle ?: "")
             })
         }
         getSharedPreferences("musicflow", MODE_PRIVATE)
@@ -133,10 +143,15 @@ private fun MusicScreen(
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val searchSequence = remember { AtomicInteger(0) }
     val favorites = remember { mutableStateListOf<Track>().also { it.addAll(saved()) } }
     var tracks by remember { mutableStateOf<List<Track>>(emptyList()) }
     var source by remember { mutableIntStateOf(0) }
     var search by remember { mutableStateOf("") }
+    var appliedSearch by remember { mutableStateOf("") }
+    var searchMode by remember { mutableStateOf(SearchMode.ALL) }
+    var sortMode by remember { mutableStateOf(SortMode.RELEVANCE) }
     var tab by remember { mutableIntStateOf(0) }
     var busy by remember { mutableStateOf(true) }
     var problem by remember { mutableStateOf<String?>(null) }
@@ -146,14 +161,15 @@ private fun MusicScreen(
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
 
-    fun fetch(query: String = "", which: Int = source) {
+    fun fetch(query: String = "", which: Int = source, mode: SearchMode = searchMode) {
+        val requestNumber = searchSequence.incrementAndGet()
         scope.launch {
             busy = true
             problem = null
             try {
                 val (found, errors) = coroutineScope {
                     val audius = if (which != 2) async { runCatching { audiusTracks(query) } } else null
-                    val archive = if (which != 1) async { runCatching { archiveTracks(query) } } else null
+                    val archive = if (which != 1) async { runCatching { archiveTracks(query, mode) } } else null
                     val first = audius?.await()
                     val second = archive?.await()
                     val problems = mutableListOf<String>()
@@ -161,14 +177,20 @@ private fun MusicScreen(
                     second?.exceptionOrNull()?.let { problems += "Archive: " + (it.message ?: "ошибка") }
                     Pair(first?.getOrNull().orEmpty() + second?.getOrNull().orEmpty(), problems)
                 }
-                tracks = found.distinctBy { it.id }
-                if (errors.isNotEmpty()) {
-                    problem = if (tracks.isEmpty()) errors.joinToString("\n") else "Часть источников недоступна: " + errors.joinToString("; ")
+                if (requestNumber == searchSequence.get()) {
+                    tracks = found.distinctBy { it.id }
+                    appliedSearch = query.trim()
+                    if (errors.isNotEmpty()) {
+                        problem = if (tracks.isEmpty()) errors.joinToString("\n")
+                                  else "Часть источников недоступна: " + errors.joinToString("; ")
+                    }
                 }
             } catch (e: Exception) {
-                problem = e.message ?: "Ошибка загрузки"
+                if (requestNumber == searchSequence.get()) {
+                    problem = e.message ?: "Ошибка загрузки"
+                }
             } finally {
-                busy = false
+                if (requestNumber == searchSequence.get()) busy = false
             }
         }
     }
@@ -205,13 +227,17 @@ private fun MusicScreen(
         p.play()
     }
 
-    val visible = if (tab == 2) favorites.toList() else tracks
+    val visible = when (tab) {
+        2 -> favorites.toList()
+        1 -> filterAndSortTracks(tracks, appliedSearch, searchMode, sortMode)
+        else -> tracks
+    }
     Column(
         Modifier.fillMaxSize().background(Color(0xFF110F18))
             .padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(20.dp))
-        Text("MusicFlow Preview", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+        Text("MusicFlow Search Preview", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Text("Онлайн · Audius + Live Music Archive", color = Color.LightGray)
         Spacer(Modifier.height(18.dp))
 
@@ -243,12 +269,33 @@ private fun MusicScreen(
             }
         }
         if (tab == 1) {
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                SearchMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = searchMode == mode,
+                        onClick = {
+                            searchMode = mode
+                            fetch(search, source, mode)
+                        },
+                        label = { Text(mode.label) }
+                    )
+                }
+            }
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
                 value = search,
                 onValueChange = { search = it },
-                label = { Text("Исполнитель или название") },
+                label = { Text("Исполнитель, песня или концерт") },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = {
+                    fetch(search)
+                    focusManager.clearFocus()
+                }),
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(6.dp))
@@ -256,7 +303,30 @@ private fun MusicScreen(
                 onClick = { fetch(search) },
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth()
-            ) { Text("Найти музыку") }
+            ) {
+                Text("Искать")
+            }
+            Spacer(Modifier.height(6.dp))
+            Text("Сортировка", color = Color.LightGray, style = MaterialTheme.typography.labelMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                SortMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = sortMode == mode,
+                        onClick = { sortMode = mode },
+                        label = { Text(mode.label) }
+                    )
+                }
+            }
+            if (source != 1 && searchMode == SearchMode.TITLE) {
+                Text(
+                    "В Archive поиск по названию относится прежде всего к названию концерта.",
+                    color = Color.LightGray,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
         }
         Spacer(Modifier.height(12.dp))
 
@@ -282,7 +352,7 @@ private fun MusicScreen(
             }
         }
         Text(
-            if (tab == 2) "Сохранённые треки" else if (tab == 1) "Результаты поиска" else "Музыка онлайн",
+            if (tab == 2) "Сохранённые треки" else if (tab == 1) "Результаты: " + visible.size else "Музыка онлайн",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(bottom = 8.dp)
@@ -308,8 +378,15 @@ private fun MusicScreen(
                     Column(Modifier.weight(1f)) {
                         Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
                         Text(track.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.LightGray)
-                        Text(if (track.id.startsWith("archive:")) "Live Music Archive" else "Audius",
-                            color = Violet, style = MaterialTheme.typography.labelSmall)
+                        track.collectionTitle?.takeIf { it.isNotBlank() }?.let {
+                            Text("Альбом / концерт: " + it, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                 color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+                        }
+                        Text(
+                            (if (track.id.startsWith("archive:")) "Archive" else "Audius") +
+                            (if (track.durationSec > 0L) " · " + formatTrackDuration(track.durationSec) else ""),
+                            color = Violet, style = MaterialTheme.typography.labelSmall
+                        )
                     }
                     TextButton(onClick = {
                         if (isFavorite) favorites.removeAll { it.id == track.id }
@@ -320,7 +397,7 @@ private fun MusicScreen(
             }
             if (visible.isEmpty() && !busy) item {
                 Text(
-                    if (tab == 2) "Избранного пока нет" else "Треки не найдены",
+                    if (tab == 2) "Избранного пока нет" else if (tab == 1 && tracks.isNotEmpty()) "Нет совпадений по выбранному полю. Попробуй режим «Везде»." else "Треки не найдены",
                     color = Color.LightGray, modifier = Modifier.padding(12.dp)
                 )
             }
@@ -401,7 +478,9 @@ private suspend fun audiusTracks(query: String): List<Track> = withContext(Dispa
                 val stream = Uri.parse(host + "/tracks/" + Uri.encode(id) + "/stream")
                     .buildUpon().appendQueryParameter("app_name", "MusicFlowAndroid")
                     .build().toString()
-                result.add(Track(id, title, artist, artwork, stream, item.optLong("duration")))
+                val collection = item.optJSONObject("album_backlink")?.optString("title")
+                    ?.takeIf { it.isNotBlank() }
+                result.add(Track(id, title, artist, artwork, stream, item.optLong("duration"), collection))
             }
             return@withContext result.distinctBy { it.id }
         } catch (failure: Exception) {

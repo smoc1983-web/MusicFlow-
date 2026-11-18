@@ -13,15 +13,17 @@ import java.net.URL
 
 // Internet Archive's Live Music Archive contains artist-permitted concert recordings.
 // We stream directly from archive.org; no offline copies are made.
-internal suspend fun archiveTracks(query: String): List<Track> = withContext(Dispatchers.IO) {
+internal suspend fun archiveTracks(query: String, mode: SearchMode = SearchMode.ALL): List<Track> = withContext(Dispatchers.IO) {
     val clean = query.trim().take(90)
         .replace(Regex("[^\\p{L}\\p{N} \\-']"), " ")
         .replace(Regex("\\s+"), " ")
         .trim()
     val archiveQuery = if (clean.isBlank()) {
         "collection:etree AND mediatype:etree"
-    } else {
-        "collection:etree AND (title:\"$clean\" OR creator:\"$clean\")"
+    } else when (mode) {
+        SearchMode.ARTIST -> "collection:etree AND creator:\"$clean\""
+        SearchMode.TITLE -> "collection:etree AND title:\"$clean\""
+        SearchMode.ALL -> "collection:etree AND (title:\"$clean\" OR creator:\"$clean\")"
     }
     val searchUrl = Uri.parse("https://archive.org/advancedsearch.php").buildUpon()
         .appendQueryParameter("q", archiveQuery)
@@ -67,16 +69,15 @@ private fun archiveItemTracks(identifier: String, doc: JSONObject): List<Track> 
         val itemTitle = file.optString("title").ifBlank {
             fileName.substringAfterLast('/').substringBeforeLast('.').take(55)
         }
-        val fullTitle = if (itemTitle.contains(concert, ignoreCase = true)) itemTitle
-            else itemTitle + " · " + concert
         val audioUrl = "https://archive.org/download/" + safeId + "/" + Uri.encode(fileName, "/")
         result += Track(
             id = "archive:" + identifier + ":" + fileName,
-            title = fullTitle.take(140),
+            title = itemTitle.take(140),
             artist = creator.take(90),
             artwork = cover,
             stream = audioUrl,
-            durationSec = 0L
+            durationSec = parseArchiveDuration(file.optString("length")),
+            collectionTitle = concert.take(160)
         )
         if (result.size == 2) break
     }
@@ -99,4 +100,11 @@ private fun archiveGet(url: String): String {
     } finally {
         connection.disconnect()
     }
+}
+
+private fun parseArchiveDuration(length: String): Long {
+    val parts = length.trim().split(":")
+    if (parts.isEmpty() || parts.size > 3) return 0L
+    val numbers = parts.map { it.toLongOrNull() ?: return 0L }
+    return numbers.fold(0L) { total, part -> total * 60L + part }
 }
