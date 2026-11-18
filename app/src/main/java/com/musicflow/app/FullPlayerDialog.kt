@@ -57,10 +57,32 @@ internal fun FullPlayerDialog(
     onClose: () -> Unit
 ) {
     var showQueue by remember { mutableStateOf(false) }
+    var sliderDragging by remember(player) { mutableStateOf(false) }
+    var seekPending by remember(player) { mutableStateOf(false) }
+    var sliderPositionMs by remember(player) { mutableLongStateOf(positionMs.coerceAtLeast(0L)) }
     var shuffle by remember { mutableStateOf(player.shuffleModeEnabled) }
     var repeat by remember { mutableIntStateOf(player.repeatMode) }
     var currentIndex by remember { mutableIntStateOf(player.currentMediaItemIndex) }
     var queue by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
+
+    // UI follows playback while idle, but never pulls the slider back during a drag.
+    LaunchedEffect(positionMs, sliderDragging, seekPending) {
+        if (!sliderDragging && !seekPending) {
+            sliderPositionMs = positionMs.coerceAtLeast(0L)
+        }
+    }
+    // ExoPlayer seeks asynchronously; hold the chosen position until its state catches up.
+    LaunchedEffect(seekPending) {
+        if (seekPending) {
+            delay(900L)
+            seekPending = false
+        }
+    }
+    LaunchedEffect(currentIndex) {
+        sliderDragging = false
+        seekPending = false
+        sliderPositionMs = player.currentPosition.coerceAtLeast(0L)
+    }
 
     LaunchedEffect(player) {
         while (true) {
@@ -190,10 +212,27 @@ internal fun FullPlayerDialog(
                         )
                         Spacer(Modifier.height(30.dp))
                         val end = durationMs.coerceAtLeast(1L)
+                        val displayedMs = if (sliderDragging || seekPending) sliderPositionMs
+                                          else positionMs
                         Slider(
-                            value = positionMs.coerceIn(0L, end).toFloat(),
-                            onValueChange = { player.seekTo(it.toLong()) },
+                            value = displayedMs.coerceIn(0L, end).toFloat(),
+                            onValueChange = { value ->
+                                sliderDragging = true
+                                seekPending = false
+                                sliderPositionMs = value.toLong().coerceIn(0L, end)
+                            },
+                            onValueChangeFinished = {
+                                if (sliderDragging && durationMs > 0L) {
+                                    val target = sliderPositionMs.coerceIn(0L, end)
+                                    sliderDragging = false
+                                    seekPending = true
+                                    player.seekTo(target)
+                                } else {
+                                    sliderDragging = false
+                                }
+                            },
                             valueRange = 0f..end.toFloat(),
+                            enabled = durationMs > 0L,
                             modifier = Modifier.fillMaxWidth(),
                             colors = SliderDefaults.colors(
                                 thumbColor = Highlight,
@@ -205,7 +244,7 @@ internal fun FullPlayerDialog(
                             Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(timeLabel(positionMs), color = Color.LightGray,
+                            Text(timeLabel(displayedMs), color = Color.LightGray,
                                 style = MaterialTheme.typography.labelMedium)
                             Text(if (durationMs <= 0L) "--:--" else timeLabel(durationMs),
                                 color = Color.LightGray, style = MaterialTheme.typography.labelMedium)
