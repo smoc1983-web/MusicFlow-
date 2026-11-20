@@ -94,11 +94,7 @@ class TvFullscreenActivity : ComponentActivity() {
                 if (player == null) Box(Modifier.fillMaxSize().background(Color.Black),
                     contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 else FullscreenTvContent(player, snapshot, onExit = {
-                    if (player.currentMediaItem?.mediaId?.startsWith("ruvideo:") == true) {
-                        player.stop()
-                        player.clearMediaItems()
-                    }
-                    TvPlaybackHandoff.clear()
+                    // Return to inline preview; stopping playback is a separate action.
                     finish()
                 })
             }
@@ -224,6 +220,7 @@ private fun FullscreenTvContent(player: MediaController, initial: TvHandoff,
     fun choose(index: Int) {
         val channel = channels.getOrNull(index) ?: return
         selected = index
+        TvPlaybackHandoff.set(channels, channel, initial.sourceId)
         failure = null
         notice = null
         val path = android.net.Uri.parse(channel.streamUrl).path.orEmpty().lowercase(Locale.ROOT)
