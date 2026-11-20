@@ -221,6 +221,22 @@ private fun MusicScreen(
                             }
                         }
                 }
+                if (requestNumber == searchSequence.get() && tracks.isNotEmpty()) {
+                    // Enrich after live songs are shown. Metadata requests do not
+                    // delay audio search and never replace verified stream URLs.
+                    val batch = tracks.toList()
+                    scope.launch {
+                        val enriched = runCatching {
+                            AlbumCatalog.enrichTracks(context, batch, requested)
+                        }.getOrElse { failure ->
+                            AppDiagnostics.failure("Album", "enrich search results", failure)
+                            emptyList()
+                        }
+                        if (requestNumber == searchSequence.get() && enriched.isNotEmpty()) {
+                            tracks = combineMusicTracks(tracks, enriched)
+                        }
+                    }
+                }
                 if (requestNumber == searchSequence.get() && errors.isNotEmpty()) {
                     problem = if (tracks.isEmpty()) {
                         "Не удалось получить музыку. " + errors.joinToString("; ").take(320)
@@ -237,6 +253,33 @@ private fun MusicScreen(
         }
     }
     LaunchedEffect(Unit) { AppDiagnostics.info("Search", "Awaiting music search input") }
+
+    // Back-fill album tags for favorites saved by older versions, but do not
+    // request metadata for every song separately.
+    LaunchedEffect(tab, favorites.size) {
+        if (tab != 2 || favorites.isEmpty()) return@LaunchedEffect
+        val pending = favorites.toList().filter { it.collectionTitle.isNullOrBlank() }
+        val artistGroups = pending.groupBy { it.artist.trim() }.entries.take(4)
+        for ((artist, items) in artistGroups) {
+            val updates = runCatching {
+                AlbumCatalog.enrichTracks(context, items, artist)
+            }.getOrElse {
+                AppDiagnostics.failure("Album", "enrich saved tracks", it)
+                emptyList()
+            }
+            if (tab != 2) return@LaunchedEffect
+            if (updates.isNotEmpty()) {
+                val byId = updates.filter { !it.collectionTitle.isNullOrBlank() }
+                    .associateBy { it.id }
+                if (byId.isNotEmpty()) {
+                    val refreshed = favorites.map { byId[it.id] ?: it }
+                    favorites.clear()
+                    favorites.addAll(refreshed)
+                    save(refreshed)
+                }
+            }
+        }
+    }
     LaunchedEffect(player) {
         while (player != null) {
             playing = player.isPlaying
