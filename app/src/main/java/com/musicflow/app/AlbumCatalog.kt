@@ -74,7 +74,7 @@ internal object AlbumCatalog {
                 "MusicFlow/0.7.8 (https://github.com/smoc1983-web/MusicFlow-)"
             )
         }
-        try {
+        return try {
             val status = conn.responseCode
             if (status !in 200..299) throw IOException("HTTP $status")
             val reader = conn.inputStream.bufferedReader(Charsets.UTF_8)
