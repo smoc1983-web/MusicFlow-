@@ -18,15 +18,33 @@ internal object CoverLookup {
     private const val MISSING = "_missing_"
     private val cache = ConcurrentHashMap<String, String>()
     private val semaphore = Semaphore(2)
+
+    /** Ask known artwork CDNs for their documented high-resolution rendition. */
+    internal fun preferredProvided(url: String?): String? {
+        val original = url?.takeIf { it.startsWith("https://") } ?: return null
+        return when {
+            original.contains("mzstatic.com", ignoreCase = true) ->
+                original.replace(Regex("[0-9]{2,4}x[0-9]{2,4}bb"), "1200x1200bb")
+            original.contains("coverartarchive.org", ignoreCase = true) ->
+                original.replace("/front-250", "/front-1200")
+            else -> original
+        }
+    }
+
+    private fun needsUpgrade(url: String?): Boolean = url == null ||
+        url.contains("zaycev.net", ignoreCase = true) ||
+        url.contains("thumb", ignoreCase = true) ||
+        url.contains("100x100", ignoreCase = true) ||
+        url.contains("front-250", ignoreCase = true)
     private fun normalized(s: String) = s.lowercase(Locale.ROOT)
         .replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
         .replace(Regex("\\s+"), " ")
 
     suspend fun resolve(context: Context, artist: String, title: String, provided: String?): String? {
-        if (provided?.startsWith("https://") == true) return provided
-        if (artist.isBlank() || title.isBlank()) return null
+        val original = preferredProvided(provided)
+        if (!needsUpgrade(provided) || artist.isBlank() || title.isBlank()) return original
         val key = normalized(artist) + "|" + normalized(title)
-        cache[key]?.let { return it.takeUnless { v -> v == MISSING } }
+        cache[key]?.let { return it.takeUnless { v -> v == MISSING } ?: original }
         return withContext(Dispatchers.IO) {
             val prefs = context.applicationContext
                 .getSharedPreferences("musicflow_cover_cache", Context.MODE_PRIVATE)
@@ -34,17 +52,17 @@ internal object CoverLookup {
             if (prefs.getLong("exp_" + id, 0L) > System.currentTimeMillis()) {
                 val old = prefs.getString(id, MISSING) ?: MISSING
                 cache[key] = old
-                return@withContext old.takeUnless { it == MISSING }
+                return@withContext old.takeUnless { it == MISSING } ?: original
             }
             semaphore.acquire()
             try {
-                cache[key]?.let { return@withContext it.takeUnless { v -> v == MISSING } }
+                cache[key]?.let { return@withContext it.takeUnless { v -> v == MISSING } ?: original }
                 val found = runCatching { iTunes(artist, title) }.getOrNull()
                     ?: runCatching { musicBrainz(artist, title) }.getOrNull()
                 cache[key] = found ?: MISSING
                 prefs.edit().putString(id, found ?: MISSING)
                     .putLong("exp_" + id, System.currentTimeMillis() + 7L * 86400_000L).apply()
-                found
+                found ?: original
             } finally {
                 semaphore.release()
             }
@@ -91,7 +109,7 @@ internal object CoverLookup {
             if (!titleMatch || !artistMatch) continue
             val url = item.optString("artworkUrl100")
             if (url.startsWith("https://")) {
-                return url.replace("100x100bb", "600x600bb").replace("100x100-75", "600x600-75")
+                return url.replace("100x100bb", "1200x1200bb").replace("100x100-75", "1200x1200-75")
             }
         }
         return null
@@ -111,7 +129,7 @@ internal object CoverLookup {
             for (j in 0 until minOf(albums.length(), 2)) {
                 val uuid = albums.optJSONObject(j)?.optString("id").orEmpty()
                 if (!Regex("[a-f0-9-]{36}").matches(uuid)) continue
-                val image = "https://coverartarchive.org/release/$uuid/front-250"
+                val image = "https://coverartarchive.org/release/$uuid/front-1200"
                 val conn = URL(image).openConnection() as HttpURLConnection
                 conn.requestMethod = "HEAD"
                 conn.instanceFollowRedirects = true
@@ -128,7 +146,7 @@ internal object CoverLookup {
 @Composable
 internal fun rememberCoverArt(artist: String, title: String, provided: String?): State<String?> {
     val context = LocalContext.current
-    return produceState(initialValue = provided, artist, title, provided) {
+    return produceState(initialValue = CoverLookup.preferredProvided(provided), artist, title, provided) {
         value = CoverLookup.resolve(context, artist, title, provided)
     }
 }
