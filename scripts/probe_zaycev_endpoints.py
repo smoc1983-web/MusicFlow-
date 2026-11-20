@@ -152,3 +152,16 @@ for term in ("Кино", "Teddy Swims"):
        obj=next(iter(v.values()))
        print("DICT_SAMPLE_KEYS",k,list(obj)[:28] if isinstance(obj,dict) else type(obj).__name__)
   except Exception as e:print("SEARCH_JSON_ERROR",term,str(e)[:150])
+
+print("---- SEARCH RELEVANCE CHECK ----")
+for term in ("Кино", "Teddy Swims", "NONEXISTENT_QP9x7_NO_TRACK"):
+ address="https://zaycev.net/api/external/pages/search/tracks?q="+urllib.parse.quote(term)+"&page=1&limit=12"
+ try:
+  data=json.loads(get(address,60000))
+  infos=data.get("tracksInfo",{})
+  ids=data.get("trackIds",[])
+  examples=[{
+   "artist":str(infos.get(str(i),{}).get("artistName",""))[:24],
+   "title":str(infos.get(str(i),{}).get("track",""))[:25]} for i in ids[:3]]
+  print("RELEVANCE",repr(term),"popularInSearch",data.get("popularInSearch"),"totalIds",len(ids),"examples",examples)
+ except Exception as e:print("RELEVANCE_ERROR",repr(term),str(e)[:100])
