@@ -62,3 +62,15 @@ The repository contains GPLv3 language as well as additional non-commercial rest
 
 Parser based on the public source and unit fixture in:
 https://github.com/Eremiteb/mytasks/tree/main/music_downloader
+
+
+## v0.7.1 Preview — unified Mail.ru Music search
+
+- Adds live search in the Mail.ru "My World" public music catalog alongside Audius and Muzofond.
+- Search results are merged and de-duplicated by artist/title, without selecting or displaying a music provider.
+- JSON API: `https://my.mail.ru/cgi-bin/my/ajax` with `func_name=music.search` and a public search query.
+- Direct MP3 playback through the same Media3 controller; source-scoped Referer added for moosic.my.mail.ru.
+- Verified on 2026-11-20 from GitHub Actions: mobile search HTTP 200; JSON search HTTP 200 with MusicData; sample MP3 range HTTP 206 audio/mpeg.
+- Does not require an account, embed WebView or download music.
+- Network or licensing restrictions may affect availability on other networks. Verified endpoint access does not guarantee every track plays.
+- Protected previous version: `stable/v0.7.0-preview`; this version uses distinct application ID `com.musicflow.mailrupreview`.

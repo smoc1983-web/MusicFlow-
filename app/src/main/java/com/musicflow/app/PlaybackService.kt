@@ -29,6 +29,14 @@ class PlaybackService : MediaSessionService() {
                         "Accept-Language" to "ru-RU,ru;q=0.9"
                     )
                 )
+            } else if (host == "moosic.my.mail.ru" || host.endsWith(".moosic.my.mail.ru")) {
+                spec.withAdditionalHeaders(
+                    mapOf(
+                        "Referer" to "https://my.mail.ru/music/",
+                        "User-Agent" to "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 Chrome/130.0.0.0 Mobile Safari/537.36",
+                        "Accept-Language" to "ru-RU,ru;q=0.9"
+                    )
+                )
             } else spec
         }
         val mediaSourceFactory = DefaultMediaSourceFactory(resolvedDataSource)

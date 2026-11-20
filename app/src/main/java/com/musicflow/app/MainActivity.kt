@@ -197,6 +197,14 @@ private fun MusicScreen(
                                 }.onFailure { errors += "Muzofond: " + (it.message ?: "ошибка сети") }
                             }
                         }
+                        launch {
+                            val result = runCatching { mailRuTracks(requested) }
+                            if (requestNumber == searchSequence.get()) {
+                                result.onSuccess { found ->
+                                    tracks = combineMusicTracks(tracks, found)
+                                }.onFailure { errors += "Mail.ru: " + (it.message ?: "ошибка сети") }
+                            }
+                        }
                     }
                 }
                 if (requestNumber == searchSequence.get() && errors.isNotEmpty()) {
