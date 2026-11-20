@@ -80,3 +80,52 @@ for path,payload in [
 for key in ["getSearchResults","getSearch","pages/search","search/query","getTrack","getTrackInfo","getSingleTrack","pages/track","getTrackPlayInfoByHash"]:
  for m in list(re.finditer(re.escape(key),js,re.I))[-2:]:
   print("API_JS_ROUTE",key,repr(js[max(0,m.start()-170):m.end()+220][:410]))
+
+print("---- VERIFIED ANONYMOUS MEDIA RESOLUTION ----")
+def post(path, obj):
+ req=urllib.request.Request(
+ "https://zaycev.net/api/external/"+path,
+ data=json.dumps(obj).encode(),method="POST",headers={
+ "User-Agent":UA,"Referer":"https://zaycev.net/",
+ "Accept":"application/json","Content-Type":"application/json",
+ "Origin":"https://zaycev.net"})
+ try:
+  with urllib.request.urlopen(req,timeout=13) as response:
+   result=json.load(response)
+   print("POST_KEYS",path,list(result) if isinstance(result,dict) else type(result).__name__)
+   return result
+ except Exception as e:
+  print("POST_ERROR",path,str(e)[:110])
+  return {}
+meta=post("track/filezmeta",{"trackIds":[25077263],"subscription":False})
+for item in meta.get("tracks",[])[:2]:
+ hash=item.get("streaming")
+ if hash:
+  import urllib.parse
+  raw=get("https://zaycev.net/api/external/track/play/"+str(hash),600)
+  if raw:
+   try:
+    obj=json.loads(raw)
+    print("PLAY_KEYS",list(obj) if isinstance(obj,dict) else type(obj).__name__)
+    stream=obj.get("url","")
+    if stream:
+     uri=urllib.parse.urlsplit(stream)
+     print("PLAY_LINK",uri.scheme,uri.netloc,uri.path.rsplit(".",1)[-1], "LEN",len(stream))
+     req=urllib.request.Request(stream,headers={
+      "User-Agent":UA,"Range":"bytes=0-1","Referer":"https://zaycev.net/"})
+     try:
+      with urllib.request.urlopen(req,timeout=14) as f:
+       print("AUDIO_PROBE",f.status,f.headers.get("Content-Type"),"SAMPLE",len(f.read(2)))
+     except Exception as e:print("AUDIO_PROBE_FAIL",str(e)[:140])
+   except Exception as e: print("PLAY_PARSE_ERROR",str(e)[:120])
+for term in ("Кино", "Teddy Swims"):
+ endpoint="https://zaycev.net/api/external/pages/search/tracks?q="+urllib.parse.quote(term)+"&page=1&limit=10"
+ raw=get(endpoint,2200)
+ if raw:
+  try:
+   obj=json.loads(raw)
+   print("SEARCH_PUBLIC",term,"ROOT_KEYS",list(obj),"LEN",len(raw))
+   for k,v in obj.items():
+    print("SEARCH_NODE",k,type(v).__name__, len(v) if isinstance(v,(list,dict)) else "", "SAMPLE_KEYS",
+      list(v[0].keys())[:18] if isinstance(v,list) and v and isinstance(v[0],dict) else list(v)[:12] if isinstance(v,dict) else [])
+  except Exception as e:print("SEARCH_PARSE_FAIL",term,str(e)[:120])
