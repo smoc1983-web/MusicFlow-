@@ -24,11 +24,22 @@ internal class MusicPlaybackRecovery(
     private val blockedSources = mutableSetOf<String>()
     private var retriedCurrent = false
     private var searchedAgain = false
-    private var replacement: MediaItem? = null
+    // Carry a token in the MediaItem itself. Media3 may recreate item instances
+    // while changing the URI, so reference identity is not a reliable guard.
+    private val recoveryTokenKey = "com.musicflow.recovery_transition"
+    private var nextRecoveryToken = 0
+    private var pendingRecoveryToken: Int? = null
     private var pending: Job? = null
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-        if (mediaItem === replacement && replacement != null) return
+        val token = mediaItem?.mediaMetadata?.extras?.getInt(recoveryTokenKey, 0) ?: 0
+        if (pendingRecoveryToken != null && token == pendingRecoveryToken) {
+            // This transition belongs to our own fallback. Keep failed URLs
+            // and blocked providers so the next failure cannot loop to them.
+            pendingRecoveryToken = null
+            return
+        }
+        pendingRecoveryToken = null
         pending?.cancel()
         attempted.clear()
         blockedSources.clear()
@@ -97,22 +108,25 @@ internal class MusicPlaybackRecovery(
             val selected = candidate
             val index = player.currentMediaItemIndex
             val resumePositionMs = player.currentPosition.coerceAtLeast(0L)
+            val transitionToken = ++nextRecoveryToken
             val updated = failed.buildUpon().setUri(selected.uri)
                 .setMediaMetadata(failed.mediaMetadata.buildUpon().setExtras(Bundle(extras).apply {
                     putString(MUSIC_STREAMS, encodeStreams(
                         (listOf(selected) + available).distinctBy { it.uri }.take(12)
                     ))
                     putString(MUSIC_SOURCE, selected.source)
+                    putInt(recoveryTokenKey, transitionToken)
                 }).build()).build()
-            replacement = updated
+            pendingRecoveryToken = transitionToken
             retriedCurrent = false
             try {
                 player.replaceMediaItem(index, updated)
                 player.seekTo(index, resumePositionMs)
                 player.prepare()
                 AppDiagnostics.info("Recovery", "switched source=${selected.source}")
-            } finally {
-                replacement = null
+            } catch (failure: Exception) {
+                pendingRecoveryToken = null
+                AppDiagnostics.failure("Recovery", "fallback playlist update", failure)
             }
         }
     }
