@@ -12,7 +12,7 @@ gradle = Path("app/build.gradle.kts").read_text(encoding="utf-8")
 assert 'listOf(0 to "Музыка", 2 to "Избранное", 3 to "ТВ")' in main
 assert 'contentDescription = "Поиск"' in main
 assert 'Text("Что послушаем?' not in home
-assert 'Text("Подборки")' in home and 'Text("Жанры")' in home
+assert 'Text("Подборки"' in home and 'Text("Жанры")' in home
 assert home.count("DropdownMenu(") >= 2
 assert "OutlinedTextField(" in home
 assert "onPlay(selected, collected)" in home
