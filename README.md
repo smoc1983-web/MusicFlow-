@@ -1,31 +1,16 @@
-# MusicFlow — музыка и IPTV для Android
+# MusicFlow v0.7.4 Preview
 
-Актуальная Preview-версия: **0.7.3**. Kotlin, Jetpack Compose, Media3.
+Android app, Kotlin + Jetpack Compose + Media3. Separate package: com.musicflow.artworktvpreview.
 
-## Музыка
+### New
+- Album art from public iTunes metadata with MusicBrainz/Cover Art Archive fallback; exact artist/title matching, cached locally.
+- Music player has -10 / +10-second seek buttons in addition to next/previous song, when media is seekable.
+- TV player has an immersive fullscreen mode (dialog window expands, system bars hide, Activity requests landscape, restores on close).
+- TV quality menu reads actual video variants from Media3 HLS/DASH tracks: Auto or an available supported height/bitrate. No artificial HD modes. Live TV seek buttons are disabled for unseekable sources.
+- Homepage inspired by Zaycev's information architecture: popular, new music, genres and themed collections. Metadata is fetched from its public HTML and is updated on app startup. Selecting a song searches the existing playable catalogs.
+- **Zaycev audio is not yet a direct stream source:** its HTML does not publish direct MP3 URLs. Zaycev songs are discovery entries and selecting them triggers native unified search in Muzofond and Mail.ru. Never misrepresent this as direct Zaycev playback.
+- Audius stays removed. IPTV, custom playlists, logging and favorites remain intact.
 
-- Единый поиск песен в Muzofond и музыке Mail.ru.
-- Источники не разделяются по вкладкам и не подписываются в списке результатов.
-- Песни воспроизводятся внутри приложения через Media3; нет WebView и скачивания музыки.
-- Поддерживаются избранное, очередь воспроизведения, фоновое аудио и перемотка.
-- **Audius полностью отключён и удалён:** никаких вызовов его API, поиска, стартовой подборки или кнопок диагностики. Главная вкладка — «Поиск».
-
-## IPTV
-
-- RuVideoHub и пользовательские IPTV-плейлисты M3U/M3U8.
-- Поддержка собственных URL каналов, полноэкранного просмотра и открытия потока во внешнем плеере.
-- Доступность отдельных потоков зависит от их срока действия и региона.
-
-## Логи
-
-- Вкладка «Логи»: просмотр, обновление, очистка и ручная отправка диагностического файла.
-- Логи сохраняются локально, не отправляются автоматически; адреса потоков и строки поиска намеренно не записываются.
-
-## Сборка
-
-GitHub Actions → Build MusicFlow APK → последний успешный запуск → Artifacts → MusicFlow-preview-apk.
-
-Отдельный пакет: `com.musicflow.noaudiuspreview`, не заменяет предыдущую установленную Preview.
-Рабочая предыдущая версия сохранена в ветке `feature/diagnostics-v0.7.2-preview`.
-
-Доступность Muzofond и Mail.ru может различаться в зависимости от сети, VPN или географических ограничений.
+### Build
+GitHub Actions > Build MusicFlow APK > Artifacts > MusicFlow-preview-apk.
+The previous build is preserved at stable/v0.7.3-preview.

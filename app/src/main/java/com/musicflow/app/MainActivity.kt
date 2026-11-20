@@ -158,7 +158,7 @@ private fun MusicScreen(
     var appliedSearch by remember { mutableStateOf("") }
     var searchMode by remember { mutableStateOf(SearchMode.ALL) }
     var sortMode by remember { mutableStateOf(SortMode.RELEVANCE) }
-    var tab by remember { mutableIntStateOf(1) }
+    var tab by remember { mutableIntStateOf(0) }
     var busy by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
     var expandedPlayer by remember { mutableStateOf(false) }
@@ -308,7 +308,7 @@ private fun MusicScreen(
         Spacer(Modifier.height(18.dp))
 
         Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(1 to "Поиск", 2 to "Избранное", 3 to "ТВ", 4 to "Логи")
+            listOf(0 to "Главная", 1 to "Поиск", 2 to "Избранное", 3 to "ТВ", 4 to "Логи")
                 .forEach { (index, title) ->
                 FilterChip(
                     selected = tab == index,
@@ -320,7 +320,16 @@ private fun MusicScreen(
                 )
             }
         }
-        if (tab == 3) {
+        if (tab == 0) {
+            MusicHomeScreen(
+                onSearch = { suggested ->
+                    tab = 1
+                    search = suggested
+                    if (suggested.isNotBlank()) fetch(suggested)
+                },
+                modifier = Modifier.weight(1f)
+            )
+        } else if (tab == 3) {
             RuVideoHubTvScreen(player = player, modifier = Modifier.weight(1f))
         } else if (tab == 4) {
             DiagnosticsScreen(modifier = Modifier.weight(1f))
