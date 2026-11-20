@@ -1,26 +1,25 @@
-# MusicFlow — v0.7.7 Preview
+# MusicFlow v0.7.8 Preview — альбомы и подборки
 
-## Album grouping
-- Search and favorites automatically group songs by album **when** the provider supplies a reliable collectionTitle.
-- Album groups show their artist, album title and track count, without splitting by provider.
-- Tracks without album metadata remain in "Отдельные треки"; titles are not invented.
-- When duplicate tracks arrive from Muzofond and Mail.ru, MusicFlow preserves the working stream and retains richer album/cover metadata.
-- Tap an album track to queue that album's available tracks in their current listing order; previous/next works immediately in the player.
+## Альбомные метаданные
 
-## Player
-- Rebuilt the full music player as a fixed-layout window. Artwork shrinks to the remaining screen height.
-- Transport controls, progress slider, playback/seek and shuffle/favorite/repeat stay anchored below content; they do not scroll off screen.
-- Dedicated full-screen button makes the album artwork an immersive background and hides Android system bars.
-- Previous/next stays accessible without returning to the results: uses the current Media3 queue when possible, or fetches a verified album list and resolves the adjacent song on demand.
-- Album and queue views are reachable from icons in the player header; both keep the transport controls visible.
-- If no adjacent playable track is available, an inline message explains why; no unrelated song is played.
-- Close (X) still stops/clears the full playback queue; Back only closes the view.
+- MusicBrainz больше не используется для поиска альбома и треклиста: на телефоне часто возникало Connection reset.
+- Вместо него открытые без ключа Apple iTunes Search API и Deezer API. Проверка GitHub Actions 20 ноября 2026: оба HTTP 200 и списки песен для Teddy Swims и Кино.
+- После показа песен Muzofond/Mail.ru выполняется по одному фоновому запросу к каждому каталогу для обогащения метаданных.
+- Название альбома и обложка подставляются только при подтверждённом совпадении исполнителя и песни, аудиопоток не меняется.
+- В поиске и избранном треки группируются по альбомам, подтверждённые метаданные кешируются 7 суток.
+- Старые сохранённые композиции проверяются при открытии избранного.
+- Из окна плеера открывается полный треклист альбома из iTunes, а при необходимости из Deezer. У этих сервисов не используются аудиопотоки.
+- Неизвестные альбомы не подменяются произвольными подборками.
 
-## Other features preserved
-- Music from Muzofond and Mail.ru; Zaycev editorial home; Audius removed.
-- Cover lookup, fullscreen TV Activity, 6 picture-size modes, IPTV via URL and local M3U/M3U8 files, diagnostic exports.
-- Previous v0.7.6 is preserved in `stable/v0.7.6-preview`.
-- Separate installation package: `com.musicflow.albumplayerpreview`.
+## Подборки Zaycev
 
-## Build
-GitHub Actions → Build MusicFlow APK → Artifact. Android device runtime must be validated separately.
+- Компактная горизонтальная строка тематических подборок перенесена сразу после кнопки поиска, перед жанрами, популярным и новинками.
+- Композиции выбранной подборки появляются перед Top-100; страница не переводит пользователя на отдельный поисковый источник.
+
+## Сохранённые функции
+
+- Полноэкранное IPTV, локальные файлы M3U/M3U8, настройка размера ТВ, кнопки перемотки, обложки, журнал диагностики.
+- Полный музыкальный плеер с закреплёнными элементами управления и навигацией по альбому.
+- Audius удалён. Separate package com.musicflow.albums78preview.
+- Предыдущая версия сохранена в stable/v0.7.7-preview.
+- CI компилирует APK, но работу на Samsung S24 ещё нужно проверить.
