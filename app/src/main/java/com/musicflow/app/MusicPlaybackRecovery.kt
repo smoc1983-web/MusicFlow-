@@ -12,6 +12,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 
 @OptIn(UnstableApi::class)
 internal class MusicPlaybackRecovery(
@@ -38,14 +40,19 @@ internal class MusicPlaybackRecovery(
         val streams = decodeStreams(extras.getString(MUSIC_STREAMS))
         val uri = failed.localConfiguration?.uri ?: return
         val active = streams.firstOrNull { it.uri == uri.toString() } ?: return
-        val status = generateSequence<Throwable>(error) { it.cause }
-            .filterIsInstance<HttpDataSource.InvalidResponseCodeException>()
-            .firstOrNull()?.responseCode
+        val causes = generateSequence<Throwable>(error) { it.cause }.take(12).toList()
+        val status = causes.firstNotNullOfOrNull {
+            when (it) {
+                is HttpDataSource.InvalidResponseCodeException -> it.responseCode
+                is ProviderHttpException -> it.status
+                else -> null
+            }
+        }
         val temporary = status == 408 || status == 429 || (status != null && status in 500..599) ||
             error.errorCode in setOf(
                 PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
                 PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT
-            )
+            ) || causes.any { it is SocketTimeoutException || it is UnknownHostException }
         val refreshZaycev = uri.scheme == "zaycev" && status in setOf(403, 404, 410)
         AppDiagnostics.info("Recovery",
             "source=${active.source} code=${error.errorCodeName} http=${status ?: 0}")
@@ -62,6 +69,9 @@ internal class MusicPlaybackRecovery(
                 return@launch
             }
             var available = streams
+            val blocked = status in setOf(401, 451) ||
+                error.errorCodeName.startsWith("ERROR_CODE_DRM")
+            if (blocked) attempted.addAll(streams.filter { it.source == active.source }.map { it.uri })
             var candidate = available.firstOrNull { it.uri !in attempted }
             if (candidate == null && !searchedAgain) {
                 searchedAgain = true
@@ -70,8 +80,6 @@ internal class MusicPlaybackRecovery(
                     failed.mediaMetadata.title?.toString().orEmpty(),
                     extras.getLong(MUSIC_DURATION_SECONDS)
                 )
-                val blocked = status in setOf(401, 451) ||
-                    error.errorCodeName.startsWith("ERROR_CODE_DRM")
                 val refreshed = matches.flatMap { it.streams() }
                     .filter { !blocked || it.source != active.source }
                 available = (streams + refreshed).distinctBy { it.uri }

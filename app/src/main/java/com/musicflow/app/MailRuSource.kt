@@ -60,11 +60,8 @@ internal suspend fun mailRuTracks(query: String): List<Track> = withContext(Disp
         setRequestProperty("Accept", "application/json, text/plain, */*")
     }
     val text = try {
-        when (val status = connection.responseCode) {
-            200 -> Unit
-            401, 403, 451 -> throw IOException("Музыкальный каталог недоступен (HTTP $status)")
-            else -> throw IOException("Mail.ru: HTTP $status")
-        }
+        val status = connection.responseCode
+        if (status != 200) throw ProviderHttpException(status)
         // The API returns a small list. Avoid unbounded reads.
         connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
             val output = StringBuilder()

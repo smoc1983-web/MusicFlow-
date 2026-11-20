@@ -6,8 +6,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.util.Locale
 import kotlin.math.abs
+
+internal class ProviderHttpException(val status: Int) : IOException("HTTP $status")
 
 internal data class MusicStream(val id: String, val uri: String) {
     val source: String get() = id.substringBefore(':')

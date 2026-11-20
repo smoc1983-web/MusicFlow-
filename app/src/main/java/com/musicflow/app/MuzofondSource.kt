@@ -1,5 +1,6 @@
 package com.musicflow.app
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
@@ -38,12 +39,7 @@ internal suspend fun muzofondTracks(query: String): List<Track> =
                 try {
                     responseCode = connection.responseCode
                     if (responseCode == 404) continue
-                    if (responseCode in setOf(401, 403, 451)) {
-                        throw IOException("HTTP $responseCode: доступ ограничен для текущего соединения.")
-                    }
-                    if (responseCode !in 200..299) {
-                        throw IOException("Сервер ответил: HTTP $responseCode")
-                    }
+                    if (responseCode !in 200..299) throw ProviderHttpException(responseCode)
                     finalUrl = connection.url.toExternalForm()
                     // Parse only a bounded HTML response, never save songs to disk.
                     html = connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
@@ -67,9 +63,11 @@ internal suspend fun muzofondTracks(query: String): List<Track> =
                 }
                 // Some installations route /search/ -> /music/ automatically;
                 // retry the canonical /music/ path if no results were parsed.
+            } catch (cancel: CancellationException) {
+                throw cancel
             } catch (e: Exception) {
                 lastError = e
-                if (listOf(401, 403, 451).any { e.message?.contains("HTTP $it") == true }) break
+                if (e is ProviderHttpException && e.status in setOf(401, 403, 451)) break
             }
         }
         if (lastError != null) throw lastError

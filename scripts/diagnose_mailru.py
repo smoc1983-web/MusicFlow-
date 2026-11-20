@@ -39,7 +39,7 @@ def fetch(label, address, referer=None, range_header=None, method="GET"):
                             print("TRACK_KEYS", list(first.keys())[:25],
                                   "AUDIO_HOST", urllib.parse.urlsplit(first.get("URL","")).hostname)
                 except Exception as e:
-                    print(label,"NOT_JSON",repr(e),"BODY_PREFIX",repr(content[:120]))
+                    print(label, "NOT_JSON", type(e).__name__)
             elif not range_header:
                 print(label,"HTML_MARKERS",{
                     "song_link":"/music/songs/" in content,
@@ -50,7 +50,7 @@ def fetch(label, address, referer=None, range_header=None, method="GET"):
     except urllib.error.HTTPError as e:
         print(label,"HTTP_ERROR",e.code,"MIME",e.headers.get("Content-Type","?"))
     except Exception as e:
-        print(label,"ERROR",type(e).__name__,str(e)[:200])
+        print(label, "ERROR", type(e).__name__)
 
 for label,url in [
     ("MOBILE","https://m.my.mail.ru/music/search/abba"),

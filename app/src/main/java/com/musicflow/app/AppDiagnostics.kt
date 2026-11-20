@@ -44,8 +44,9 @@ internal object AppDiagnostics {
     fun info(area: String, message: String) { append("INFO", area, message) }
     fun warning(area: String, message: String) { append("WARN", area, message) }
     fun failure(area: String, operation: String, error: Throwable) {
-        append("ERROR", area, operation + ": " +
-            error.javaClass.simpleName + " cause=" + (error.cause?.javaClass?.simpleName ?: "none"))
+        val status = (error as? ProviderHttpException)?.let { " http=" + it.status }.orEmpty()
+        append("ERROR", area, operation + ": " + error.javaClass.simpleName + status +
+            " cause=" + (error.cause?.javaClass?.simpleName ?: "none"))
     }
 
     private fun append(level: String, area: String, message: String) {

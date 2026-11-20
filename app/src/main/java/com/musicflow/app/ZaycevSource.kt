@@ -134,7 +134,7 @@ private fun zaycevRequest(url: String, body: JSONObject? = null): JSONObject {
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
         }
         val status = connection.responseCode
-        if (status !in 200..299) throw IOException("Zaycev HTTP $status")
+        if (status !in 200..299) throw ProviderHttpException(status)
         val builder = StringBuilder()
         connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
             val chars = CharArray(4096)
