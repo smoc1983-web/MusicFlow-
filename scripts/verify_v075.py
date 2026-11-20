@@ -5,7 +5,7 @@ home=(root/"ZaycevHome.kt").read_text(encoding="utf-8")
 tv=(root/"TvPlayerDialog.kt").read_text(encoding="utf-8")
 full=(root/"FullPlayerDialog.kt").read_text(encoding="utf-8")
 resolver=(root/"HomePlaybackResolver.kt").read_text(encoding="utf-8")
-assert 'onPlay = { song -> playHomeSong(song) }' in main
+assert 'onPlay = { song, section -> playHomeSong(song, section) }' in main
 assert '.clickable(enabled = pendingSongId != song.id) { onPlay(song) }' in home
 assert 'controller.stop()' in main and 'controller.clearMediaItems()' in main
 assert 'onStop = { stopMusic() }' in main and 'onStop: () -> Unit' in full
