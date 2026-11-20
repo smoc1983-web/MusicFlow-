@@ -19,6 +19,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -150,6 +151,7 @@ private fun MusicScreen(
     save: (List<Track>) -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val resultListState = rememberLazyListState()
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val searchSequence = remember { AtomicInteger(0) }
@@ -190,6 +192,7 @@ private fun MusicScreen(
             problem = null
             tracks = emptyList()
             appliedSearch = requested
+            if (tab == 1) resultListState.scrollToItem(0)
             val errors = mutableListOf<String>()
             AppDiagnostics.info("Search", "request started; queryLength=" + requested.length)
             try {
@@ -234,6 +237,7 @@ private fun MusicScreen(
                         }
                         if (requestNumber == searchSequence.get() && enriched.isNotEmpty()) {
                             tracks = combineMusicTracks(tracks, enriched)
+                            if (tab == 1) resultListState.scrollToItem(0)
                         }
                     }
                 }
@@ -378,6 +382,9 @@ private fun MusicScreen(
         1 -> filterAndSortTracks(tracks, appliedSearch, searchMode, sortMode)
         else -> tracks
     }
+    LaunchedEffect(tab, appliedSearch, searchMode, sortMode) {
+        if (tab == 1 || tab == 2) resultListState.scrollToItem(0)
+    }
     Column(
         Modifier.fillMaxSize().background(Color(0xFF110F18))
             .padding(horizontal = 16.dp)
@@ -485,7 +492,11 @@ private fun MusicScreen(
             modifier = Modifier.padding(bottom = 8.dp)
         )
         val albumGroups = groupTracksByAlbum(visible)
-        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            state = resultListState,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             albumGroups.forEach { albumGroup ->
                 item(key = "section:" + albumGroup.id) {
                     if (albumGroup.albumTitle != null) {
@@ -512,9 +523,10 @@ private fun MusicScreen(
                 items(albumGroup.songs, key = { "track:" + it.id }) { track ->
                 val cover by rememberCoverArt(track.artist, track.title, track.artwork)
                 val isFavorite = favorites.any { it.id == track.id }
+                val isActive = currentMediaId == track.id
                 Row(
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                        .background(Panel).clickable {
+                        .background(if (isActive) Color(0xFF3D2C52) else Panel).clickable {
                             val albumQueue = if (albumGroup.albumTitle != null &&
                                 albumGroup.songs.size > 1) albumGroup.songs else visible
                             val index = albumQueue.indexOfFirst { it.id == track.id }
@@ -532,6 +544,13 @@ private fun MusicScreen(
                     Column(Modifier.weight(1f)) {
                         Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
                         Text(track.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.LightGray)
+                        if (isActive) {
+                            Text(
+                                if (playing) "♫ Сейчас играет" else "♫ На паузе",
+                                color = Violet,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
                         track.collectionTitle?.takeIf { it.isNotBlank() }?.let {
                             Text("Альбом: " + it, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                  color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
@@ -646,6 +665,8 @@ private fun MusicScreen(
             favorite = favorites.any { it.id == currentMediaId },
             onFavorite = { toggleCurrentFavorite() },
             onStop = { stopMusic() },
+            availableTracks = (queueCatalog + tracks + favorites.toList())
+                .distinctBy { it.id },
             onPlayAlbumTrack = { track ->
                 queueAndPlay(listOf(track), 0)
             },

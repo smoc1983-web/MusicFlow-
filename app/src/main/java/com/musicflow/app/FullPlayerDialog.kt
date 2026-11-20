@@ -69,6 +69,7 @@ internal fun FullPlayerDialog(
     favorite: Boolean,
     onFavorite: () -> Unit,
     onStop: () -> Unit,
+    availableTracks: List<Track>,
     onPlayAlbumTrack: (Track) -> Unit,
     onClose: () -> Unit
 ) {
@@ -144,7 +145,9 @@ internal fun FullPlayerDialog(
         albumMessage = null
         scope.launch {
             try {
-                val track = resolveRecommendedTrack(song.artist, song.title)
+                val track = resolvePlayableAlbumTrack(
+                    song.artist, song.title, availableTracks
+                )
                 if (track != null) {
                     albumInfo = album
                     page = PlayerPage.NOW_PLAYING
@@ -191,7 +194,9 @@ internal fun FullPlayerDialog(
                         albumMessage = if (direction > 0) "Это последняя композиция альбома."
                         else "Это первая композиция альбома."
                     } else {
-                        val track = resolveRecommendedTrack(target.artist, target.title)
+                        val track = resolvePlayableAlbumTrack(
+                            target.artist, target.title, availableTracks
+                        )
                         if (track == null) albumMessage =
                             "Следующая композиция не найдена в доступных аудиокаталогах."
                         else onPlayAlbumTrack(track.copy(collectionTitle = album.title))
@@ -321,12 +326,18 @@ internal fun FullPlayerDialog(
                                     LazyColumn(Modifier.weight(1f),
                                         verticalArrangement = Arrangement.spacedBy(5.dp)) {
                                         itemsIndexed(listing.tracks) { index, song ->
+                                            val isActive = song.title.equals(title, ignoreCase = true) &&
+                                                (song.artist.equals(artist, ignoreCase = true) ||
+                                                    song.artist.isBlank() ||
+                                                    listing.artist.equals(artist, ignoreCase = true))
                                             Row(
                                                 Modifier.fillMaxWidth()
                                                     .clip(RoundedCornerShape(10.dp))
-                                                    .background(PlayerPanel)
+                                                    .background(if (isActive) Color(0xFF4A325E) else PlayerPanel)
                                                     .clickable(enabled = pendingTrack == null) {
-                                                        playAlbumSong(song, listing)
+                                                        if (isActive) {
+                                                            if (!playing) player.play()
+                                                        } else playAlbumSong(song, listing)
                                                     }
                                                     .padding(10.dp),
                                                 verticalAlignment = Alignment.CenterVertically
@@ -336,15 +347,21 @@ internal fun FullPlayerDialog(
                                                     color = PlayerAccent)
                                                 Column(Modifier.weight(1f)) {
                                                     Text(song.title, maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis)
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal)
                                                     Text(song.artist, color = Color.LightGray,
                                                         maxLines = 1,
                                                         style = MaterialTheme.typography.bodySmall)
+                                                    if (isActive) {
+                                                        Text(if (playing) "♫ Сейчас играет" else "♫ На паузе",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = PlayerAccent)
+                                                    }
                                                 }
                                                 if (pendingTrack == song.title)
                                                     CircularProgressIndicator(Modifier.size(18.dp),
                                                         strokeWidth = 2.dp)
-                                                else Text("▶", color = PlayerAccent)
+                                                else Text(if (isActive) "♫" else "▶", color = PlayerAccent)
                                             }
                                         }
                                     }
