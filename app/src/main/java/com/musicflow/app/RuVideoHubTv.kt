@@ -158,6 +158,7 @@ internal fun RuVideoHubTvScreen(
     player: MediaController?,
     modifier: Modifier = Modifier
 ) {
+    val palette = LocalMusicFlowPalette.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var channels by remember { mutableStateOf<List<TvChannel>>(emptyList()) }
@@ -365,7 +366,7 @@ internal fun RuVideoHubTvScreen(
         if (activeSourceId == "ruvideohub") {
             Text(
                 "CUB IPTV — плагин Lampa, не плейлист. Свои ссылки M3U и M3U8 добавляй кнопкой выше.",
-                color = Color.LightGray, style = MaterialTheme.typography.labelSmall
+                color = palette.muted, style = MaterialTheme.typography.labelSmall
             )
             TextButton(onClick = {
                 runCatching {
@@ -384,7 +385,7 @@ internal fun RuVideoHubTvScreen(
                     (if (activeSourceId == "ruvideohub") "RuVideoHub"
                      else userSources.firstOrNull { it.id == activeSourceId }?.name ?: "Мой IPTV") +
                         " · " + channels.size + " каналов",
-                     color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                     color = palette.muted, style = MaterialTheme.typography.bodySmall)
             }
             TextButton(onClick = { refresh() }, enabled = !loading) { Text("Обновить") }
         }
@@ -416,7 +417,7 @@ internal fun RuVideoHubTvScreen(
         }
         Text(
             "В списке: " + filtered.size + ". Некоторые ссылки могут устареть или быть недоступны в вашей сети.",
-            color = Color.LightGray,
+            color = palette.muted,
             style = MaterialTheme.typography.labelSmall
         )
         Spacer(Modifier.height(8.dp))
@@ -428,7 +429,7 @@ internal fun RuVideoHubTvScreen(
                 Row(
                     modifier = Modifier.fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(TV_PANEL)
+                        .background(palette.surface)
                         .clickable { playChannel(channel) }
                         .padding(10.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -446,7 +447,7 @@ internal fun RuVideoHubTvScreen(
                         Text(channel.title, maxLines = 1,
                              overflow = TextOverflow.Ellipsis,
                              fontWeight = FontWeight.SemiBold)
-                        Text(channel.group, color = Color.LightGray,
+                        Text(channel.group, color = palette.muted,
                              style = MaterialTheme.typography.bodySmall)
                         if (channel.isExpired) {
                             Text("Ссылка в плейлисте устарела",
@@ -454,7 +455,7 @@ internal fun RuVideoHubTvScreen(
                                  style = MaterialTheme.typography.labelSmall)
                         }
                     }
-                    Text("▶", color = TV_ACCENT, style = MaterialTheme.typography.titleLarge)
+                    Text("▶", color = palette.accent, style = MaterialTheme.typography.titleLarge)
                     TextButton(onClick = {
                         player?.pause()
                         openTvExternal(context, channel)?.let { error = it }
@@ -463,7 +464,7 @@ internal fun RuVideoHubTvScreen(
             }
             if (filtered.isEmpty() && !loading && error == null) {
                 item {
-                    Text("Каналы не найдены", color = Color.LightGray,
+                    Text("Каналы не найдены", color = palette.muted,
                          modifier = Modifier.padding(12.dp))
                 }
             }
@@ -521,7 +522,7 @@ internal fun RuVideoHubTvScreen(
                     )
                     Text(
                         "HTTP не защищён шифрованием. Ссылки с токенами хранятся на устройстве.",
-                        color = Color.LightGray,
+                        color = palette.muted,
                         style = MaterialTheme.typography.labelSmall
                     )
                     sourceInputError?.let {
