@@ -1,6 +1,7 @@
 package com.musicflow.app
 
 import android.content.ComponentName
+import android.content.res.Configuration
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -13,6 +14,9 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
@@ -30,7 +34,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
@@ -52,8 +58,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicInteger
 
-private val Violet = Color(0xFFAC80FF)
-private val Panel = Color(0xFF201B2C)
+private val Violet = Color(0xFFB99CFF)
+private val Panel = Color(0xFF1D2130)
 
 internal data class Track(
     val id: String,
@@ -86,7 +92,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val scheme = darkColorScheme(
                 primary = Violet,
-                background = Color(0xFF110F18),
+                background = Color(0xFF10131E),
                 surface = Panel,
                 onBackground = Color.White,
                 onSurface = Color.White
@@ -171,6 +177,7 @@ private fun MusicScreen(
     var searchMode by remember { mutableStateOf(SearchMode.ALL) }
     var sortMode by remember { mutableStateOf(SortMode.RELEVANCE) }
     var tab by remember { mutableIntStateOf(0) }
+    var sectionMenu by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
     var expandedPlayer by remember { mutableStateOf(false) }
@@ -252,6 +259,20 @@ private fun MusicScreen(
             }
         }
     }
+    // Expand TV on a rotation into landscape only, never on return from fullscreen.
+    val orientation = LocalConfiguration.current.orientation
+    var previousOrientation by remember { mutableIntStateOf(orientation) }
+    LaunchedEffect(orientation) {
+        val rotatedToLandscape = previousOrientation != orientation &&
+            orientation == Configuration.ORIENTATION_LANDSCAPE
+        previousOrientation = orientation
+        if (rotatedToLandscape &&
+            player?.currentMediaItem?.mediaId?.startsWith("ruvideo:") == true &&
+            TvPlaybackHandoff.snapshot() != null) {
+            context.startActivity(Intent(context, TvFullscreenActivity::class.java))
+        }
+    }
+
     LaunchedEffect(player) {
         while (player != null) {
             playing = player.isPlaying
@@ -379,27 +400,56 @@ private fun MusicScreen(
         if (tab == 1 || tab == 2) resultListState.scrollToItem(0)
     }
     Column(
-        Modifier.fillMaxSize().background(Color(0xFF110F18))
+        Modifier.fillMaxSize().background(Color(0xFF10131E))
             .padding(horizontal = 16.dp)
     ) {
-        Spacer(Modifier.height(20.dp))
-        Text("MusicFlow", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-        Text("Музыка онлайн · IPTV", color = Color.LightGray)
-        Spacer(Modifier.height(18.dp))
-
-        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(0 to "Главная", 1 to "Поиск", 2 to "Избранное", 3 to "ТВ", 4 to "Логи")
-                .forEach { (index, title) ->
-                FilterChip(
-                    selected = tab == index,
-                    onClick = {
-                        tab = index
-                        if (index == 1 && search.isNotBlank()) fetch(search)
-                    },
-                    label = { Text(title) }
-                )
+        Spacer(Modifier.height(7.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("MusicFlow", style = MaterialTheme.typography.titleLarge,
+                color = Color.White, fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f))
+            IconButton(onClick = {
+                tab = 1
+                if (search.isNotBlank()) fetch(search)
+            }) { Icon(Icons.Filled.Search, contentDescription = "Поиск", tint = Color.White) }
+            IconButton(onClick = { tab = 4 }) {
+                Icon(Icons.Filled.MoreVert, contentDescription = "Диагностика",
+                    tint = Color.LightGray)
             }
         }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box {
+                OutlinedButton(onClick = { sectionMenu = true },
+                    modifier = Modifier.height(42.dp),
+                    shape = RoundedCornerShape(12.dp)) {
+                    Text(when (tab) {
+                        2 -> "Избранное"
+                        3 -> "ТВ"
+                        else -> "Музыка"
+                    })
+                    Spacer(Modifier.width(6.dp))
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null,
+                        modifier = Modifier.size(18.dp))
+                }
+                DropdownMenu(expanded = sectionMenu,
+                    onDismissRequest = { sectionMenu = false }) {
+                    listOf(0 to "Музыка", 2 to "Избранное", 3 to "ТВ")
+                        .forEach { (index, label) ->
+                            DropdownMenuItem(text = { Text(label) },
+                                onClick = {
+                                    tab = index
+                                    sectionMenu = false
+                                })
+                        }
+                }
+            }
+            if (tab == 1 || tab == 4) {
+                Spacer(Modifier.width(12.dp))
+                Text(if (tab == 1) "Поиск музыки" else "Диагностика",
+                    color = Violet, style = MaterialTheme.typography.labelLarge)
+            }
+        }
+        Spacer(Modifier.height(5.dp))
         if (tab == 0) {
             MusicHomeScreen(
                 onSearch = { suggested ->
@@ -582,7 +632,9 @@ private fun MusicScreen(
             val miniCover by rememberCoverArt(trackArtist, trackTitle, currentArtwork)
             Column(
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                    .background(Panel).padding(10.dp)
+                    .background(Brush.horizontalGradient(
+                        listOf(Color(0xFF28243B), Color(0xFF191D2B))
+                    )).padding(horizontal = 9.dp, vertical = 6.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -596,7 +648,7 @@ private fun MusicScreen(
                             painter = rememberAsyncImagePainter(miniCover),
                             contentDescription = "Обложка текущей композиции",
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(54.dp).clip(RoundedCornerShape(10.dp))
+                            modifier = Modifier.size(46.dp).clip(RoundedCornerShape(10.dp))
                         )
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
@@ -642,12 +694,26 @@ private fun MusicScreen(
                     progress = { if (durationMs > 0L) {
                         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
                     } else 0f },
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
                     color = Violet,
                     trackColor = Color(0xFF3F3550)
                 )
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
+        } else if (currentMediaId.startsWith("ruvideo:") && player != null) {
+            TvMiniPlayer(
+                player = player,
+                channelTitle = trackTitle,
+                onExpand = {
+                    if (TvPlaybackHandoff.snapshot() != null)
+                        context.startActivity(Intent(context, TvFullscreenActivity::class.java))
+                },
+                onStop = {
+                    stopMusic()
+                    TvPlaybackHandoff.clear()
+                }
+            )
+            Spacer(Modifier.height(4.dp))
         }
     }
     if (expandedPlayer && player != null && trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
