@@ -117,13 +117,19 @@ internal fun FullPlayerDialog(
     // every displayed card and risking a false album association.
     LaunchedEffect(page, title, artist, albumHint) {
         if (page != PlayerPage.ALBUM) return@LaunchedEffect
+        // Never display a different track's release while looking up metadata.
+        if (albumInfo?.tracks?.none {
+            it.title.equals(title, ignoreCase = true)
+        } == true) albumInfo = null
         albumLoading = true
         albumMessage = null
         try {
             val found = AlbumCatalog.lookup(artist, title, albumHint)
             if (found != null) albumInfo = found
-            else if (albumInfo == null) albumMessage =
-                "Подтверждённый альбом для этой записи не найден."
+            else {
+                albumInfo = null
+                albumMessage = "Подтверждённый альбом для этой записи не найден."
+            }
         } catch (e: Exception) {
             AppDiagnostics.failure("Album", "tracklist", e)
             albumMessage = "Не удалось получить список композиций."
@@ -169,7 +175,9 @@ internal fun FullPlayerDialog(
         albumMessage = null
         scope.launch {
             try {
-                val album = albumInfo ?: AlbumCatalog.lookup(artist, title, albumHint)
+                val album = albumInfo?.takeIf { cached ->
+                    cached.tracks.any { it.title.equals(title, ignoreCase = true) }
+                } ?: AlbumCatalog.lookup(artist, title, albumHint)
                 if (album == null) {
                     albumMessage = "Не найден альбом для перехода к соседнему треку."
                 } else {

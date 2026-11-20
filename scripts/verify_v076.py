@@ -21,5 +21,6 @@ for mode in ("ORIGINAL", "FIT", "COVER", "STRETCH", "RATIO169", "RATIO43"):
 assert "onPlayAlbumTrack" in full
 assert ".setAlbumTitle(t.collectionTitle)" in main
 assert "AlbumCatalog.lookup" in full
-assert "musicbrainz.org/ws/2/" in album
+assert "itunes.apple.com" in album and "api.deezer.com" in album
+assert "musicbrainz.org/ws/2/" not in album
 print("MusicFlow v0.7.6 feature integration checks: PASS")

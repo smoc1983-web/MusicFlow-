@@ -26,7 +26,6 @@ internal data class AlbumListing(
  */
 internal object AlbumCatalog {
     private const val CACHE_TTL = 7L * 24L * 3600_000L
-    private const val FAILED_TTL = 12L * 3600_000L
     private val albumCache = ConcurrentHashMap<String, AlbumListing>()
 
     private data class MetadataSong(
@@ -47,7 +46,7 @@ internal object AlbumCatalog {
     }
 
     private fun sameArtist(wanted: String, actual: String): Boolean {
-        val a = norm(wanted.removePrefix("By "))
+        val a = norm(wanted)
         val b = norm(actual)
         if (a.isBlank() || b.isBlank() || a == "неизвестный исполнитель") return false
         if (a == b) return true
@@ -63,7 +62,7 @@ internal object AlbumCatalog {
 
     private fun enc(text: String): String = URLEncoder.encode(text.trim(), "UTF-8")
 
-    private fun get(url: String): JSONObject = withContextBlocking {
+    private fun get(url: String): JSONObject {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 6500
             readTimeout = 8500
@@ -94,8 +93,6 @@ internal object AlbumCatalog {
 
     // Each HTTP request runs only from a coroutine IO dispatcher.
     private suspend fun getJson(url: String): JSONObject = withContext(Dispatchers.IO) { get(url) }
-
-    private fun <T> withContextBlocking(block: () -> T): T = block()
 
     private suspend fun appleSearch(query: String, limit: Int = 100): List<MetadataSong> {
         val data = getJson(

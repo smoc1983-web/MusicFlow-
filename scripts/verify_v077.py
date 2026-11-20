@@ -19,5 +19,6 @@ assert "verticalScroll(" not in full
 assert "Transport controls stay outside every scrollable list" in full
 assert "PlayerPage.ALBUM" in full and "PlayerPage.QUEUE" in full
 assert "collectionTitle?.trim()" in group
-assert "musicbrainz.org/ws/2/" in catalog
+assert "itunes.apple.com" in catalog and "api.deezer.com" in catalog
+assert "musicbrainz.org/ws/2/" not in catalog
 print("v0.7.7 albums and fixed player controls: static regression PASS")
