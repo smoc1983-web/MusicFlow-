@@ -102,6 +102,7 @@ internal fun MusicHomeScreen(
     playbackMessage: String?,
     modifier: Modifier = Modifier
 ) {
+    val palette = LocalMusicFlowPalette.current
     var popular by remember { mutableStateOf<List<HomeSong>>(emptyList()) }
     var fresh by remember { mutableStateOf<List<HomeSong>>(emptyList()) }
     var collected by remember { mutableStateOf<List<HomeSong>>(emptyList()) }
@@ -227,14 +228,14 @@ internal fun MusicHomeScreen(
                 }
             }
             if (chosenCollection.isNotBlank()) {
-                Text(chosenCollection, color = HomeHighlight,
+                Text(chosenCollection, color = palette.accent,
                     style = MaterialTheme.typography.labelMedium,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
             message?.let { Text(it, color = Color(0xFFFFB3A8)) }
             playbackMessage?.let {
-                Text(it, color = HomeHighlight, style = MaterialTheme.typography.bodySmall,
+                Text(it, color = palette.accent, style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(vertical = 8.dp))
             }
         }
@@ -266,7 +267,7 @@ internal fun MusicHomeScreen(
         }
         } else if (collected.isEmpty() && !loading && message == null) {
             item { Text("В этом разделе пока нет доступных треков",
-                color = Color.LightGray, style = MaterialTheme.typography.bodySmall) }
+                color = palette.muted, style = MaterialTheme.typography.bodySmall) }
         }
         item { Spacer(Modifier.height(8.dp)) }
     }
@@ -303,10 +304,11 @@ private fun HomeSongRow(
     onPlay: (HomeSong) -> Unit,
     pendingSongId: String?
 ) {
+    val palette = LocalMusicFlowPalette.current
     Row(
         modifier = Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(HomePanel)
+            .background(palette.surface)
             .clickable(enabled = pendingSongId != song.id) { onPlay(song) }
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -323,18 +325,18 @@ private fun HomeSongRow(
             Text(song.title, fontWeight = FontWeight.SemiBold,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(song.artist, color = Color.LightGray,
+            Text(song.artist, color = palette.muted,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (pendingSongId == song.id) {
             CircularProgressIndicator(
-                color = HomeHighlight, strokeWidth = 2.dp,
+                color = palette.accent, strokeWidth = 2.dp,
                 modifier = Modifier.size(22.dp)
             )
         } else if (song.durationSec > 0) {
             Text(formatTrackDuration(song.durationSec),
-                color = HomeHighlight, style = MaterialTheme.typography.labelSmall)
-        } else Text("▶", color = HomeHighlight)
+                color = palette.accent, style = MaterialTheme.typography.labelSmall)
+        } else Text("▶", color = palette.accent)
     }
 }
