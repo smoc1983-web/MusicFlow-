@@ -103,7 +103,7 @@ internal fun MusicHomeScreen(
     val genres = remember {
         listOf(
             "Поп" to "pop", "Рок" to "rock", "Рэп" to "rap",
-            "Электроника" to "electronic", "Шансон" to "chanson",
+            "Электроника" to "electronic", "Шансон" to "shanson",
             "Метал" to "metal", "Джаз" to "jazz"
         )
     }
@@ -140,6 +140,8 @@ internal fun MusicHomeScreen(
             Spacer(Modifier.height(12.dp))
             Text("Что послушаем?", style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold)
+            Text("Подборки обновляются из открытого каталога. Нажми на песню, чтобы найти доступный поток.",
+                color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
                 onClick = { onSearch("") },
