@@ -31,7 +31,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -51,9 +53,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
 
-private val PlayerBackground = Color(0xFF110F18)
-private val PlayerPanel = Color(0xFF211A2C)
-private val PlayerAccent = Color(0xFFAC80FF)
+private val PlayerBackground = Color(0xFF10131E)
+private val PlayerPanel = Color(0xFF1D2333)
+private val PlayerAccent = Color(0xFFB99CFF)
 
 private enum class PlayerPage { NOW_PLAYING, QUEUE, ALBUM }
 
@@ -242,7 +244,9 @@ internal fun FullPlayerDialog(
             }
         }
         Surface(Modifier.fillMaxSize(), color = PlayerBackground) {
-            Box(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
+                listOf(Color(0xFF28213E), PlayerBackground, Color(0xFF0C101A))
+            ))) {
                 if (immersive && page == PlayerPage.NOW_PLAYING) {
                     Image(
                         painter = rememberAsyncImagePainter(resolvedArtwork),
@@ -423,7 +427,7 @@ internal fun FullPlayerDialog(
                                 contentAlignment = Alignment.Center
                             ) {
                                 val coverSize = minOf(
-                                    maxWidth * 0.80f,
+                                    maxWidth * 0.84f,
                                     (maxHeight - 115.dp).coerceAtLeast(64.dp)
                                 )
                                 Column(
@@ -439,7 +443,8 @@ internal fun FullPlayerDialog(
                                                 contentDescription = "Обложка композиции",
                                                 contentScale = ContentScale.Crop,
                                                 modifier = Modifier.size(coverSize)
-                                                    .clip(RoundedCornerShape(18.dp))
+                                                    .shadow(14.dp, RoundedCornerShape(22.dp))
+                                                    .clip(RoundedCornerShape(22.dp))
                                                     .background(PlayerPanel)
                                             )
                                         }
@@ -471,7 +476,7 @@ internal fun FullPlayerDialog(
                     Column(
                         Modifier.fillMaxWidth()
                             .background(
-                                if (immersive) Color(0xA8000000) else PlayerBackground
+                                if (immersive) Color(0xA8000000) else Color(0xFF161A29)
                             )
                             .padding(top = 2.dp, bottom = 5.dp)
                     ) {
