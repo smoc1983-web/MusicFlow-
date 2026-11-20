@@ -1,28 +1,33 @@
-# MusicFlow v0.7.5 Preview
+# MusicFlow v0.7.6 Preview
 
-Android, Kotlin, Jetpack Compose, Media3. Separate package: `com.musicflow.homeplaypreview`.
+Kotlin, Jetpack Compose, Media3. Separate installation package `com.musicflow.fulltvpreview`.
 
-## One-tap playback on the homepage
+## Fixed TV fullscreen
 
-- Selecting a Zaycev song stays on the home screen, resolves a matching playable stream in the background and starts it automatically in Media3.
-- The Zaycev website pages expose song metadata, but not a confirmed direct MP3 link; MusicFlow resolves the selected artist/title against its playable music providers. It never sends the user to the search tab or a browser.
-- A loading spinner on the selected song and an inline error on failure; songs with unverified artist/title matches are not played.
-- Mini player stays available on the homepage, Search, Favorites and Logs, as well as in the full music player.
-- The mini-player Close button and full-player Stop button call Media3 `stop()` and `clearMediaItems()` rather than merely pausing.
+- Replaced the Compose Dialog with a standalone immersive landscape Android Activity. Video fills the real Activity window, not a dialog rectangle that leaves underlying MusicFlow visible at the left.
+- System bars are hidden, landscape and display cutout space are handled by Android.
+- Top overlay buttons **Размер**, **Качество** and **Каналы** remain accessible in horizontal mode.
+- Picture modes: Original, Fit, Fill (default), Stretch, 16:9, 4:3. Size preference is saved.
+- Real Media3 available HLS/DASH quality choices and seek for seekable streams. Channel switch and playlist refresh remain accessible.
 
-## TV
+## Local IPTV playlists
 
-- Edge-to-edge immersive TV screen renders video under controls and hides system bars in fullscreen.
-- Six picture modes: Original (original resolution where possible), Fit (aspect-correct), Fill (crop-to-cover), Stretch (distort to bounds), 16:9 and 4:3.
-- First fullscreen expansion uses Fill to remove black borders; later size-mode selections are stored.
-- Separate adaptive quality list only when multiple actual tracks are available. Seek buttons enabled only for seekable streams.
+- **+ Файл** accepts user-selected M3U/M3U8 files via Android OpenDocument, no storage permissions.
+- Files are copied to private app storage, validated as channel playlists, limited to 2 MB, and survive app restarts.
+- URLs must be absolute HTTP(S). Local relative paths or raw HLS segment playlists cannot act as multi-channel IPTV files.
+- Imported playlists can be selected, refreshed and deleted; deletion removes the private copy.
+- Existing URL playlist and single-stream channel support preserved.
+
+## Album track lists
+
+- In the full music player, **Альбом · Все композиции** opens MusicBrainz release track listing.
+- When album metadata exists, exact album name is used; otherwise verified releases containing the song are searched.
+- Tap a listed song to resolve playable audio via Muzofond/Mail.ru and start directly in the native Media3 player.
+- The release list is metadata, not a streaming source: not all album tracks are necessarily available for playback. Unknown album data is reported, never fabricated.
 
 ## Unchanged
 
-- Muzofond and Mail.ru unified music search without Audius.
-- Zaycev editorial recommendations, covers from public catalogs, favorites, Media3 queue, IPTV and diagnostic logs.
-- v0.7.4 preserved in `stable/v0.7.4-preview`.
-- APK is built with GitHub Actions; Android runtime must still be validated on a device.
-
-## Build
-GitHub Actions > Build MusicFlow APK > latest successful run > Artifacts > MusicFlow-preview-apk.
+- Album artwork lookup, Zaycev home catalog with one-tap matching-track playback, global source-neutral search, Stop music, favorites, diagnostic log.
+- Audius remains removed.
+- Prior v0.7.5 retained in `stable/v0.7.5-preview`.
+- Compile tested via GitHub Actions; on-device UI still requires validation.
