@@ -116,7 +116,9 @@ class MainActivity : ComponentActivity() {
             if (id.isBlank() || id.startsWith("archive:") ||
                 stream.contains("api.audius.co", ignoreCase = true) ||
                 stream.contains("discoveryprovider.audius.co", ignoreCase = true) ||
-                !stream.startsWith("https://")) null
+                !(stream.startsWith("https://") ||
+                    (id.startsWith("zaycev:") &&
+                        Regex("zaycev://track/[0-9]{1,16}").matches(stream)))) null
             else Track(
                 id, obj.optString("title"), obj.optString("artist"),
                 obj.optString("artwork").takeIf { it.startsWith("https://") },
@@ -220,6 +222,20 @@ private fun MusicScreen(
                                 }.onFailure {
                                     AppDiagnostics.failure("Search", "Mail.ru", it)
                                     errors += "Mail.ru: " + (it.message ?: "ошибка сети")
+                                }
+                            }
+                        }
+                        launch {
+                            val result = runCatching { zaycevTracks(requested) }
+                            if (requestNumber == searchSequence.get()) {
+                                result.onSuccess { found ->
+                                    tracks = combineMusicTracks(tracks, found)
+                                    AppDiagnostics.info(
+                                        "Search", "Zaycev returned " + found.size + " songs"
+                                    )
+                                }.onFailure {
+                                    AppDiagnostics.failure("Search", "Zaycev", it)
+                                    errors += "Zaycev: " + (it.message ?: "ошибка сети")
                                 }
                             }
                         }

@@ -1,5 +1,6 @@
 package com.musicflow.app
 
+import android.net.Uri
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -32,7 +33,7 @@ internal suspend fun resolvePlayableAlbumTrack(
         }
     }
 
-    // No reusable link. Ask both native playback catalogs and inspect the
+    // No reusable link. Ask all native playback catalogs and inspect the
     // returned streams. Never use the iTunes or Deezer preview as audio.
     val q = (artist.trim() + " " + title.trim()).trim()
     val results = coroutineScope {
@@ -52,7 +53,15 @@ internal suspend fun resolvePlayableAlbumTrack(
                 emptyList()
             }
         }
-        muzofond.await() + mail.await()
+        val zaycev = async(Dispatchers.IO) {
+            try { zaycevTracks(q) }
+            catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                AppDiagnostics.failure("Album", "Zaycev refresh", e)
+                emptyList()
+            }
+        }
+        muzofond.await() + mail.await() + zaycev.await()
     }
     for (candidate in results.asSequence()
         .filter { albumSongMatches(it, artist, title) }
@@ -86,7 +95,11 @@ private fun albumSongMatches(track: Track, artist: String, title: String): Boole
 }
 
 private suspend fun probeAlbumStream(uri: String): Boolean = withContext(Dispatchers.IO) {
-    val source = runCatching { URL(uri) }.getOrNull() ?: return@withContext false
+    val source = runCatching {
+        if (uri.startsWith("zaycev://track/")) {
+            URL(ZaycevStreamResolver.resolve(Uri.parse(uri)).toString())
+        } else URL(uri)
+    }.getOrNull() ?: return@withContext false
     if (source.protocol != "https" && source.protocol != "http") return@withContext false
     val conn = (source.openConnection() as? HttpURLConnection) ?: return@withContext false
     try {
@@ -104,6 +117,8 @@ private suspend fun probeAlbumStream(uri: String): Boolean = withContext(Dispatc
             conn.setRequestProperty("Referer", "https://muzofond.fm/")
         else if (host == "moosic.my.mail.ru" || host.endsWith(".moosic.my.mail.ru"))
             conn.setRequestProperty("Referer", "https://my.mail.ru/music/")
+        else if (host == "zaycev.net" || host.endsWith(".zaycev.net"))
+            conn.setRequestProperty("Referer", "https://zaycev.net/")
         val status = conn.responseCode
         val kind = conn.contentType.orEmpty().lowercase(Locale.ROOT)
         if (status != 200 && status != 206) return@withContext false

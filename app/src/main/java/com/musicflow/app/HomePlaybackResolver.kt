@@ -10,17 +10,18 @@ import java.util.Locale
 
 /**
  * Resolves a home recommendation to a matching playable MP3.
- * Both providers are queried without opening the search screen.
+ * All native providers are queried without opening the search screen.
  * Never starts an unrelated song when the selected recording is unavailable.
  */
 internal suspend fun resolveRecommendedTrack(artist: String, title: String): Track? = coroutineScope {
-    val results = Channel<Track?>(capacity = 2)
+    val results = Channel<Track?>(capacity = 3)
     val firstArtist = artist.substringBefore(',').substringBefore('&')
         .trim().replace(Regex("(?i)^by\\s+"), "")
     val query = listOf(firstArtist, title).filter { it.isNotBlank() }.joinToString(" ")
     val workers = listOf<suspend (String) -> List<Track>>(
         { term -> muzofondTracks(term) },
-        { term -> mailRuTracks(term) }
+        { term -> mailRuTracks(term) },
+        { term -> zaycevTracks(term) }
     ).mapIndexed { index, search ->
         launch(Dispatchers.IO) {
             var best: Track? = null
