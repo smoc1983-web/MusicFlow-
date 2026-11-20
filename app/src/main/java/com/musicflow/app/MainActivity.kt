@@ -394,6 +394,7 @@ private fun MusicScreen(
         )
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(visible, key = { it.id }) { track ->
+                val cover by rememberCoverArt(track.artist, track.title, track.artwork)
                 val isFavorite = favorites.any { it.id == track.id }
                 Row(
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
@@ -404,7 +405,7 @@ private fun MusicScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Image(
-                        painter = rememberAsyncImagePainter(track.artwork),
+                        painter = rememberAsyncImagePainter(cover),
                         contentDescription = "Обложка",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.size(56.dp).clip(RoundedCornerShape(9.dp))
@@ -444,6 +445,7 @@ private fun MusicScreen(
             }
         }
         if (trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
+            val miniCover by rememberCoverArt(trackArtist, trackTitle, currentArtwork)
             Column(
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
                     .background(Panel).padding(10.dp)
@@ -457,7 +459,7 @@ private fun MusicScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Image(
-                            painter = rememberAsyncImagePainter(currentArtwork),
+                            painter = rememberAsyncImagePainter(miniCover),
                             contentDescription = "Обложка текущей композиции",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.size(54.dp).clip(RoundedCornerShape(10.dp))

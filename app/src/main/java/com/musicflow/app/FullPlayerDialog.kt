@@ -11,6 +11,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Pause
@@ -56,6 +58,7 @@ internal fun FullPlayerDialog(
     onFavorite: () -> Unit,
     onClose: () -> Unit
 ) {
+    val resolvedArtwork by rememberCoverArt(artist, title, artwork)
     var showQueue by remember { mutableStateOf(false) }
     var sliderDragging by remember(player) { mutableStateOf(false) }
     var seekPending by remember(player) { mutableStateOf(false) }
@@ -186,7 +189,7 @@ internal fun FullPlayerDialog(
                     ) {
                         Spacer(Modifier.height(24.dp))
                         Image(
-                            painter = rememberAsyncImagePainter(artwork),
+                            painter = rememberAsyncImagePainter(resolvedArtwork),
                             contentDescription = "Обложка композиции",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxWidth(0.88f).aspectRatio(1f)
@@ -260,6 +263,14 @@ internal fun FullPlayerDialog(
                                 Icon(Icons.Filled.SkipPrevious, contentDescription = "Предыдущий",
                                     tint = Color.White, modifier = Modifier.size(35.dp))
                             }
+                            IconButton(
+                                onClick = {
+                                    player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0L))
+                                },
+                                enabled = durationMs > 0L && player.isCurrentMediaItemSeekable
+                            ) {
+                                Icon(Icons.Filled.Replay10, "Назад 10 секунд", tint = Color.White)
+                            }
                             FilledIconButton(
                                 onClick = { if (playing) player.pause() else player.play() },
                                 modifier = Modifier.size(72.dp),
@@ -273,6 +284,16 @@ internal fun FullPlayerDialog(
                                     contentDescription = if (playing) "Пауза" else "Играть",
                                     modifier = Modifier.size(36.dp)
                                 )
+                            }
+                            IconButton(
+                                onClick = {
+                                    player.seekTo(
+                                        (player.currentPosition + 10_000L).coerceAtMost(durationMs)
+                                    )
+                                },
+                                enabled = durationMs > 0L && player.isCurrentMediaItemSeekable
+                            ) {
+                                Icon(Icons.Filled.Forward10, "Вперёд 10 секунд", tint = Color.White)
                             }
                             IconButton(onClick = { player.seekToNextMediaItem() },
                                 enabled = player.mediaItemCount > 1) {
