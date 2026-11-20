@@ -1,25 +1,28 @@
 package com.musicflow.app
 
+import android.view.WindowManager
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Replay10
-import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -30,22 +33,29 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import coil.compose.rememberAsyncImagePainter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.Locale
 
-private val Background = Color(0xFF110F18)
-private val PanelBackground = Color(0xFF211A2C)
-private val Highlight = Color(0xFFAC80FF)
+private val PlayerBackground = Color(0xFF110F18)
+private val PlayerPanel = Color(0xFF211A2C)
+private val PlayerAccent = Color(0xFFAC80FF)
+
+private enum class PlayerPage { NOW_PLAYING, QUEUE, ALBUM }
 
 @Composable
 internal fun FullPlayerDialog(
@@ -64,405 +74,488 @@ internal fun FullPlayerDialog(
 ) {
     val resolvedArtwork by rememberCoverArt(artist, title, artwork)
     val albumHint = player.currentMediaItem?.mediaMetadata?.albumTitle?.toString()
-    val albumScope = rememberCoroutineScope()
-    var showAlbum by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var page by remember { mutableStateOf(PlayerPage.NOW_PLAYING) }
+    var immersive by remember { mutableStateOf(false) }
     var albumInfo by remember { mutableStateOf<AlbumListing?>(null) }
     var albumLoading by remember { mutableStateOf(false) }
-    var albumNote by remember { mutableStateOf<String?>(null) }
-    var pendingAlbumTrack by remember { mutableStateOf<String?>(null) }
-    var showQueue by remember { mutableStateOf(false) }
-    LaunchedEffect(showAlbum, title, artist, albumHint) {
-        if (!showAlbum) return@LaunchedEffect
-        albumInfo = null
-        albumNote = null
-        albumLoading = true
-        try {
-            albumInfo = AlbumCatalog.lookup(artist, title, albumHint)
-            if (albumInfo == null) {
-                albumNote = "Подтверждённый список альбома не найден в открытом каталоге."
-            }
-        } catch (e: Exception) {
-            AppDiagnostics.failure("Album", "load album", e)
-            albumNote = "Не удалось загрузить треклист альбома."
-        } finally { albumLoading = false }
-    }
-
-    var sliderDragging by remember(player) { mutableStateOf(false) }
-    var seekPending by remember(player) { mutableStateOf(false) }
-    var sliderPositionMs by remember(player) { mutableLongStateOf(positionMs.coerceAtLeast(0L)) }
+    var albumMessage by remember { mutableStateOf<String?>(null) }
+    var pendingTrack by remember { mutableStateOf<String?>(null) }
+    var pendingNavigation by remember { mutableStateOf(false) }
     var shuffle by remember { mutableStateOf(player.shuffleModeEnabled) }
     var repeat by remember { mutableIntStateOf(player.repeatMode) }
     var currentIndex by remember { mutableIntStateOf(player.currentMediaItemIndex) }
     var queue by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
-
-    // UI follows playback while idle, but never pulls the slider back during a drag.
-    LaunchedEffect(positionMs, sliderDragging, seekPending) {
-        if (!sliderDragging && !seekPending) {
-            sliderPositionMs = positionMs.coerceAtLeast(0L)
-        }
-    }
-    // ExoPlayer seeks asynchronously; hold the chosen position until its state catches up.
-    LaunchedEffect(seekPending) {
-        if (seekPending) {
-            delay(900L)
-            seekPending = false
-        }
-    }
-    LaunchedEffect(currentIndex) {
-        sliderDragging = false
-        seekPending = false
-        sliderPositionMs = player.currentPosition.coerceAtLeast(0L)
-    }
+    var sliderDragging by remember { mutableStateOf(false) }
+    var seekPending by remember { mutableStateOf(false) }
+    var sliderPositionMs by remember { mutableLongStateOf(positionMs.coerceAtLeast(0L)) }
 
     LaunchedEffect(player) {
         while (true) {
             shuffle = player.shuffleModeEnabled
             repeat = player.repeatMode
             currentIndex = player.currentMediaItemIndex
-            queue = (0 until player.mediaItemCount).map { index ->
-                player.getMediaItemAt(index)
-            }
-            delay(650)
+            queue = (0 until player.mediaItemCount).map { player.getMediaItemAt(it) }
+            delay(500)
+        }
+    }
+    LaunchedEffect(positionMs, sliderDragging, seekPending) {
+        if (!sliderDragging && !seekPending) sliderPositionMs = positionMs.coerceAtLeast(0L)
+    }
+    LaunchedEffect(seekPending) {
+        if (seekPending) {
+            delay(850)
+            seekPending = false
+        }
+    }
+    LaunchedEffect(title, artist) {
+        sliderDragging = false
+        seekPending = false
+        sliderPositionMs = 0L
+    }
+    // Load only when requested, rather than issuing expensive catalog lookups for
+    // every displayed card and risking a false album association.
+    LaunchedEffect(page, title, artist, albumHint) {
+        if (page != PlayerPage.ALBUM) return@LaunchedEffect
+        albumLoading = true
+        albumMessage = null
+        try {
+            val found = AlbumCatalog.lookup(artist, title, albumHint)
+            if (found != null) albumInfo = found
+            else if (albumInfo == null) albumMessage =
+                "Подтверждённый альбом для этой записи не найден."
+        } catch (e: Exception) {
+            AppDiagnostics.failure("Album", "tracklist", e)
+            albumMessage = "Не удалось получить список композиций."
+        } finally {
+            albumLoading = false
+        }
+    }
+
+    fun playAlbumSong(song: AlbumSong, album: AlbumListing) {
+        if (pendingTrack != null) return
+        pendingTrack = song.title
+        albumMessage = null
+        scope.launch {
+            try {
+                val track = resolveRecommendedTrack(song.artist, song.title)
+                if (track != null) {
+                    albumInfo = album
+                    page = PlayerPage.NOW_PLAYING
+                    onPlayAlbumTrack(track.copy(collectionTitle = album.title))
+                } else {
+                    albumMessage = "Для выбранной композиции нет доступного аудиопотока."
+                }
+            } catch (e: Exception) {
+                AppDiagnostics.failure("Album", "play selection", e)
+                albumMessage = "Не удалось запустить выбранную композицию."
+            } finally { pendingTrack = null }
+        }
+    }
+
+    fun navigate(direction: Int) {
+        if (pendingNavigation) return
+        val canMove = if (direction > 0) player.hasNextMediaItem()
+            else player.hasPreviousMediaItem()
+        if (canMove) {
+            if (direction > 0) player.seekToNextMediaItem()
+            else player.seekToPreviousMediaItem()
+            player.play()
+            return
+        }
+        // Single-track queues, including recommendations and album selections,
+        // navigate the verified album tracklist directly inside this player.
+        pendingNavigation = true
+        albumMessage = null
+        scope.launch {
+            try {
+                val album = albumInfo ?: AlbumCatalog.lookup(artist, title, albumHint)
+                if (album == null) {
+                    albumMessage = "Не найден альбом для перехода к соседнему треку."
+                } else {
+                    albumInfo = album
+                    val current = title.lowercase(Locale.ROOT).trim()
+                    val index = album.tracks.indexOfFirst {
+                        it.title.lowercase(Locale.ROOT).trim() == current
+                    }
+                    val target = album.tracks.getOrNull(index + direction)
+                    if (index < 0 || target == null) {
+                        albumMessage = if (direction > 0) "Это последняя композиция альбома."
+                        else "Это первая композиция альбома."
+                    } else {
+                        val track = resolveRecommendedTrack(target.artist, target.title)
+                        if (track == null) albumMessage =
+                            "Следующая композиция не найдена в доступных аудиокаталогах."
+                        else onPlayAlbumTrack(track.copy(collectionTitle = album.title))
+                    }
+                }
+            } catch (e: Exception) {
+                AppDiagnostics.failure("Album", "next/previous track", e)
+                albumMessage = "Не удалось переключить композицию."
+            } finally { pendingNavigation = false }
         }
     }
 
     Dialog(
         onDismissRequest = {
-            if (showAlbum) showAlbum = false
-            else if (showQueue) showQueue = false
-            else onClose()
+            if (page != PlayerPage.NOW_PLAYING) page = PlayerPage.NOW_PLAYING else onClose()
         },
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = !immersive
+        )
     ) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = Background
-        ) {
-            Column(
-                modifier = Modifier.fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 20.dp)
-            ) {
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    IconButton(onClick = {
-                        if (showAlbum) showAlbum = false
-                        else if (showQueue) showQueue = false else onClose()
-                    }) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Назад", tint = Color.White)
-                    }
-                    Text(
-                        if (showAlbum) "Композиции альбома"
-                        else if (showQueue) "Очередь воспроизведения" else "Сейчас играет",
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = {
-                            showAlbum = false
-                            showQueue = !showQueue
-                        }) {
-                            Text(if (showQueue || showAlbum) "Плеер" else "Очередь")
-                        }
-                        IconButton(onClick = onStop) {
-                            Icon(Icons.Filled.Close, contentDescription = "Выключить музыку",
-                                tint = Color.White)
-                        }
-                    }
+        val view = LocalView.current
+        DisposableEffect(view, immersive) {
+            val window = (view.parent as? DialogWindowProvider)?.window
+            window?.setLayout(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT
+            )
+            if (window != null && immersive) {
+                WindowCompat.setDecorFitsSystemWindows(window, false)
+                WindowInsetsControllerCompat(window, window.decorView)
+                    .hide(WindowInsetsCompat.Type.systemBars())
+            }
+            onDispose {
+                if (window != null) {
+                    WindowCompat.setDecorFitsSystemWindows(window, true)
+                    WindowInsetsControllerCompat(window, window.decorView)
+                        .show(WindowInsetsCompat.Type.systemBars())
                 }
-                if (showAlbum) {
-                    Spacer(Modifier.height(10.dp))
-                    if (albumLoading) {
-                        CircularProgressIndicator(color = Highlight)
-                        Spacer(Modifier.height(8.dp))
-                        Text("Загрузка треклиста…", color = Color.LightGray)
+            }
+        }
+        Surface(Modifier.fillMaxSize(), color = PlayerBackground) {
+            Box(Modifier.fillMaxSize()) {
+                if (immersive && page == PlayerPage.NOW_PLAYING) {
+                    Image(
+                        painter = rememberAsyncImagePainter(resolvedArtwork),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    Box(Modifier.fillMaxSize().background(Color(0xA8000000)))
+                }
+                Column(
+                    modifier = Modifier.fillMaxSize()
+                        .then(
+                            if (immersive) Modifier
+                            else Modifier.statusBarsPadding().navigationBarsPadding()
+                        )
+                        .padding(horizontal = 14.dp, vertical = 4.dp)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().height(50.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            modifier = Modifier.size(42.dp),
+                            onClick = {
+                                if (page != PlayerPage.NOW_PLAYING)
+                                    page = PlayerPage.NOW_PLAYING else onClose()
+                            }
+                        ) {
+                            Icon(Icons.Filled.ArrowBack, "Назад", tint = Color.White)
+                        }
+                        Text(
+                            when (page) {
+                                PlayerPage.NOW_PLAYING -> "Сейчас играет"
+                                PlayerPage.QUEUE -> "Очередь"
+                                PlayerPage.ALBUM -> "Треки альбома"
+                            },
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            color = Color.White
+                        )
+                        IconButton(modifier = Modifier.size(38.dp),
+                            onClick = { page = if (page == PlayerPage.ALBUM)
+                                PlayerPage.NOW_PLAYING else PlayerPage.ALBUM }) {
+                            Icon(Icons.Filled.Album, "Альбом", tint = PlayerAccent)
+                        }
+                        IconButton(modifier = Modifier.size(38.dp),
+                            onClick = { page = if (page == PlayerPage.QUEUE)
+                                PlayerPage.NOW_PLAYING else PlayerPage.QUEUE }) {
+                            Icon(Icons.Filled.QueueMusic, "Очередь", tint = PlayerAccent)
+                        }
+                        IconButton(modifier = Modifier.size(38.dp),
+                            onClick = { immersive = !immersive }) {
+                            Icon(
+                                if (immersive) Icons.Filled.FullscreenExit
+                                else Icons.Filled.Fullscreen,
+                                if (immersive) "Выйти из полноэкранного режима"
+                                else "Развернуть на весь экран",
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(modifier = Modifier.size(38.dp),
+                            onClick = onStop) {
+                            Icon(Icons.Filled.Close, "Выключить музыку", tint = Color.White)
+                        }
                     }
-                    albumNote?.let { Text(it, color = Color(0xFFFFC6BD)) }
-                    albumInfo?.let { album ->
-                        Text(album.title, style = MaterialTheme.typography.titleLarge,
-                            color = Color.White, fontWeight = FontWeight.SemiBold)
-                        Text(album.artist + " · " + album.tracks.size + " композиций",
-                            color = Color.LightGray)
-                        Spacer(Modifier.height(12.dp))
-                        LazyColumn(Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            itemsIndexed(album.tracks) { idx, song ->
-                                Row(Modifier.fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(PanelBackground)
-                                    .clickable(enabled = pendingAlbumTrack == null) {
-                                        pendingAlbumTrack = song.title
-                                        albumNote = null
-                                        albumScope.launch {
-                                            val resolved = resolveRecommendedTrack(
-                                                song.artist, song.title
-                                            )
-                                            pendingAlbumTrack = null
-                                            if (resolved == null) {
-                                                albumNote = "Аудиопоток выбранной композиции недоступен."
-                                            } else {
-                                                showAlbum = false
-                                                onPlayAlbumTrack(
-                                                    resolved.copy(collectionTitle = album.title)
-                                                )
+                    when (page) {
+                        PlayerPage.ALBUM -> {
+                            Column(Modifier.weight(1f).fillMaxWidth()) {
+                                if (albumLoading) {
+                                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                                }
+                                albumMessage?.let {
+                                    Text(it, color = Color(0xFFFFC0B2),
+                                        style = MaterialTheme.typography.bodySmall)
+                                }
+                                albumInfo?.let { listing ->
+                                    Text(listing.title, color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.titleLarge)
+                                    Text(listing.artist + " · " + listing.tracks.size +
+                                        " композиций", color = Color.LightGray)
+                                    Spacer(Modifier.height(8.dp))
+                                    LazyColumn(Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                        itemsIndexed(listing.tracks) { index, song ->
+                                            Row(
+                                                Modifier.fillMaxWidth()
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(PlayerPanel)
+                                                    .clickable(enabled = pendingTrack == null) {
+                                                        playAlbumSong(song, listing)
+                                                    }
+                                                    .padding(10.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text((index + 1).toString(),
+                                                    modifier = Modifier.width(30.dp),
+                                                    color = PlayerAccent)
+                                                Column(Modifier.weight(1f)) {
+                                                    Text(song.title, maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis)
+                                                    Text(song.artist, color = Color.LightGray,
+                                                        maxLines = 1,
+                                                        style = MaterialTheme.typography.bodySmall)
+                                                }
+                                                if (pendingTrack == song.title)
+                                                    CircularProgressIndicator(Modifier.size(18.dp),
+                                                        strokeWidth = 2.dp)
+                                                else Text("▶", color = PlayerAccent)
                                             }
                                         }
-                                    }.padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically) {
-                                    Text((idx + 1).toString(), color = Highlight,
-                                        modifier = Modifier.width(35.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text(song.title, maxLines=1,
-                                            overflow=TextOverflow.Ellipsis, color=Color.White)
-                                        Text(song.artist, color=Color.LightGray,
-                                            style=MaterialTheme.typography.bodySmall)
                                     }
-                                    if (pendingAlbumTrack == song.title) {
-                                        CircularProgressIndicator(Modifier.size(20.dp),
-                                            color=Highlight,strokeWidth=2.dp)
-                                    } else Text("▶", color=Highlight)
                                 }
                             }
                         }
-                    }
-                    Spacer(Modifier.height(10.dp))
-                } else if (showQueue) {
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        "В списке: " + queue.size.toString() +
-                            if (shuffle) " · случайный порядок включён" else "",
-                        color = Color.LightGray, style = MaterialTheme.typography.bodySmall
-                    )
-                    Spacer(Modifier.height(14.dp))
-                    LazyColumn(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        itemsIndexed(queue, key = { index, _ -> index }) { index, item ->
-                            val active = currentIndex == index
-                            Row(
-                                modifier = Modifier.fillMaxWidth()
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(if (active) Color(0xFF493463) else PanelBackground)
-                                    .clickable {
-                                        player.seekToDefaultPosition(index)
-                                        player.play()
+                        PlayerPage.QUEUE -> {
+                            Column(Modifier.weight(1f)) {
+                                Text("В очереди: " + queue.size,
+                                    color = Color.LightGray)
+                                LazyColumn(Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    itemsIndexed(queue) { index, item ->
+                                        Row(
+                                            Modifier.fillMaxWidth()
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(
+                                                    if (index == currentIndex)
+                                                        Color(0xFF493463) else PlayerPanel
+                                                )
+                                                .clickable {
+                                                    player.seekToDefaultPosition(index)
+                                                    player.play()
+                                                    page = PlayerPage.NOW_PLAYING
+                                                }.padding(10.dp)
+                                        ) {
+                                            Text(if (index == currentIndex) "♫"
+                                                else (index + 1).toString(),
+                                                modifier = Modifier.width(30.dp),
+                                                color = PlayerAccent)
+                                            Column {
+                                                Text(item.mediaMetadata.title?.toString()
+                                                    ?: "Без названия", maxLines = 1)
+                                                Text(item.mediaMetadata.artist?.toString()
+                                                    ?: "", color = Color.LightGray,
+                                                    style = MaterialTheme.typography.bodySmall)
+                                            }
+                                        }
                                     }
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                }
+                            }
+                        }
+                        PlayerPage.NOW_PLAYING -> {
+                            BoxWithConstraints(
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    if (active) "♫" else (index + 1).toString(),
-                                    color = Highlight,
-                                    modifier = Modifier.width(34.dp),
-                                    textAlign = TextAlign.Center
+                                val coverSize = minOf(
+                                    maxWidth * 0.80f,
+                                    (maxHeight - 115.dp).coerceAtLeast(64.dp)
                                 )
-                                Column(Modifier.weight(1f)) {
+                                Column(
+                                    Modifier.fillMaxSize(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Box(Modifier.fillMaxWidth().weight(1f),
+                                        contentAlignment = Alignment.Center) {
+                                        if (!immersive) {
+                                            Image(
+                                                painter = rememberAsyncImagePainter(resolvedArtwork),
+                                                contentDescription = "Обложка композиции",
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.size(coverSize)
+                                                    .clip(RoundedCornerShape(18.dp))
+                                                    .background(PlayerPanel)
+                                            )
+                                        }
+                                    }
                                     Text(
-                                        item.mediaMetadata.title?.toString() ?: "Без названия",
-                                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                                        color = Color.White,
-                                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                                        title, color = Color.White,
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 2, overflow = TextOverflow.Ellipsis
                                     )
-                                    Text(
-                                        item.mediaMetadata.artist?.toString() ?: "",
-                                        color = Color.LightGray,
-                                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
+                                    Text(artist, color = Color.LightGray,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    TextButton(onClick = { page = PlayerPage.ALBUM }) {
+                                        Text(
+                                            if (albumHint.isNullOrBlank())
+                                                "Альбом · Все композиции"
+                                            else albumHint + " · Все композиции",
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
-                    Spacer(Modifier.height(10.dp))
-                } else {
+
+                    // Transport controls stay outside every scrollable list, even
+                    // with TalkBack, larger fonts and a small phone display.
                     Column(
-                        modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        Modifier.fillMaxWidth()
+                            .background(
+                                if (immersive) Color(0xA8000000) else PlayerBackground
+                            )
+                            .padding(top = 2.dp, bottom = 5.dp)
                     ) {
-                        Spacer(Modifier.height(24.dp))
-                        Image(
-                            painter = rememberAsyncImagePainter(resolvedArtwork),
-                            contentDescription = "Обложка композиции",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxWidth(0.88f).aspectRatio(1f)
-                                .clip(RoundedCornerShape(26.dp))
-                                .background(PanelBackground)
-                        )
-                        Spacer(Modifier.height(28.dp))
-                        Text(
-                            title,
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        TextButton(onClick = {
-                            showQueue = false
-                            showAlbum = true
-                        }) {
-                            Text("Альбом · Все композиции", color = Highlight)
-                        }
-                        Text(
-                            artist, color = Color.LightGray,
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 2, overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(Modifier.height(30.dp))
                         val end = durationMs.coerceAtLeast(1L)
-                        val displayedMs = if (sliderDragging || seekPending) sliderPositionMs
-                                          else positionMs
+                        val shown = if (sliderDragging || seekPending) sliderPositionMs
+                            else positionMs
                         Slider(
-                            value = displayedMs.coerceIn(0L, end).toFloat(),
+                            value = shown.coerceIn(0L, end).toFloat(),
                             onValueChange = { value ->
                                 sliderDragging = true
                                 seekPending = false
                                 sliderPositionMs = value.toLong().coerceIn(0L, end)
                             },
                             onValueChangeFinished = {
-                                if (sliderDragging && durationMs > 0L) {
-                                    val target = sliderPositionMs.coerceIn(0L, end)
+                                if (sliderDragging && durationMs > 0) {
                                     sliderDragging = false
                                     seekPending = true
-                                    player.seekTo(target)
-                                } else {
-                                    sliderDragging = false
-                                }
+                                    player.seekTo(sliderPositionMs.coerceIn(0, end))
+                                } else sliderDragging = false
                             },
                             valueRange = 0f..end.toFloat(),
-                            enabled = durationMs > 0L,
-                            modifier = Modifier.fillMaxWidth(),
+                            enabled = durationMs > 0L &&
+                                player.isCurrentMediaItemSeekable,
+                            modifier = Modifier.fillMaxWidth().height(36.dp),
                             colors = SliderDefaults.colors(
-                                thumbColor = Highlight,
-                                activeTrackColor = Highlight,
-                                inactiveTrackColor = Color(0xFF55445F)
+                                thumbColor = PlayerAccent,
+                                activeTrackColor = PlayerAccent,
+                                inactiveTrackColor = Color(0xFF51415C)
                             )
                         )
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(timeLabel(displayedMs), color = Color.LightGray,
-                                style = MaterialTheme.typography.labelMedium)
-                            Text(if (durationMs <= 0L) "--:--" else timeLabel(durationMs),
-                                color = Color.LightGray, style = MaterialTheme.typography.labelMedium)
+                        Row(Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(timeLabel(shown), color = Color.LightGray,
+                                style = MaterialTheme.typography.labelSmall)
+                            Text(if (durationMs > 0L) timeLabel(durationMs) else "--:--",
+                                color = Color.LightGray,
+                                style = MaterialTheme.typography.labelSmall)
                         }
-                        Spacer(Modifier.height(18.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
+                        Row(Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            IconButton(onClick = { player.seekToPreviousMediaItem() },
-                                enabled = player.mediaItemCount > 1) {
-                                Icon(Icons.Filled.SkipPrevious, contentDescription = "Предыдущий",
-                                    tint = Color.White, modifier = Modifier.size(35.dp))
+                            verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { navigate(-1) },
+                                enabled = !pendingNavigation) {
+                                Icon(Icons.Filled.SkipPrevious, "Предыдущий трек",
+                                    tint = Color.White)
                             }
-                            IconButton(
-                                onClick = {
-                                    player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0L))
-                                },
-                                enabled = durationMs > 0L && player.isCurrentMediaItemSeekable
-                            ) {
-                                Icon(Icons.Filled.Replay10, "Назад 10 секунд", tint = Color.White)
+                            IconButton(onClick = {
+                                player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0L))
+                            }, enabled = durationMs > 0L &&
+                                player.isCurrentMediaItemSeekable) {
+                                Icon(Icons.Filled.Replay10, "Назад 10 секунд",
+                                    tint = Color.White)
                             }
                             FilledIconButton(
                                 onClick = { if (playing) player.pause() else player.play() },
-                                modifier = Modifier.size(72.dp),
+                                modifier = Modifier.size(60.dp),
                                 colors = IconButtonDefaults.filledIconButtonColors(
-                                    containerColor = Highlight,
-                                    contentColor = Color(0xFF180F25)
+                                    containerColor = PlayerAccent,
+                                    contentColor = Color(0xFF170E25)
                                 )
                             ) {
-                                Icon(
-                                    if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                    contentDescription = if (playing) "Пауза" else "Играть",
-                                    modifier = Modifier.size(36.dp)
-                                )
+                                Icon(if (playing) Icons.Filled.Pause
+                                    else Icons.Filled.PlayArrow,
+                                    if (playing) "Пауза" else "Воспроизвести",
+                                    modifier = Modifier.size(30.dp))
                             }
-                            IconButton(
-                                onClick = {
-                                    player.seekTo(
-                                        (player.currentPosition + 10_000L).coerceAtMost(durationMs)
-                                    )
-                                },
-                                enabled = durationMs > 0L && player.isCurrentMediaItemSeekable
-                            ) {
-                                Icon(Icons.Filled.Forward10, "Вперёд 10 секунд", tint = Color.White)
+                            IconButton(onClick = {
+                                val next = player.currentPosition + 10_000L
+                                player.seekTo(next.coerceAtMost(durationMs))
+                            }, enabled = durationMs > 0L &&
+                                player.isCurrentMediaItemSeekable) {
+                                Icon(Icons.Filled.Forward10, "Вперёд 10 секунд",
+                                    tint = Color.White)
                             }
-                            IconButton(onClick = { player.seekToNextMediaItem() },
-                                enabled = player.mediaItemCount > 1) {
-                                Icon(Icons.Filled.SkipNext, contentDescription = "Следующий",
-                                    tint = Color.White, modifier = Modifier.size(35.dp))
+                            IconButton(onClick = { navigate(1) },
+                                enabled = !pendingNavigation) {
+                                Icon(Icons.Filled.SkipNext, "Следующий трек",
+                                    tint = Color.White)
                             }
                         }
-                        Spacer(Modifier.height(25.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
+                        Row(Modifier.fillMaxWidth().height(42.dp),
                             horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                IconButton(onClick = {
-                                    player.setShuffleModeEnabled(!shuffle)
-                                    shuffle = !shuffle
-                                }) {
-                                    Icon(Icons.Filled.Shuffle, contentDescription = "Случайный порядок",
-                                        tint = if (shuffle) Highlight else Color.LightGray)
-                                }
-                                Text("Случайно", color = Color.LightGray,
-                                    style = MaterialTheme.typography.labelSmall)
+                            verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = {
+                                player.shuffleModeEnabled = !shuffle
+                                shuffle = !shuffle
+                            }) {
+                                Icon(Icons.Filled.Shuffle, "Случайный порядок",
+                                    tint = if (shuffle) PlayerAccent else Color.LightGray)
                             }
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                IconButton(onClick = onFavorite) {
-                                    Icon(
-                                        if (favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                                        contentDescription = "Избранное",
-                                        tint = if (favorite) Highlight else Color.LightGray
-                                    )
-                                }
-                                Text("Избранное", color = Color.LightGray,
-                                    style = MaterialTheme.typography.labelSmall)
+                            IconButton(onClick = onFavorite) {
+                                Icon(
+                                    if (favorite) Icons.Filled.Favorite
+                                    else Icons.Filled.FavoriteBorder,
+                                    "Добавить в избранное",
+                                    tint = if (favorite) PlayerAccent else Color.LightGray
+                                )
                             }
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                IconButton(onClick = {
-                                    val next = when (repeat) {
-                                        Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-                                        Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-                                        else -> Player.REPEAT_MODE_OFF
-                                    }
-                                    player.setRepeatMode(next)
-                                    repeat = next
-                                }) {
-                                    Icon(
-                                        if (repeat == Player.REPEAT_MODE_ONE) Icons.Filled.RepeatOne
-                                        else Icons.Filled.Repeat,
-                                        contentDescription = "Повтор",
-                                        tint = if (repeat == Player.REPEAT_MODE_OFF) Color.LightGray
-                                               else Highlight
-                                    )
+                            IconButton(onClick = {
+                                val next = when (repeat) {
+                                    Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+                                    Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                                    else -> Player.REPEAT_MODE_OFF
                                 }
-                                Text(
-                                    when (repeat) {
-                                        Player.REPEAT_MODE_ONE -> "Один трек"
-                                        Player.REPEAT_MODE_ALL -> "Вся очередь"
-                                        else -> "Без повтора"
-                                    },
-                                    color = Color.LightGray,
-                                    style = MaterialTheme.typography.labelSmall
+                                player.repeatMode = next
+                                repeat = next
+                            }) {
+                                Icon(
+                                    if (repeat == Player.REPEAT_MODE_ONE)
+                                        Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+                                    "Режим повтора",
+                                    tint = if (repeat == Player.REPEAT_MODE_OFF)
+                                        Color.LightGray else PlayerAccent
                                 )
                             }
                         }
-                        Spacer(Modifier.height(24.dp))
+                        if (pendingNavigation) {
+                            LinearProgressIndicator(Modifier.fillMaxWidth())
+                        } else if (albumMessage != null && page == PlayerPage.NOW_PLAYING) {
+                            Text(albumMessage.orEmpty(), color = Color(0xFFFFC0B2),
+                                maxLines = 2, style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }
             }
@@ -476,5 +569,5 @@ private fun timeLabel(timeMs: Long): String {
     val minutes = (seconds % 3600) / 60
     val remaining = seconds % 60
     return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, remaining)
-        else "%d:%02d".format(minutes, remaining)
+    else "%d:%02d".format(minutes, remaining)
 }
