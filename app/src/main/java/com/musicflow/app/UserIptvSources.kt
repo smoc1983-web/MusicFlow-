@@ -217,7 +217,7 @@ private fun localIptvFileFromSource(source: IptvSource): File {
         Regex("[0-9a-f-]{36}").matches(source.id)
     ) { "Неверный идентификатор IPTV-файла" }
     // Only app-owned files are ever used; never interpret arbitrary user paths.
-    return File(File(IptvStorage.appDir ?: error("IPTV storage not initialized")), source.id + ".m3u")
+    return File(IptvStorage.appDir ?: error("IPTV storage not initialized"), source.id + ".m3u")
 }
 
 internal object IptvStorage {

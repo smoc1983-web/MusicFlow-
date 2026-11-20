@@ -180,31 +180,6 @@ internal fun RuVideoHubTvScreen(
     var addUrl by remember { mutableStateOf("") }
     var addKind by remember { mutableStateOf(IptvSourceKind.PLAYLIST) }
     var sourceInputError by remember { mutableStateOf<String?>(null) }
-    val importFile = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            scope.launch {
-                runCatching { importLocalIptvPlaylist(context, uri) }
-                    .onSuccess { src ->
-                        if (userSources.size >= 40) {
-                            deleteLocalIptvSource(context, src)
-                            sourceInputError = "Максимум 40 источников."
-                        } else {
-                            userSources.add(src)
-                            saveIptvSources(context, userSources.toList())
-                            activeSourceId = src.id
-                            showAddSource = false
-                            sourceInputError = null
-                            refresh(src.id)
-                        }
-                    }.onFailure { e ->
-                        sourceInputError = e.message ?: "Не удалось прочитать IPTV-файл"
-                        AppDiagnostics.failure("IPTV", "file import", e)
-                    }
-            }
-        }
-    }
 
 
     fun refresh(sourceId: String = activeSourceId) {
@@ -237,6 +212,33 @@ internal fun RuVideoHubTvScreen(
             }
         }
     }
+    val importFile = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                runCatching { importLocalIptvPlaylist(context, uri) }
+                    .onSuccess { src ->
+                        if (userSources.size >= 40) {
+                            deleteLocalIptvSource(context, src)
+                            sourceInputError = "Максимум 40 источников."
+                        } else {
+                            userSources.add(src)
+                            saveIptvSources(context, userSources.toList())
+                            activeSourceId = src.id
+                            showAddSource = false
+                            sourceInputError = null
+                            refresh(src.id)
+                        }
+                    }.onFailure { e ->
+                        sourceInputError = e.message ?: "Не удалось прочитать IPTV-файл"
+                        AppDiagnostics.failure("IPTV", "file import", e)
+                    }
+            }
+        }
+    }
+
+
     LaunchedEffect(Unit) { refresh() }
 
     val groups = listOf("Все", "Музыка") + channels
