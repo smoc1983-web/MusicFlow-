@@ -25,7 +25,7 @@ for theme in ("AURORA", "AMOLED", "MIDNIGHT", "GRAPHITE", "SOFT_LIGHT"):
 assert "LocalMusicFlowPalette.current" in full
 assert "LocalMusicFlowPalette.current" in home
 assert '@mipmap/ic_launcher' in manifest
-assert 'versionName = "0.7.13-preview"' in gradle
+assert 'versionName = "0.7.14-preview"' in gradle
 assert Path("app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml").is_file()
 assert Path("app/src/main/res/drawable/ic_musicflow_foreground.xml").is_file()
 print("MusicFlow 0.7.13 themes, icon and floating player static checks PASS")
