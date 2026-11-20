@@ -129,3 +129,26 @@ for term in ("Кино", "Teddy Swims"):
     print("SEARCH_NODE",k,type(v).__name__, len(v) if isinstance(v,(list,dict)) else "", "SAMPLE_KEYS",
       list(v[0].keys())[:18] if isinstance(v,list) and v and isinstance(v[0],dict) else list(v)[:12] if isinstance(v,dict) else [])
   except Exception as e:print("SEARCH_PARSE_FAIL",term,str(e)[:120])
+
+print("---- FULL PUBLIC SEARCH JSON SCHEMA ----")
+for term in ("Кино", "Teddy Swims"):
+ path="/api/external/pages/search/tracks?q="+urllib.parse.quote(term)+"&page=1&limit=15"
+ raw=get("https://zaycev.net"+path,130000)
+ if raw:
+  try:
+   data=json.loads(raw)
+   print("SEARCH_SCHEMA",term,"root",list(data) if isinstance(data,dict) else type(data).__name__,
+     "jsonLen",len(raw))
+   if isinstance(data,dict):
+    for k,v in data.items():
+     print("FIELD",k,"type",type(v).__name__,"count",len(v) if isinstance(v,(list,dict)) else "")
+     if isinstance(v,list) and v:
+      print("LIST_ITEM",k,"firstType",type(v[0]).__name__,
+       "keys",list(v[0])[:30] if isinstance(v[0],dict) else "scalar",
+       "firstScalar",str(v[0])[:20] if isinstance(v[0],int) else "")
+     if isinstance(v,dict):
+      print("DICT_KEYS",k,list(v)[:20])
+      if v:
+       obj=next(iter(v.values()))
+       print("DICT_SAMPLE_KEYS",k,list(obj)[:28] if isinstance(obj,dict) else type(obj).__name__)
+  except Exception as e:print("SEARCH_JSON_ERROR",term,str(e)[:150])
