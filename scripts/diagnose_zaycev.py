@@ -27,3 +27,26 @@ if it:
         obj=json.loads(it)
         print("ART_COUNT",obj.get("resultCount",0),"FIRST_KEYS",list(obj.get("results",[{}])[0].keys())[:25])
     except Exception as e:print("ART_PARSE_ERROR",repr(e))
+
+for label,html in [("home",home),("top",top),("song",song)]:
+    m=re.search(r'<script[^>]+id="__NEXT_DATA__"[^>]*>([\s\S]*?)</script>',html)
+    if not m:
+        print("NEXT",label,"missing")
+        continue
+    try:
+        doc=json.loads(m.group(1))
+        print("NEXT",label,"page",doc.get("page"),"root keys",list(doc.keys()),"pageProps",list(doc.get("props",{}).get("pageProps",{}).keys())[:40])
+        pp=doc.get("props",{}).get("pageProps",{})
+        def walk(x,path="",depth=0):
+            if depth>5:return
+            if isinstance(x,dict):
+                for k,v in x.items():
+                    if any(word in k.lower() for word in ("stream","audio","playurl","download","file","track","source","artist","cover","path","image","poster","quality","duration")):
+                        print("KEY",label,(path+"/"+str(k))[:100],"TYPE",type(v).__name__,"COUNT",len(v) if isinstance(v,(list,dict)) else "", "VALUE",str(v)[:70] if isinstance(v,(int,float,str)) and not any(n in k.lower() for n in ("url","stream","file","token","download")) else "")
+                    if isinstance(v,(dict,list)):
+                        walk(v,(path+"/"+str(k))[:80],depth+1)
+            elif isinstance(x,list) and x:
+                walk(x[0],path+"/0",depth+1)
+        walk(pp)
+    except Exception as e:
+        print("NEXT_PARSE",label,repr(e))
