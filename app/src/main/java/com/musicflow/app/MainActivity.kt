@@ -81,7 +81,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppDiagnostics.initialize(this)
-        AppDiagnostics.info("App", "MusicFlow 0.7.13 Preview launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
+        AppDiagnostics.info("App", "MusicFlow 0.7.14 Preview launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener({
@@ -130,6 +130,16 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        TvVideoSurfaceBridge.onMainResume()
+    }
+
+    override fun onPause() {
+        TvVideoSurfaceBridge.onMainPause()
+        super.onPause()
     }
 
     override fun onDestroy() {
@@ -211,7 +221,6 @@ private fun MusicScreen(
     var expandedPlayer by remember { mutableStateOf(false) }
     var queueCatalog by remember { mutableStateOf<List<Track>>(emptyList()) }
     var playbackStatus by remember { mutableStateOf<String?>(null) }
-    var playbackSource by remember { mutableStateOf<String?>(null) }
     var playing by remember { mutableStateOf(false) }
     var currentArtwork by remember { mutableStateOf<String?>(null) }
     var currentMediaId by remember { mutableStateOf("") }
@@ -287,6 +296,17 @@ private fun MusicScreen(
             }
         }
     }
+    fun openTvFullscreen() {
+        if (TvPlaybackHandoff.snapshot() == null) return
+        TvVideoSurfaceBridge.requestFullscreen()
+        try {
+            context.startActivity(Intent(context, TvFullscreenActivity::class.java))
+        } catch (error: Exception) {
+            TvVideoSurfaceBridge.cancelFullscreenRequest()
+            AppDiagnostics.failure("TV", "open fullscreen", error)
+        }
+    }
+
     // Expand TV on a rotation into landscape only, never on return from fullscreen.
     val orientation = LocalConfiguration.current.orientation
     var previousOrientation by remember { mutableIntStateOf(orientation) }
@@ -297,19 +317,13 @@ private fun MusicScreen(
         if (rotatedToLandscape &&
             player?.currentMediaItem?.mediaId?.startsWith("ruvideo:") == true &&
             TvPlaybackHandoff.snapshot() != null) {
-            context.startActivity(Intent(context, TvFullscreenActivity::class.java))
+            openTvFullscreen()
         }
     }
 
     LaunchedEffect(player) {
         while (player != null) {
             playing = player.isPlaying
-            playbackSource = when (player.currentMediaItem?.mediaMetadata?.extras?.getString(MUSIC_SOURCE)) {
-                "zaycev" -> "Zaycev.net"
-                "muzofond" -> "Muzofond"
-                "mailru" -> "Mail.ru Music"
-                else -> null
-            }
             playbackStatus = when {
                 player.playerError != null -> "Поток недоступен"
                 player.playbackState == androidx.media3.common.Player.STATE_BUFFERING -> "Подключение…"
@@ -699,7 +713,7 @@ private fun MusicScreen(
                             Text(trackArtist, color = palette.muted, maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.bodySmall)
-                            Text(listOfNotNull(playbackStatus, playbackSource).joinToString(" · "), color = palette.accent,
+                            Text(playbackStatus.orEmpty(), color = palette.accent,
                                 style = MaterialTheme.typography.labelSmall)
                         }
                     }
@@ -750,8 +764,7 @@ private fun MusicScreen(
             player = player,
             channelTitle = trackTitle,
             onExpand = {
-                if (TvPlaybackHandoff.snapshot() != null)
-                    context.startActivity(Intent(context, TvFullscreenActivity::class.java))
+                openTvFullscreen()
             },
             onStop = {
                 stopMusic()
