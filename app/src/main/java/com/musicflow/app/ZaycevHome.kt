@@ -9,6 +9,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +24,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.input.ImeAction
 import coil.compose.rememberAsyncImagePainter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -102,6 +108,9 @@ internal fun MusicHomeScreen(
     var collections by remember { mutableStateOf<List<HomeCollection>>(emptyList()) }
     var chosenCollection by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
+    var homeQuery by remember { mutableStateOf("") }
+    var collectionsExpanded by remember { mutableStateOf(false) }
+    var genresExpanded by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     val genres = remember {
         listOf(
@@ -144,58 +153,83 @@ internal fun MusicHomeScreen(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         item {
-            Spacer(Modifier.height(12.dp))
-            Text("Что послушаем?", style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold)
-            Text("Нажми на песню — музыка запустится прямо здесь, если доступен её аудиопоток.",
-                color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(
-                onClick = { onSearch("") },
+            Spacer(Modifier.height(4.dp))
+            OutlinedTextField(
+                value = homeQuery,
+                onValueChange = { homeQuery = it },
+                placeholder = { Text("Песня или исполнитель") },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                trailingIcon = {
+                    IconButton(onClick = { onSearch(homeQuery.trim()) }) {
+                        Icon(Icons.Filled.Search, contentDescription = "Найти")
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { onSearch(homeQuery.trim()) }),
                 modifier = Modifier.fillMaxWidth()
-            ) { Text("⌕  Поиск исполнителя или песни") }
-            // Zaycev thematic collections take priority over the long Top-100 list.
-            if (collections.isNotEmpty()) {
-                Spacer(Modifier.height(14.dp))
-                Text("🎼 Подборки Zaycev", style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(4.dp))
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    collections.forEach { collection ->
-                        FilterChip(
-                            selected = chosenCollection == collection.title,
-                            onClick = {
-                                chosenCollection = collection.title
+            )
+            Spacer(Modifier.height(7.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.weight(1f)) {
+                    OutlinedButton(onClick = { collectionsExpanded = true },
+                        enabled = collections.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)) {
+                        Text("Подборки", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.width(3.dp))
+                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null,
+                            modifier = Modifier.size(18.dp))
+                    }
+                    DropdownMenu(expanded = collectionsExpanded,
+                        onDismissRequest = { collectionsExpanded = false }) {
+                        DropdownMenuItem(text = { Text("Все подборки") }, onClick = {
+                            collectionsExpanded = false
+                            chosenCollection = ""
+                            collected = emptyList()
+                            loading = false
+                        })
+                        collections.forEach { collection ->
+                            DropdownMenuItem(
+                                text = { Text(collection.title, maxLines = 2) },
+                                onClick = {
+                                    collectionsExpanded = false
+                                    chosenCollection = collection.title
+                                    collected = emptyList()
+                                    loading = true
+                                    message = null
+                                })
+                        }
+                    }
+                }
+                Box(Modifier.weight(1f)) {
+                    OutlinedButton(onClick = { genresExpanded = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)) {
+                        Text("Жанры")
+                        Spacer(Modifier.width(3.dp))
+                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null,
+                            modifier = Modifier.size(18.dp))
+                    }
+                    DropdownMenu(expanded = genresExpanded,
+                        onDismissRequest = { genresExpanded = false }) {
+                        genres.forEach { (name, _) ->
+                            DropdownMenuItem(text = { Text(name) }, onClick = {
+                                genresExpanded = false
+                                chosenCollection = name
+                                collected = emptyList()
                                 loading = true
-                            },
-                            label = {
-                                Text(collection.title, maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis)
-                            },
-                            modifier = Modifier.widthIn(max = 185.dp)
-                        )
+                                message = null
+                            })
+                        }
                     }
                 }
             }
-            Spacer(Modifier.height(12.dp))
-            Text("Жанры", style = MaterialTheme.typography.titleMedium)
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                genres.forEach { (name, slug) ->
-                    AssistChip(
-                        onClick = {
-                            chosenCollection = name
-                            loading = true
-                            // Selection will be loaded in LaunchedEffect below.
-                        },
-                        label = { Text(name) }
-                    )
-                }
+            if (chosenCollection.isNotBlank()) {
+                Text(chosenCollection, color = HomeHighlight,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
             message?.let { Text(it, color = Color(0xFFFFB3A8)) }
@@ -204,7 +238,7 @@ internal fun MusicHomeScreen(
                     modifier = Modifier.padding(vertical = 8.dp))
             }
         }
-        if (collected.isNotEmpty()) {
+        if (chosenCollection.isNotBlank() && collected.isNotEmpty()) {
             item {
                 Text(chosenCollection, style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold)
@@ -213,9 +247,10 @@ internal fun MusicHomeScreen(
                 HomeSongRow(song, { selected -> onPlay(selected, collected) }, pendingSongId)
             }
         }
+        if (chosenCollection.isBlank()) {
         item {
-            Spacer(Modifier.height(8.dp))
-            Text("🔥 Популярное", style = MaterialTheme.typography.titleLarge,
+            Spacer(Modifier.height(4.dp))
+            Text("🔥 Популярное", style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold)
         }
         items(popularQueue, key = { "top_" + it.id }) { song ->
@@ -223,18 +258,25 @@ internal fun MusicHomeScreen(
         }
         item {
             Spacer(Modifier.height(10.dp))
-            Text("✨ Новинки", style = MaterialTheme.typography.titleLarge,
+            Text("✨ Новинки", style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold)
         }
         items(freshQueue, key = { "fresh_" + it.id }) { song ->
             HomeSongRow(song, { selected -> onPlay(selected, freshQueue) }, pendingSongId)
         }
-        item { Spacer(Modifier.height(18.dp)) }
+        } else if (collected.isEmpty() && !loading && message == null) {
+            item { Text("В этом разделе пока нет доступных треков",
+                color = Color.LightGray, style = MaterialTheme.typography.bodySmall) }
+        }
+        item { Spacer(Modifier.height(8.dp)) }
     }
 
     // Load chosen collection or genre after a user taps a chip.
     LaunchedEffect(chosenCollection) {
-        if (chosenCollection.isBlank()) return@LaunchedEffect
+        if (chosenCollection.isBlank()) {
+            collected = emptyList()
+            return@LaunchedEffect
+        }
         val selected = chosenCollection
         val genre = genres.firstOrNull { it.first == selected }?.second
         val collectionUrl = collections.firstOrNull { it.title == selected }?.link
@@ -266,7 +308,7 @@ private fun HomeSongRow(
             .clip(RoundedCornerShape(12.dp))
             .background(HomePanel)
             .clickable(enabled = pendingSongId != song.id) { onPlay(song) }
-            .padding(9.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         val cover by rememberCoverArt(song.artist, song.title, song.image)
@@ -274,13 +316,15 @@ private fun HomeSongRow(
             painter = rememberAsyncImagePainter(cover),
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.size(54.dp).clip(RoundedCornerShape(9.dp))
+            modifier = Modifier.size(46.dp).clip(RoundedCornerShape(10.dp))
         )
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(9.dp))
         Column(Modifier.weight(1f)) {
             Text(song.title, fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(song.artist, color = Color.LightGray,
+                style = MaterialTheme.typography.bodySmall,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (pendingSongId == song.id) {
