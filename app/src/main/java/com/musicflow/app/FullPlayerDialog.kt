@@ -41,6 +41,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import coil.compose.rememberAsyncImagePainter
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private val Background = Color(0xFF110F18)
 private val PanelBackground = Color(0xFF211A2C)
@@ -58,10 +59,34 @@ internal fun FullPlayerDialog(
     favorite: Boolean,
     onFavorite: () -> Unit,
     onStop: () -> Unit,
+    onPlayAlbumTrack: (Track) -> Unit,
     onClose: () -> Unit
 ) {
     val resolvedArtwork by rememberCoverArt(artist, title, artwork)
+    val albumHint = player.currentMediaItem?.mediaMetadata?.albumTitle?.toString()
+    val albumScope = rememberCoroutineScope()
+    var showAlbum by remember { mutableStateOf(false) }
+    var albumInfo by remember { mutableStateOf<AlbumListing?>(null) }
+    var albumLoading by remember { mutableStateOf(false) }
+    var albumNote by remember { mutableStateOf<String?>(null) }
+    var pendingAlbumTrack by remember { mutableStateOf<String?>(null) }
     var showQueue by remember { mutableStateOf(false) }
+    LaunchedEffect(showAlbum, title, artist, albumHint) {
+        if (!showAlbum) return@LaunchedEffect
+        albumInfo = null
+        albumNote = null
+        albumLoading = true
+        try {
+            albumInfo = AlbumCatalog.lookup(artist, title, albumHint)
+            if (albumInfo == null) {
+                albumNote = "Подтверждённый список альбома не найден в открытом каталоге."
+            }
+        } catch (e: Exception) {
+            AppDiagnostics.failure("Album", "load album", e)
+            albumNote = "Не удалось загрузить треклист альбома."
+        } finally { albumLoading = false }
+    }
+
     var sliderDragging by remember(player) { mutableStateOf(false) }
     var seekPending by remember(player) { mutableStateOf(false) }
     var sliderPositionMs by remember(player) { mutableLongStateOf(positionMs.coerceAtLeast(0L)) }
@@ -102,7 +127,11 @@ internal fun FullPlayerDialog(
     }
 
     Dialog(
-        onDismissRequest = { if (showQueue) showQueue = false else onClose() },
+        onDismissRequest = {
+            if (showAlbum) showAlbum = false
+            else if (showQueue) showQueue = false
+            else onClose()
+        },
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
@@ -122,18 +151,23 @@ internal fun FullPlayerDialog(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     IconButton(onClick = {
-                        if (showQueue) showQueue = false else onClose()
+                        if (showAlbum) showAlbum = false
+                        else if (showQueue) showQueue = false else onClose()
                     }) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Назад", tint = Color.White)
                     }
                     Text(
-                        if (showQueue) "Очередь воспроизведения" else "Сейчас играет",
+                        if (showAlbum) "Композиции альбома"
+                        else if (showQueue) "Очередь воспроизведения" else "Сейчас играет",
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = { showQueue = !showQueue }) {
-                            Text(if (showQueue) "Плеер" else "Очередь")
+                        TextButton(onClick = {
+                            showAlbum = false
+                            showQueue = !showQueue
+                        }) {
+                            Text(if (showQueue || showAlbum) "Плеер" else "Очередь")
                         }
                         IconButton(onClick = onStop) {
                             Icon(Icons.Filled.Close, contentDescription = "Выключить музыку",
@@ -141,7 +175,63 @@ internal fun FullPlayerDialog(
                         }
                     }
                 }
-                if (showQueue) {
+                if (showAlbum) {
+                    Spacer(Modifier.height(10.dp))
+                    if (albumLoading) {
+                        CircularProgressIndicator(color = Highlight)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Загрузка треклиста…", color = Color.LightGray)
+                    }
+                    albumNote?.let { Text(it, color = Color(0xFFFFC6BD)) }
+                    albumInfo?.let { album ->
+                        Text(album.title, style = MaterialTheme.typography.titleLarge,
+                            color = Color.White, fontWeight = FontWeight.SemiBold)
+                        Text(album.artist + " · " + album.tracks.size + " композиций",
+                            color = Color.LightGray)
+                        Spacer(Modifier.height(12.dp))
+                        LazyColumn(Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            itemsIndexed(album.tracks) { idx, song ->
+                                Row(Modifier.fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(PanelBackground)
+                                    .clickable(enabled = pendingAlbumTrack == null) {
+                                        pendingAlbumTrack = song.title
+                                        albumNote = null
+                                        albumScope.launch {
+                                            val resolved = resolveRecommendedTrack(
+                                                song.artist, song.title
+                                            )
+                                            pendingAlbumTrack = null
+                                            if (resolved == null) {
+                                                albumNote = "Аудиопоток выбранной композиции недоступен."
+                                            } else {
+                                                showAlbum = false
+                                                onPlayAlbumTrack(
+                                                    resolved.copy(collectionTitle = album.title)
+                                                )
+                                            }
+                                        }
+                                    }.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Text((idx + 1).toString(), color = Highlight,
+                                        modifier = Modifier.width(35.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(song.title, maxLines=1,
+                                            overflow=TextOverflow.Ellipsis, color=Color.White)
+                                        Text(song.artist, color=Color.LightGray,
+                                            style=MaterialTheme.typography.bodySmall)
+                                    }
+                                    if (pendingAlbumTrack == song.title) {
+                                        CircularProgressIndicator(Modifier.size(20.dp),
+                                            color=Highlight,strokeWidth=2.dp)
+                                    } else Text("▶", color=Highlight)
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                } else if (showQueue) {
                     Spacer(Modifier.height(10.dp))
                     Text(
                         "В списке: " + queue.size.toString() +
@@ -215,6 +305,12 @@ internal fun FullPlayerDialog(
                             textAlign = TextAlign.Center
                         )
                         Spacer(Modifier.height(6.dp))
+                        TextButton(onClick = {
+                            showQueue = false
+                            showAlbum = true
+                        }) {
+                            Text("Альбом · Все композиции", color = Highlight)
+                        }
                         Text(
                             artist, color = Color.LightGray,
                             style = MaterialTheme.typography.titleMedium,

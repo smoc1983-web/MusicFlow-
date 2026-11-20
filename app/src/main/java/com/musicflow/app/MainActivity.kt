@@ -266,6 +266,7 @@ private fun MusicScreen(
                     MediaMetadata.Builder()
                         .setTitle(t.title)
                         .setArtist(t.artist)
+                        .setAlbumTitle(t.collectionTitle)
                         .setArtworkUri(t.artwork?.let(Uri::parse))
                         .build()
                 ).build()
@@ -575,6 +576,9 @@ private fun MusicScreen(
             favorite = favorites.any { it.id == currentMediaId },
             onFavorite = { toggleCurrentFavorite() },
             onStop = { stopMusic() },
+            onPlayAlbumTrack = { track ->
+                queueAndPlay(listOf(track), 0)
+            },
             onClose = { expandedPlayer = false }
         )
     }
