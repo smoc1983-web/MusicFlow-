@@ -25,7 +25,7 @@ assert "selected = channel" in tv
 assert "TvPlaybackHandoff.set(channels, channel, activeSourceId)" in tv
 assert 'context.startActivity(Intent(context, TvFullscreenActivity::class.java))' not in tv
 assert "TvPlaybackHandoff.clear()" not in full
-assert "PlayerView(ctx)" in mini and "onRelease = { view -> view.player = null }" in mini
+assert "PlayerView(ctx)" in mini and "TvVideoSurfaceBridge.releaseMini(view)" in mini
 assert "onExpand: () -> Unit" in mini
 assert "1200x1200bb" in cover and "front-1200" in cover
 assert "needsUpgrade(provided)" in cover
