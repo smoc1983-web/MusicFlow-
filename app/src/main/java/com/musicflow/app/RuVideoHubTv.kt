@@ -263,6 +263,7 @@ internal fun RuVideoHubTvScreen(
         streamRefreshError = null
         AppDiagnostics.info("IPTV", "channel selected; source=" +
             (if (activeSourceId == "ruvideohub") "RuVideoHub" else "custom"))
+        selected = channel
         TvPlaybackHandoff.set(channels, channel, activeSourceId)
         val path = Uri.parse(channel.streamUrl).path.orEmpty().lowercase()
         val mediaBuilder = MediaItem.Builder()
@@ -283,7 +284,7 @@ internal fun RuVideoHubTvScreen(
         controller.setMediaItem(media)
         controller.prepare()
         controller.play()
-        context.startActivity(Intent(context, TvFullscreenActivity::class.java))
+        // The inline TV player stays visible. Tap it or rotate for fullscreen.
     }
 
     fun refreshPlayingChannel() {
