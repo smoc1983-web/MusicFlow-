@@ -7,11 +7,11 @@ android {
     namespace = "com.musicflow.app"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.musicflow.mailrupreview"
+        applicationId = "com.musicflow.logspreview"
         minSdk = 26
         targetSdk = 35
-        versionCode = 71
-        versionName = "0.7.1-preview"
+        versionCode = 72
+        versionName = "0.7.2-preview"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -35,4 +35,5 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-dash:1.8.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("org.jsoup:jsoup:1.18.3")
+    implementation("androidx.core:core:1.16.0")
 }

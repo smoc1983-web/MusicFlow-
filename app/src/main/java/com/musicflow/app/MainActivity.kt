@@ -72,10 +72,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppDiagnostics.initialize(this)
+        AppDiagnostics.info("App", "MusicFlow 0.7.2 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener({
-                runCatching { playerState.value = future.get() }
+                runCatching {
+                    playerState.value = future.get()
+                    AppDiagnostics.info("Player", "controller connected")
+                }.onFailure { AppDiagnostics.failure("Player", "connect", it) }
             }, ContextCompat.getMainExecutor(this))
         }
         setContent {
@@ -176,6 +181,7 @@ private fun MusicScreen(
             tracks = emptyList()
             appliedSearch = requested
             val errors = mutableListOf<String>()
+            AppDiagnostics.info("Search", "request started; queryLength=" + requested.length)
             try {
                 // Each catalog is queried concurrently. The list updates when either finishes.
                 // No source selector or source labels are exposed in search results.
@@ -185,7 +191,11 @@ private fun MusicScreen(
                         if (requestNumber == searchSequence.get()) {
                             result.onSuccess { found ->
                                 tracks = combineMusicTracks(tracks, found)
-                            }.onFailure { errors += "Audius: " + (it.message ?: "ошибка сети") }
+                                AppDiagnostics.info("Search", "Audius returned " + found.size + " songs")
+                            }.onFailure {
+                                AppDiagnostics.failure("Search", "Audius", it)
+                                errors += "Audius: " + (it.message ?: "ошибка сети")
+                            }
                         }
                     }
                     if (requested.isNotBlank()) {
@@ -194,7 +204,11 @@ private fun MusicScreen(
                             if (requestNumber == searchSequence.get()) {
                                 result.onSuccess { found ->
                                     tracks = combineMusicTracks(tracks, found)
-                                }.onFailure { errors += "Muzofond: " + (it.message ?: "ошибка сети") }
+                                    AppDiagnostics.info("Search", "Muzofond returned " + found.size + " songs")
+                                }.onFailure {
+                                    AppDiagnostics.failure("Search", "Muzofond", it)
+                                    errors += "Muzofond: " + (it.message ?: "ошибка сети")
+                                }
                             }
                         }
                         launch {
@@ -202,7 +216,11 @@ private fun MusicScreen(
                             if (requestNumber == searchSequence.get()) {
                                 result.onSuccess { found ->
                                     tracks = combineMusicTracks(tracks, found)
-                                }.onFailure { errors += "Mail.ru: " + (it.message ?: "ошибка сети") }
+                                    AppDiagnostics.info("Search", "Mail.ru returned " + found.size + " songs")
+                                }.onFailure {
+                                    AppDiagnostics.failure("Search", "Mail.ru", it)
+                                    errors += "Mail.ru: " + (it.message ?: "ошибка сети")
+                                }
                             }
                         }
                     }
@@ -215,7 +233,10 @@ private fun MusicScreen(
                     }
                 }
             } finally {
-                if (requestNumber == searchSequence.get()) busy = false
+                if (requestNumber == searchSequence.get()) {
+                    AppDiagnostics.info("Search", "request finished; results=" + tracks.size)
+                    busy = false
+                }
             }
         }
     }
@@ -236,9 +257,11 @@ private fun MusicScreen(
     fun queueAndPlay(list: List<Track>, index: Int) {
         val p = player ?: run {
             problem = "Плеер подключается. Повторите попытку."
+            AppDiagnostics.warning("Player", "play requested before connection")
             return
         }
         queueCatalog = list.toList()
+        AppDiagnostics.info("Player", "queue size=" + list.size + "; index=" + index)
         p.setMediaItems(list.map { t ->
             MediaItem.Builder()
                 .setMediaId(t.id)
@@ -293,7 +316,7 @@ private fun MusicScreen(
         Spacer(Modifier.height(18.dp))
 
         Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Главная", "Поиск", "Избранное", "ТВ").forEachIndexed { index, title ->
+            listOf("Главная", "Поиск", "Избранное", "ТВ", "Логи").forEachIndexed { index, title ->
                 FilterChip(
                     selected = tab == index,
                     onClick = {
@@ -306,6 +329,8 @@ private fun MusicScreen(
         }
         if (tab == 3) {
             RuVideoHubTvScreen(player = player, modifier = Modifier.weight(1f))
+        } else if (tab == 4) {
+            DiagnosticsScreen(modifier = Modifier.weight(1f))
         } else {
         if (tab == 1) {
             Spacer(Modifier.height(6.dp))

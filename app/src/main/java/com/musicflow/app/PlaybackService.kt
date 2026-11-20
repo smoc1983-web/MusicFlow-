@@ -1,6 +1,9 @@
 package com.musicflow.app
 
 import androidx.media3.common.AudioAttributes
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.common.C
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -18,6 +21,8 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        AppDiagnostics.initialize(this)
+        AppDiagnostics.info("PlaybackService", "service started")
         val upstream = DefaultDataSource.Factory(this)
         val resolvedDataSource = ResolvingDataSource.Factory(upstream) { spec ->
             val host = spec.uri.host?.lowercase(Locale.ROOT).orEmpty()
@@ -52,6 +57,30 @@ class PlaybackService : MediaSessionService() {
             )
             setHandleAudioBecomingNoisy(true)
         }
+        player.addListener(object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                val kind = player.currentMediaItem?.mediaId.orEmpty()
+                    .substringBefore(":").take(24)
+                AppDiagnostics.failure(
+                    "Playback", "Media3 " + error.errorCodeName + " source=" + kind, error
+                )
+            }
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                val kind = mediaItem?.mediaId.orEmpty().substringBefore(":").take(24)
+                AppDiagnostics.info("Playback", "media item changed; source=" + kind +
+                    "; reason=" + reason)
+            }
+            override fun onPlaybackStateChanged(state: Int) {
+                val name = when (state) {
+                    Player.STATE_IDLE -> "IDLE"
+                    Player.STATE_BUFFERING -> "BUFFERING"
+                    Player.STATE_READY -> "READY"
+                    Player.STATE_ENDED -> "ENDED"
+                    else -> "UNKNOWN"
+                }
+                AppDiagnostics.info("Playback", "state=" + name)
+            }
+        })
         session = MediaSession.Builder(this, player).build()
     }
 
@@ -63,6 +92,7 @@ class PlaybackService : MediaSessionService() {
             it.release()
         }
         session = null
+        AppDiagnostics.info("PlaybackService", "service stopped")
         super.onDestroy()
     }
 }

@@ -183,6 +183,8 @@ internal fun RuVideoHubTvScreen(
         scope.launch {
             loading = true
             error = null
+            val type = if (sourceId == "ruvideohub") "RuVideoHub" else "custom"
+            AppDiagnostics.info("IPTV", "loading " + type)
             try {
                 val items = if (sourceId == "ruvideohub") retrieveChannels()
                     else {
@@ -193,11 +195,13 @@ internal fun RuVideoHubTvScreen(
                 if (request == loadSequence.get()) {
                     channels = items
                     group = "Все"
+                    AppDiagnostics.info("IPTV", "loaded " + type + "; channels=" + items.size)
                 }
             } catch (e: Exception) {
                 if (request == loadSequence.get()) {
                     channels = emptyList()
                     error = e.message ?: "Не удалось загрузить каналы"
+                    AppDiagnostics.failure("IPTV", "source " + type, e)
                 }
             } finally {
                 if (request == loadSequence.get()) loading = false
@@ -222,9 +226,12 @@ internal fun RuVideoHubTvScreen(
         val controller = player
         if (controller == null) {
             error = "Плеер пока подключается. Попробуйте ещё раз."
+            AppDiagnostics.warning("IPTV", "play requested before connection")
             return
         }
         streamRefreshError = null
+        AppDiagnostics.info("IPTV", "channel selected; source=" +
+            (if (activeSourceId == "ruvideohub") "RuVideoHub" else "custom"))
         selected = channel
         val path = Uri.parse(channel.streamUrl).path.orEmpty().lowercase()
         val mediaBuilder = MediaItem.Builder()
@@ -260,6 +267,7 @@ internal fun RuVideoHubTvScreen(
                         fetchIptvSource(custom)
                     }
                 channels = reloaded
+                AppDiagnostics.info("IPTV", "stream refresh; channels=" + reloaded.size)
                 val replacement = reloaded.firstOrNull { it.id == channel.id }
                 if (replacement == null) {
                     streamRefreshError = "Канал исчез из обновлённого плейлиста."
@@ -268,6 +276,7 @@ internal fun RuVideoHubTvScreen(
                 }
             } catch (e: Exception) {
                 streamRefreshError = "Не удалось обновить эфир: " + (e.message ?: "ошибка сети")
+                AppDiagnostics.failure("IPTV", "stream refresh", e)
             } finally {
                 streamRefreshing = false
             }

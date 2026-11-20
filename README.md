@@ -74,3 +74,13 @@ https://github.com/Eremiteb/mytasks/tree/main/music_downloader
 - Does not require an account, embed WebView or download music.
 - Network or licensing restrictions may affect availability on other networks. Verified endpoint access does not guarantee every track plays.
 - Protected previous version: `stable/v0.7.0-preview`; this version uses distinct application ID `com.musicflow.mailrupreview`.
+
+
+## v0.7.2 Preview — local diagnostic log
+
+- New tab Логи displays the most recent 150 lines, provides Refresh, Clear, and Send File buttons.
+- Persistent file: filesDir/logs/MusicFlow_diagnostics.log, bounded to approx. 512KB with oldest entries trimmed.
+- Records per-source music search counts/failures, IPTV playlist loads/failures, Media3 buffering and playback errors, session connection and app crashes.
+- Neither song titles nor search query contents nor stream addresses are intentionally logged; recognizable URLs/tokens in errors are redacted.
+- User-controlled file share via FileProvider and Android chooser; no automatic upload or storage permission.
+- Installable alongside v0.7.1 with a separate package name (com.musicflow.logspreview).
