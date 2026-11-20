@@ -441,15 +441,41 @@ private fun MusicScreen(
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(bottom = 8.dp)
         )
+        val albumGroups = groupTracksByAlbum(visible)
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(visible, key = { it.id }) { track ->
+            albumGroups.forEach { albumGroup ->
+                item(key = "section:" + albumGroup.id) {
+                    if (albumGroup.albumTitle != null) {
+                        Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp)) {
+                            Text(
+                                "♫ " + albumGroup.albumTitle,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Violet,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                albumGroup.artist.orEmpty() + " · " +
+                                    albumGroup.songs.size + " композиций",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.LightGray
+                            )
+                        }
+                    } else if (albumGroups.size > 1) {
+                        Text("Отдельные треки", color = Color.LightGray,
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(top = 8.dp))
+                    }
+                }
+                items(albumGroup.songs, key = { "track:" + it.id }) { track ->
                 val cover by rememberCoverArt(track.artist, track.title, track.artwork)
                 val isFavorite = favorites.any { it.id == track.id }
                 Row(
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
                         .background(Panel).clickable {
-                            val index = visible.indexOf(track)
-                            if (index >= 0) queueAndPlay(visible, index)
+                            val albumQueue = if (albumGroup.albumTitle != null &&
+                                albumGroup.songs.size > 1) albumGroup.songs else visible
+                            val index = albumQueue.indexOfFirst { it.id == track.id }
+                            if (index >= 0) queueAndPlay(albumQueue, index)
                         }.padding(9.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -479,6 +505,7 @@ private fun MusicScreen(
                         else favorites.add(0, track)
                         save(favorites.toList())
                     }) { Text(if (isFavorite) "♥" else "♡") }
+                }
                 }
             }
             if (visible.isEmpty() && !busy) item {
@@ -592,5 +619,24 @@ private fun combineMusicTracks(existing: List<Track>, incoming: List<Track>): Li
             .replace(Regex("\\s+"), " ")
         return artist + "\u0000" + title
     }
-    return (existing + incoming).distinctBy(::key)
+    val combined = LinkedHashMap<String, Track>()
+    for (track in existing + incoming) {
+        val id = key(track)
+        val original = combined[id]
+        if (original == null) {
+            combined[id] = track
+        } else {
+            // Keep the original working stream but enrich it with album and art
+            // metadata even when a different provider answers later.
+            combined[id] = original.copy(
+                artwork = original.artwork?.takeIf { it.isNotBlank() }
+                    ?: track.artwork,
+                collectionTitle = original.collectionTitle?.takeIf { it.isNotBlank() }
+                    ?: track.collectionTitle,
+                durationSec = if (original.durationSec > 0) original.durationSec
+                    else track.durationSec
+            )
+        }
+    }
+    return combined.values.toList()
 }
