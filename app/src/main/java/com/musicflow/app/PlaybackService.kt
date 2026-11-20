@@ -26,7 +26,19 @@ class PlaybackService : MediaSessionService() {
         val upstream = DefaultDataSource.Factory(this)
         val resolvedDataSource = ResolvingDataSource.Factory(upstream) { spec ->
             val host = spec.uri.host?.lowercase(Locale.ROOT).orEmpty()
-            if (host == "muzofond.fm" || host.endsWith(".muzofond.fm")) {
+            if (spec.uri.scheme == "zaycev") {
+                val real = ZaycevStreamResolver.resolve(spec.uri)
+                spec.withUri(real).withAdditionalHeaders(
+                    mapOf(
+                        "Referer" to "https://zaycev.net/",
+                        "User-Agent" to "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 Chrome/130.0.0.0 Mobile Safari/537.36"
+                    )
+                )
+            } else if (host == "zaycev.net" || host.endsWith(".zaycev.net")) {
+                spec.withAdditionalHeaders(
+                    mapOf("Referer" to "https://zaycev.net/")
+                )
+            } else if (host == "muzofond.fm" || host.endsWith(".muzofond.fm")) {
                 spec.withAdditionalHeaders(
                     mapOf(
                         "Referer" to "https://muzofond.fm/",
