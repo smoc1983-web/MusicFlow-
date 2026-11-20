@@ -76,6 +76,7 @@ internal fun FullPlayerDialog(
     onPlayAlbumTrack: (Track) -> Unit,
     onClose: () -> Unit
 ) {
+    val palette = LocalMusicFlowPalette.current
     val resolvedArtwork by rememberCoverArt(artist, title, artwork)
     val albumHint = player.currentMediaItem?.mediaMetadata?.albumTitle?.toString()
     val scope = rememberCoroutineScope()
@@ -243,9 +244,9 @@ internal fun FullPlayerDialog(
                 }
             }
         }
-        Surface(Modifier.fillMaxSize(), color = PlayerBackground) {
+        Surface(Modifier.fillMaxSize(), color = palette.background) {
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
-                listOf(Color(0xFF28213E), PlayerBackground, Color(0xFF0C101A))
+                listOf(palette.gradientTop, palette.background, palette.gradientBottom)
             ))) {
                 if (immersive && page == PlayerPage.NOW_PLAYING) {
                     Image(
@@ -275,7 +276,7 @@ internal fun FullPlayerDialog(
                                     page = PlayerPage.NOW_PLAYING else onClose()
                             }
                         ) {
-                            Icon(Icons.Filled.ArrowBack, "Назад", tint = Color.White)
+                            Icon(Icons.Filled.ArrowBack, "Назад", tint = palette.foreground)
                         }
                         Text(
                             when (page) {
@@ -286,17 +287,17 @@ internal fun FullPlayerDialog(
                             modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.titleMedium,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            color = Color.White
+                            color = palette.foreground
                         )
                         IconButton(modifier = Modifier.size(38.dp),
                             onClick = { page = if (page == PlayerPage.ALBUM)
                                 PlayerPage.NOW_PLAYING else PlayerPage.ALBUM }) {
-                            Icon(Icons.Filled.Album, "Альбом", tint = PlayerAccent)
+                            Icon(Icons.Filled.Album, "Альбом", tint = palette.accent)
                         }
                         IconButton(modifier = Modifier.size(38.dp),
                             onClick = { page = if (page == PlayerPage.QUEUE)
                                 PlayerPage.NOW_PLAYING else PlayerPage.QUEUE }) {
-                            Icon(Icons.Filled.QueueMusic, "Очередь", tint = PlayerAccent)
+                            Icon(Icons.Filled.QueueMusic, "Очередь", tint = palette.accent)
                         }
                         IconButton(modifier = Modifier.size(38.dp),
                             onClick = { immersive = !immersive }) {
@@ -305,16 +306,16 @@ internal fun FullPlayerDialog(
                                 else Icons.Filled.Fullscreen,
                                 if (immersive) "Выйти из полноэкранного режима"
                                 else "Развернуть на весь экран",
-                                tint = Color.White
+                                tint = palette.foreground
                             )
                         }
                         IconButton(modifier = Modifier.size(38.dp),
                             onClick = onStop) {
-                            Icon(Icons.Filled.Close, "Выключить музыку", tint = Color.White)
+                            Icon(Icons.Filled.Close, "Выключить музыку", tint = palette.foreground)
                         }
                     }
                     playbackStatus?.let {
-                        Text(it, color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+                        Text(it, color = palette.muted, style = MaterialTheme.typography.labelSmall)
                     }
                     when (page) {
                         PlayerPage.ALBUM -> {
@@ -335,11 +336,11 @@ internal fun FullPlayerDialog(
                                             modifier = Modifier.size(64.dp).clip(RoundedCornerShape(8.dp))
                                         )
                                     }
-                                    Text(listing.title, color = Color.White,
+                                    Text(listing.title, color = palette.foreground,
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.titleLarge)
                                     Text(listOfNotNull(listing.artist, listing.year, "${listing.tracks.size} композиций")
-                                        .joinToString(" · "), color = Color.LightGray)
+                                        .joinToString(" · "), color = palette.muted)
                                     Spacer(Modifier.height(8.dp))
                                     LazyColumn(Modifier.weight(1f),
                                         verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -349,7 +350,7 @@ internal fun FullPlayerDialog(
                                             Row(
                                                 Modifier.fillMaxWidth()
                                                     .clip(RoundedCornerShape(10.dp))
-                                                    .background(if (isActive) Color(0xFF4A325E) else PlayerPanel)
+                                                    .background(if (isActive) Color(0xFF4A325E) else palette.surface)
                                                     .clickable(enabled = pendingTrack == null) {
                                                         if (isActive) {
                                                             if (player.playerError != null) player.prepare()
@@ -361,24 +362,24 @@ internal fun FullPlayerDialog(
                                             ) {
                                                 Text((index + 1).toString(),
                                                     modifier = Modifier.width(30.dp),
-                                                    color = PlayerAccent)
+                                                    color = palette.accent)
                                                 Column(Modifier.weight(1f)) {
                                                     Text(song.title, maxLines = 1,
                                                         overflow = TextOverflow.Ellipsis,
                                                         fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal)
-                                                    Text(song.artist, color = Color.LightGray,
+                                                    Text(song.artist, color = palette.muted,
                                                         maxLines = 1,
                                                         style = MaterialTheme.typography.bodySmall)
                                                     if (isActive) {
                                                         Text(if (playing) "♫ Сейчас играет" else "♫ На паузе",
                                                             style = MaterialTheme.typography.labelSmall,
-                                                            color = PlayerAccent)
+                                                            color = palette.accent)
                                                     }
                                                 }
                                                 if (pendingTrack == song.title)
                                                     CircularProgressIndicator(Modifier.size(18.dp),
                                                         strokeWidth = 2.dp)
-                                                else Text(if (isActive) "♫" else "▶", color = PlayerAccent)
+                                                else Text(if (isActive) "♫" else "▶", color = palette.accent)
                                             }
                                         }
                                     }
@@ -388,7 +389,7 @@ internal fun FullPlayerDialog(
                         PlayerPage.QUEUE -> {
                             Column(Modifier.weight(1f)) {
                                 Text("В очереди: " + queue.size,
-                                    color = Color.LightGray)
+                                    color = palette.muted)
                                 LazyColumn(Modifier.weight(1f),
                                     verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     itemsIndexed(queue) { index, item ->
@@ -397,7 +398,7 @@ internal fun FullPlayerDialog(
                                                 .clip(RoundedCornerShape(10.dp))
                                                 .background(
                                                     if (index == currentIndex)
-                                                        Color(0xFF493463) else PlayerPanel
+                                                        Color(0xFF493463) else palette.surface
                                                 )
                                                 .clickable {
                                                     player.seekToDefaultPosition(index)
@@ -408,12 +409,12 @@ internal fun FullPlayerDialog(
                                             Text(if (index == currentIndex) "♫"
                                                 else (index + 1).toString(),
                                                 modifier = Modifier.width(30.dp),
-                                                color = PlayerAccent)
+                                                color = palette.accent)
                                             Column {
                                                 Text(item.mediaMetadata.title?.toString()
                                                     ?: "Без названия", maxLines = 1)
                                                 Text(item.mediaMetadata.artist?.toString()
-                                                    ?: "", color = Color.LightGray,
+                                                    ?: "", color = palette.muted,
                                                     style = MaterialTheme.typography.bodySmall)
                                             }
                                         }
@@ -445,17 +446,17 @@ internal fun FullPlayerDialog(
                                                 modifier = Modifier.size(coverSize)
                                                     .shadow(14.dp, RoundedCornerShape(22.dp))
                                                     .clip(RoundedCornerShape(22.dp))
-                                                    .background(PlayerPanel)
+                                                    .background(palette.surface)
                                             )
                                         }
                                     }
                                     Text(
-                                        title, color = Color.White,
+                                        title, color = palette.foreground,
                                         style = MaterialTheme.typography.titleLarge,
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 2, overflow = TextOverflow.Ellipsis
                                     )
-                                    Text(artist, color = Color.LightGray,
+                                    Text(artist, color = palette.muted,
                                         style = MaterialTheme.typography.bodyMedium,
                                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     TextButton(onClick = { page = PlayerPage.ALBUM }) {
@@ -502,17 +503,17 @@ internal fun FullPlayerDialog(
                                 player.isCurrentMediaItemSeekable,
                             modifier = Modifier.fillMaxWidth().height(36.dp),
                             colors = SliderDefaults.colors(
-                                thumbColor = PlayerAccent,
-                                activeTrackColor = PlayerAccent,
+                                thumbColor = palette.accent,
+                                activeTrackColor = palette.accent,
                                 inactiveTrackColor = Color(0xFF51415C)
                             )
                         )
                         Row(Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(timeLabel(shown), color = Color.LightGray,
+                            Text(timeLabel(shown), color = palette.muted,
                                 style = MaterialTheme.typography.labelSmall)
                             Text(if (durationMs > 0L) timeLabel(durationMs) else "--:--",
-                                color = Color.LightGray,
+                                color = palette.muted,
                                 style = MaterialTheme.typography.labelSmall)
                         }
                         Row(Modifier.fillMaxWidth(),
@@ -521,20 +522,20 @@ internal fun FullPlayerDialog(
                             IconButton(onClick = { navigate(-1) },
                                 enabled = !pendingNavigation) {
                                 Icon(Icons.Filled.SkipPrevious, "Предыдущий трек",
-                                    tint = Color.White)
+                                    tint = palette.foreground)
                             }
                             IconButton(onClick = {
                                 player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0L))
                             }, enabled = durationMs > 0L &&
                                 player.isCurrentMediaItemSeekable) {
                                 Icon(Icons.Filled.Replay10, "Назад 10 секунд",
-                                    tint = Color.White)
+                                    tint = palette.foreground)
                             }
                             FilledIconButton(
                                 onClick = { if (playing) player.pause() else player.play() },
                                 modifier = Modifier.size(60.dp),
                                 colors = IconButtonDefaults.filledIconButtonColors(
-                                    containerColor = PlayerAccent,
+                                    containerColor = palette.accent,
                                     contentColor = Color(0xFF170E25)
                                 )
                             ) {
@@ -549,12 +550,12 @@ internal fun FullPlayerDialog(
                             }, enabled = durationMs > 0L &&
                                 player.isCurrentMediaItemSeekable) {
                                 Icon(Icons.Filled.Forward10, "Вперёд 10 секунд",
-                                    tint = Color.White)
+                                    tint = palette.foreground)
                             }
                             IconButton(onClick = { navigate(1) },
                                 enabled = !pendingNavigation) {
                                 Icon(Icons.Filled.SkipNext, "Следующий трек",
-                                    tint = Color.White)
+                                    tint = palette.foreground)
                             }
                         }
                         Row(Modifier.fillMaxWidth().height(42.dp),
@@ -565,14 +566,14 @@ internal fun FullPlayerDialog(
                                 shuffle = !shuffle
                             }) {
                                 Icon(Icons.Filled.Shuffle, "Случайный порядок",
-                                    tint = if (shuffle) PlayerAccent else Color.LightGray)
+                                    tint = if (shuffle) palette.accent else palette.muted)
                             }
                             IconButton(onClick = onFavorite) {
                                 Icon(
                                     if (favorite) Icons.Filled.Favorite
                                     else Icons.Filled.FavoriteBorder,
                                     "Добавить в избранное",
-                                    tint = if (favorite) PlayerAccent else Color.LightGray
+                                    tint = if (favorite) palette.accent else palette.muted
                                 )
                             }
                             IconButton(onClick = {
@@ -589,7 +590,7 @@ internal fun FullPlayerDialog(
                                         Icons.Filled.RepeatOne else Icons.Filled.Repeat,
                                     "Режим повтора",
                                     tint = if (repeat == Player.REPEAT_MODE_OFF)
-                                        Color.LightGray else PlayerAccent
+                                        palette.muted else palette.accent
                                 )
                             }
                         }
