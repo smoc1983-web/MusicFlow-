@@ -50,3 +50,13 @@ for label,html in [("home",home),("top",top),("song",song)]:
         walk(pp)
     except Exception as e:
         print("NEXT_PARSE",label,repr(e))
+
+for label,text in [("HOME",home),("TOP",top),("SONG",song)]:
+    positions=[m.start() for m in re.finditer(r'/pages/\d+/\d+\.shtml',text)]
+    print("TRACK_MARKUP",label,"COUNT",len(positions))
+    for pos in positions[:2]:
+        print("TRACK_CONTEXT",label,repr(text[max(0,pos-220):pos+460]))
+    for word in ["data-url","zaycev.net/api","/api/track","playTrack","playlistId"]:
+        pos=text.find(word)
+        if pos>=0:
+            print("KEYWORD_CONTEXT",label,word,repr(text[max(0,pos-125):pos+180]))
