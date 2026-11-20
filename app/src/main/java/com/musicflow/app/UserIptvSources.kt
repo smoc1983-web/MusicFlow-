@@ -2,6 +2,8 @@ package com.musicflow.app
 
 import android.content.Context
 import android.content.Intent
+import android.provider.OpenableColumns
+import java.io.File
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -11,7 +13,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
 
-internal enum class IptvSourceKind { PLAYLIST, CHANNEL }
+internal enum class IptvSourceKind { PLAYLIST, CHANNEL, FILE }
 
 internal data class IptvSource(
     val id: String,
@@ -50,7 +52,10 @@ internal fun loadIptvSources(context: Context): List<IptvSource> = runCatching {
             val kind = runCatching {
                 IptvSourceKind.valueOf(item.optString("kind"))
             }.getOrNull() ?: continue
-            if (id.isNotBlank() && name.isNotBlank() && isSupportedIptvUrl(address)) {
+            val good = if (kind == IptvSourceKind.FILE)
+                address == "local://" + id && Regex("[0-9a-f-]{36}").matches(id)
+            else isSupportedIptvUrl(address)
+            if (id.isNotBlank() && name.isNotBlank() && good) {
                 add(IptvSource(id, name, address, kind))
             }
         }
@@ -76,6 +81,7 @@ internal fun newIptvSource(
     address: String,
     kind: IptvSourceKind
 ): IptvSource {
+    require(kind != IptvSourceKind.FILE) { "Для файла воспользуйтесь кнопкой импорта." }
     val url = address.trim()
     require(isSupportedIptvUrl(url)) { "Нужна ссылка HTTP или HTTPS." }
     require(!isCubPluginUrl(url)) {
@@ -90,6 +96,9 @@ internal fun newIptvSource(
 }
 
 internal suspend fun fetchIptvSource(source: IptvSource): List<TvChannel> = withContext(Dispatchers.IO) {
+    if (source.kind == IptvSourceKind.FILE && IptvStorage.appDir == null) {
+        error("Хранилище IPTV не инициализировано")
+    }
     if (source.kind == IptvSourceKind.CHANNEL) {
         return@withContext listOf(
             TvChannel(
@@ -100,6 +109,13 @@ internal suspend fun fetchIptvSource(source: IptvSource): List<TvChannel> = with
                 streamUrl = source.address
             )
         )
+    }
+    if (source.kind == IptvSourceKind.FILE) {
+        val file = localIptvFileFromSource(source)
+        require(file.exists() && file.length() in 1..2_000_000) {
+            "Локальный IPTV-файл не найден или слишком большой."
+        }
+        return@withContext parseUserIptvPlaylist(file.readText(Charsets.UTF_8), source)
     }
     val connection = (URL(source.address).openConnection() as HttpURLConnection).apply {
         connectTimeout = 12_000
@@ -155,8 +171,14 @@ private fun parseUserIptvPlaylist(raw: String, source: IptvSource): List<TvChann
             info != null -> {
                 val lastInfo = info ?: continue
                 info = null
-                val stream = runCatching { URL(URL(source.address), line).toExternalForm() }.getOrNull()
-                    ?: continue
+                val stream = if (source.kind == IptvSourceKind.FILE) {
+                    // Local playlists must use absolute HTTP(S) URLs: relative file paths
+                    // and file:// entries are never sent to the network player.
+                    line.takeIf { isSupportedIptvUrl(it) }
+                } else runCatching {
+                    URL(URL(source.address), line).toExternalForm()
+                }.getOrNull()
+                if (stream == null) continue
                 if (!isSupportedIptvUrl(stream)) continue
                 val title = (iptvAttribute(lastInfo, "tvg-name")
                     ?: lastInfo.substringAfter(',', "").trim()).ifBlank {
@@ -186,6 +208,76 @@ private fun parseUserIptvPlaylist(raw: String, source: IptvSource): List<TvChann
 private fun iptvAttribute(line: String, name: String): String? =
     Regex(Regex.escape(name) + "=\"([^\"]*)\"")
         .find(line)?.groupValues?.getOrNull(1)?.takeIf { it.isNotBlank() }
+
+private const val MAX_LOCAL_M3U_BYTES = 2_000_000
+
+private fun localIptvFileFromSource(source: IptvSource): File {
+    require(source.kind == IptvSourceKind.FILE &&
+        source.address == "local://" + source.id &&
+        Regex("[0-9a-f-]{36}").matches(source.id)
+    ) { "Неверный идентификатор IPTV-файла" }
+    // Only app-owned files are ever used; never interpret arbitrary user paths.
+    return File(File(IptvStorage.appDir ?: error("IPTV storage not initialized")), source.id + ".m3u")
+}
+
+internal object IptvStorage {
+    var appDir: File? = null
+        private set
+    fun initialize(context: Context) {
+        if (appDir == null) appDir = File(context.applicationContext.filesDir, "iptv")
+            .also { it.mkdirs() }
+    }
+}
+
+internal suspend fun importLocalIptvPlaylist(context: Context, uri: Uri): IptvSource =
+    withContext(Dispatchers.IO) {
+        IptvStorage.initialize(context)
+        val displayName = runCatching {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME),
+                null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+        }.getOrNull().orEmpty()
+        val text = context.contentResolver.openInputStream(uri)?.use { input ->
+            val output = java.io.ByteArrayOutputStream()
+            val chunk = ByteArray(8192)
+            while (true) {
+                val n = input.read(chunk)
+                if (n < 0) break
+                if (output.size() + n > MAX_LOCAL_M3U_BYTES)
+                    throw IllegalArgumentException("Максимальный размер файла — 2 МБ.")
+                output.write(chunk, 0, n)
+            }
+            output.toString(Charsets.UTF_8.name())
+        } ?: error("Не удалось прочитать выбранный файл")
+        val id = UUID.randomUUID().toString()
+        val src = IptvSource(
+            id = id,
+            name = displayName.replace(Regex("(?i)\\.m3u8?$"), "").trim()
+                .ifBlank { "IPTV из файла" }.take(70),
+            address = "local://" + id,
+            kind = IptvSourceKind.FILE
+        )
+        // Validate playlist and that it actually has playable channel URLs before saving.
+        val channels = parseUserIptvPlaylist(text, src)
+        require(channels.isNotEmpty()) { "В файле не найдены каналы." }
+        val file = localIptvFileFromSource(src)
+        try {
+            file.writeText(text, Charsets.UTF_8)
+        } catch (e: Exception) {
+            file.delete()
+            throw e
+        }
+        AppDiagnostics.info("IPTV", "local playlist imported; channels=" + channels.size)
+        src
+    }
+
+internal fun deleteLocalIptvSource(context: Context, source: IptvSource) {
+    if (source.kind == IptvSourceKind.FILE) {
+        IptvStorage.initialize(context)
+        runCatching { localIptvFileFromSource(source).delete() }
+    }
+}
 
 internal fun openTvExternal(context: Context, channel: TvChannel): String? {
     if (!isSupportedIptvUrl(channel.streamUrl)) return "Неверная ссылка на трансляцию."

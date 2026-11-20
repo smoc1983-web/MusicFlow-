@@ -1,6 +1,8 @@
 package com.musicflow.app
 
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.compose.foundation.Image
@@ -167,6 +169,7 @@ internal fun RuVideoHubTvScreen(
     var streamRefreshing by remember { mutableStateOf(false) }
     var streamRefreshError by remember { mutableStateOf<String?>(null) }
     val userSources = remember(context) {
+        IptvStorage.initialize(context)
         mutableStateListOf<IptvSource>().also { it.addAll(loadIptvSources(context)) }
     }
     var activeSourceId by remember { mutableStateOf("ruvideohub") }
@@ -177,6 +180,32 @@ internal fun RuVideoHubTvScreen(
     var addUrl by remember { mutableStateOf("") }
     var addKind by remember { mutableStateOf(IptvSourceKind.PLAYLIST) }
     var sourceInputError by remember { mutableStateOf<String?>(null) }
+    val importFile = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                runCatching { importLocalIptvPlaylist(context, uri) }
+                    .onSuccess { src ->
+                        if (userSources.size >= 40) {
+                            deleteLocalIptvSource(context, src)
+                            sourceInputError = "Максимум 40 источников."
+                        } else {
+                            userSources.add(src)
+                            saveIptvSources(context, userSources.toList())
+                            activeSourceId = src.id
+                            showAddSource = false
+                            sourceInputError = null
+                            refresh(src.id)
+                        }
+                    }.onFailure { e ->
+                        sourceInputError = e.message ?: "Не удалось прочитать IPTV-файл"
+                        AppDiagnostics.failure("IPTV", "file import", e)
+                    }
+            }
+        }
+    }
+
 
     fun refresh(sourceId: String = activeSourceId) {
         val request = loadSequence.incrementAndGet()
@@ -298,6 +327,10 @@ internal fun RuVideoHubTvScreen(
                 addKind = IptvSourceKind.PLAYLIST
                 showAddSource = true
             }) { Text("+ Добавить") }
+            TextButton(onClick = {
+                sourceInputError = null
+                importFile.launch(arrayOf("*/*"))
+            }) { Text("+ Файл") }
             if (activeSourceId != "ruvideohub") {
                 TextButton(onClick = { showDeleteSource = true }) { Text("Удалить") }
             }
@@ -449,6 +482,11 @@ internal fun RuVideoHubTvScreen(
             title = { Text("Добавить IPTV") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Добавьте URL или выберите M3U/M3U8 на телефоне:",
+                        style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = { importFile.launch(arrayOf("*/*")) }) {
+                        Text("Выбрать файл M3U / M3U8")
+                    }
                     Text("Тип ссылки:", style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
@@ -515,6 +553,7 @@ internal fun RuVideoHubTvScreen(
             text = { Text(current?.name ?: "Выбранный источник") },
             confirmButton = {
                 TextButton(onClick = {
+                    current?.let { deleteLocalIptvSource(context, it) }
                     userSources.removeAll { it.id == activeSourceId }
                     saveIptvSources(context, userSources.toList())
                     showDeleteSource = false
