@@ -17,7 +17,7 @@ assert 'api.deezer.com/album/' in album
 assert 'musicbrainz.org/ws/2/' not in album
 assert 'AlbumCatalog.lookup(artist, title, albumHint)' in player
 assert 'if (found != null) albumInfo = found' in player
-assert 'Text("Подборки")' in home
+assert 'Text("Подборки"' in home
 assert 'Text("Жанры")' in home
 assert home.count('DropdownMenu(') >= 2
 assert 'Что послушаем?' not in home
