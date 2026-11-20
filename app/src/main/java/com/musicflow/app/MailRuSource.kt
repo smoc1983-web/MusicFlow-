@@ -97,10 +97,11 @@ internal fun parseMailRuSearchJson(content: String): List<Track> {
     val tracks = ArrayList<Track>(minOf(items.length(), 50))
     for (i in 0 until minOf(items.length(), 50)) {
         val item = items.optJSONObject(i) ?: continue
-        if (item.optBoolean("IsRestricted", false) || item.optBoolean("IsPreview", false)) continue
+        if (item.hasMusicFlag("IsRestricted") || item.hasMusicFlag("IsPreview")) continue
         val id = item.optString("File").trim()
-        val stream = item.optString("URL").trim()
-        if (id.isBlank() || stream.isBlank()) continue
+        val rawStream = item.optString("URL").trim()
+        if (id.isBlank() || rawStream.isBlank()) continue
+        val stream = if (rawStream.startsWith("//")) "https:$rawStream" else rawStream
         val uri = Uri.parse(stream)
         val host = uri.host?.lowercase(Locale.ROOT).orEmpty()
         if (!uri.scheme.equals("https", ignoreCase = true) ||
@@ -144,3 +145,6 @@ internal fun parseMailRuSearchJson(content: String): List<Track> {
     }
     return tracks.distinctBy { it.id }
 }
+
+private fun JSONObject.hasMusicFlag(name: String): Boolean =
+    optBoolean(name, false) || optString(name) == "1"

@@ -21,6 +21,7 @@ internal class MusicPlaybackRecovery(
     private val scope: CoroutineScope
 ) : Player.Listener {
     private val attempted = mutableSetOf<String>()
+    private val blockedSources = mutableSetOf<String>()
     private var retriedCurrent = false
     private var searchedAgain = false
     private var replacement: MediaItem? = null
@@ -30,6 +31,7 @@ internal class MusicPlaybackRecovery(
         if (mediaItem === replacement && replacement != null) return
         pending?.cancel()
         attempted.clear()
+        blockedSources.clear()
         retriedCurrent = false
         searchedAgain = false
     }
@@ -53,7 +55,8 @@ internal class MusicPlaybackRecovery(
                 PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
                 PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT
             ) || causes.any { it is SocketTimeoutException || it is UnknownHostException }
-        val refreshZaycev = uri.scheme == "zaycev" && status in setOf(403, 404, 410)
+        val refreshZaycev = uri.scheme == "zaycev" && status in setOf(403, 404, 410) &&
+            causes.any { it is HttpDataSource.InvalidResponseCodeException }
         AppDiagnostics.info("Recovery",
             "source=${active.source} code=${error.errorCodeName} http=${status ?: 0}")
         attempted.add(active.uri)
@@ -71,8 +74,8 @@ internal class MusicPlaybackRecovery(
             var available = streams
             val blocked = status in setOf(401, 451) ||
                 error.errorCodeName.startsWith("ERROR_CODE_DRM")
-            if (blocked) attempted.addAll(streams.filter { it.source == active.source }.map { it.uri })
-            var candidate = available.firstOrNull { it.uri !in attempted }
+            if (blocked) blockedSources.add(active.source)
+            var candidate = available.firstOrNull { it.uri !in attempted && it.source !in blockedSources }
             if (candidate == null && !searchedAgain) {
                 searchedAgain = true
                 val matches = findRecording(
@@ -81,7 +84,7 @@ internal class MusicPlaybackRecovery(
                     extras.getLong(MUSIC_DURATION_SECONDS)
                 )
                 val refreshed = matches.flatMap { it.streams() }
-                    .filter { !blocked || it.source != active.source }
+                    .filter { it.source !in blockedSources }
                 available = (streams + refreshed).distinctBy { it.uri }
                 candidate = refreshed.firstOrNull { it.uri !in attempted }
             }
