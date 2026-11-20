@@ -68,3 +68,50 @@ url="https://my.mail.ru/cgi-bin/my/ajax?"+urllib.parse.urlencode(q)
 fetch("OLD_AJAX_SEARCH",url, "https://my.mail.ru/music/search/abba")
 fetch("SAMPLE_MP3_RANGE","https://moosic.my.mail.ru/file/ebde61a74f061a323d09807823650af1.mp3",
     "https://my.mail.ru/music/",range_header="bytes=0-1")
+
+# Test public tracks using the actual JSON keys and report parser exclusion reasons,
+# without printing song names, track IDs, URL paths, tokens or user data.
+for term in ("abba", "Кино", "Stromae"):
+    q2=dict(q)
+    q2["arg_query"]=term
+    url="https://my.mail.ru/cgi-bin/my/ajax?"+urllib.parse.urlencode(q2)
+    req=urllib.request.Request(url,headers={
+        "User-Agent":UA,
+        "Accept-Language":"ru-RU,ru;q=0.9",
+        "Referer":"https://my.mail.ru/music/search/"+urllib.parse.quote(term),
+        "X-Requested-With":"XMLHttpRequest",
+        "Accept":"application/json,text/plain,*/*"})
+    try:
+        with urllib.request.urlopen(req,timeout=18) as response:
+            payload=json.load(response)
+        if isinstance(payload,list):
+            objs=[v for v in payload if isinstance(v,dict)]
+        elif isinstance(payload,dict): objs=[payload]
+        else: objs=[]
+        items=next((v.get("MusicData",[]) for v in objs if isinstance(v.get("MusicData"),list)),[])
+        counts={"total":len(items),"restricted":0,"file_empty":0,"stream_empty":0,"invalid_https":0,"invalid_host":0,"name_empty":0,"accepted":0}
+        for item in items:
+            if not isinstance(item,dict):continue
+            if item.get("IsRestricted") in (True,1,"true","1"):
+                counts["restricted"]+=1;continue
+            idv=str(item.get("File","")).strip()
+            stream=str(item.get("URL","")).strip()
+            if not idv: counts["file_empty"]+=1;continue
+            if not stream:counts["stream_empty"]+=1;continue
+            parsed=urllib.parse.urlsplit(stream)
+            if parsed.scheme.lower()!="https": counts["invalid_https"]+=1;continue
+            host=(parsed.hostname or "").lower()
+            if host!="my.mail.ru" and not host.endswith(".my.mail.ru"):
+                counts["invalid_host"]+=1;continue
+            name=(item.get("Name") or item.get("Name_Text_HTML") or "")
+            if not str(name).strip():counts["name_empty"]+=1;continue
+            counts["accepted"]+=1
+        sample=items[0] if items else {}
+        print("PARSER_CHECK",repr(term),counts,
+              "first_file_type",type(sample.get("File")).__name__,
+              "first_url_type",type(sample.get("URL")).__name__,
+              "first_url_host",urllib.parse.urlsplit(str(sample.get("URL",""))).hostname,
+              "first_name_present",bool(sample.get("Name") or sample.get("Name_Text_HTML")),
+              "first_restriction_type",type(sample.get("IsRestricted")).__name__)
+    except Exception as e:
+        print("PARSER_CHECK",repr(term),"ERROR",str(e)[:160])
