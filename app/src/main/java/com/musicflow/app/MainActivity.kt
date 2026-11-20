@@ -44,6 +44,7 @@ import coil.compose.rememberAsyncImagePainter
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -167,19 +168,43 @@ private fun MusicScreen(
     var durationMs by remember { mutableLongStateOf(0L) }
 
     fun fetch(query: String = "") {
+        val requested = query.trim()
         val requestNumber = searchSequence.incrementAndGet()
         scope.launch {
             busy = true
             problem = null
+            tracks = emptyList()
+            appliedSearch = requested
+            val errors = mutableListOf<String>()
             try {
-                val found = audiusTracks(query)
-                if (requestNumber == searchSequence.get()) {
-                    tracks = found.distinctBy { it.id }
-                    appliedSearch = query.trim()
+                // Each catalog is queried concurrently. The list updates when either finishes.
+                // No source selector or source labels are exposed in search results.
+                coroutineScope {
+                    launch {
+                        val result = runCatching { audiusTracks(requested) }
+                        if (requestNumber == searchSequence.get()) {
+                            result.onSuccess { found ->
+                                tracks = combineMusicTracks(tracks, found)
+                            }.onFailure { errors += "Audius: " + (it.message ?: "ошибка сети") }
+                        }
+                    }
+                    if (requested.isNotBlank()) {
+                        launch {
+                            val result = runCatching { muzofondTracks(requested) }
+                            if (requestNumber == searchSequence.get()) {
+                                result.onSuccess { found ->
+                                    tracks = combineMusicTracks(tracks, found)
+                                }.onFailure { errors += "Muzofond: " + (it.message ?: "ошибка сети") }
+                            }
+                        }
+                    }
                 }
-            } catch (e: Exception) {
-                if (requestNumber == searchSequence.get()) {
-                    problem = "Audius: " + (e.message ?: "Нет соединения. Проверь VPN и интернет.")
+                if (requestNumber == searchSequence.get() && errors.isNotEmpty()) {
+                    problem = if (tracks.isEmpty()) {
+                        "Не удалось получить музыку. " + errors.joinToString("; ").take(320)
+                    } else {
+                        "Часть результатов временно недоступна. Можно слушать найденные песни."
+                    }
                 }
             } finally {
                 if (requestNumber == searchSequence.get()) busy = false
@@ -255,8 +280,8 @@ private fun MusicScreen(
             .padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(20.dp))
-        Text("MusicFlow TV+ Preview", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-        Text("Audius · RuVideoHub IPTV", color = Color.LightGray)
+        Text("MusicFlow", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+        Text("Музыка онлайн · IPTV", color = Color.LightGray)
         Spacer(Modifier.height(18.dp))
 
         Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -378,11 +403,12 @@ private fun MusicScreen(
                             Text("Альбом: " + it, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                  color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
                         }
-                        Text(
-                            "Audius" +
-                            (if (track.durationSec > 0L) " · " + formatTrackDuration(track.durationSec) else ""),
-                            color = Violet, style = MaterialTheme.typography.labelSmall
-                        )
+                        if (track.durationSec > 0L) {
+                            Text(
+                                formatTrackDuration(track.durationSec),
+                                color = Violet, style = MaterialTheme.typography.labelSmall
+                            )
+                        }
                     }
                     TextButton(onClick = {
                         if (isFavorite) favorites.removeAll { it.id == track.id }
@@ -474,6 +500,17 @@ private fun MusicScreen(
             onClose = { expandedPlayer = false }
         )
     }
+}
+
+private fun combineMusicTracks(existing: List<Track>, incoming: List<Track>): List<Track> {
+    fun key(track: Track): String {
+        val artist = track.artist.trim().lowercase(java.util.Locale.ROOT)
+            .replace(Regex("\\s+"), " ")
+        val title = track.title.trim().lowercase(java.util.Locale.ROOT)
+            .replace(Regex("\\s+"), " ")
+        return artist + "\u0000" + title
+    }
+    return (existing + incoming).distinctBy(::key)
 }
 
 private suspend fun audiusTracks(query: String): List<Track> = withContext(Dispatchers.IO) {

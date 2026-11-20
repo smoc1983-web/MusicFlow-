@@ -46,3 +46,19 @@ The repository contains GPLv3 language as well as additional non-commercial rest
 - One-tap retry or reload the RuVideoHub M3U8 playlist to refresh signed channel links.
 - TV playback remains online-only, with Audius music untouched.
 - Isolated application ID: `com.musicflow.tvplayerpreview`; v0.5.0 remains under `stable/v0.5.0-preview`.
+
+
+## v0.7.0 Preview — unified music search (Audius + Muzofond)
+
+- One search field searches Audius and Muzofond concurrently, with a single combined track list and no visible source labels.
+- The "Home" feed still uses Audius trending; non-empty searches query both sources.
+- Muzofond is parsed directly on the Android device (no WebView or server-side proxy).
+- Muzofond adapter uses the documented `/search/<query>` redirect to `/music/<query>` and the `li.item li.play[data-url]` track metadata.
+- The same Media3 player handles both audio providers. Requests to Muzofond MP3 hosts include a scoped Referer header; Audius and IPTV requests are unchanged.
+- Network failures in one source do not prevent searching/playing tracks from the other.
+- No music downloads, scraping bypass, or WebView.
+- **Limitation:** Muzofond may deny access to some IP regions/VPN addresses. It has not been validated from a Russian device; site layout may change.
+- Separate application ID `com.musicflow.unifiedpreview` to protect the tested v0.6.0 build.
+
+Parser based on the public source and unit fixture in:
+https://github.com/Eremiteb/mytasks/tree/main/music_downloader

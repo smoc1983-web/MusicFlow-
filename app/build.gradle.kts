@@ -7,11 +7,11 @@ android {
     namespace = "com.musicflow.app"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.musicflow.iptvpreview"
+        applicationId = "com.musicflow.unifiedpreview"
         minSdk = 26
         targetSdk = 35
-        versionCode = 60
-        versionName = "0.6.0-preview"
+        versionCode = 70
+        versionName = "0.7.0-preview"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -34,4 +34,5 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-hls:1.8.0")
     implementation("androidx.media3:media3-exoplayer-dash:1.8.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("org.jsoup:jsoup:1.18.3")
 }
