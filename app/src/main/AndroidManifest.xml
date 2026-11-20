@@ -17,6 +17,11 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <activity android:name=".TvFullscreenActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar.Fullscreen"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
         <service android:name=".PlaybackService"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback">

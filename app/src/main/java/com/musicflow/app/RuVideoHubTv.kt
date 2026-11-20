@@ -78,7 +78,7 @@ internal data class TvChannel(
         }
 }
 
-private suspend fun retrieveChannels(): List<TvChannel> = withContext(Dispatchers.IO) {
+internal suspend fun retrieveChannels(): List<TvChannel> = withContext(Dispatchers.IO) {
     val failures = mutableListOf<String>()
     for (url in listOf(PLAYLIST_URL, PLAYLIST_FALLBACK)) {
         try {
@@ -261,7 +261,7 @@ internal fun RuVideoHubTvScreen(
         streamRefreshError = null
         AppDiagnostics.info("IPTV", "channel selected; source=" +
             (if (activeSourceId == "ruvideohub") "RuVideoHub" else "custom"))
-        selected = channel
+        TvPlaybackHandoff.set(channels, channel, activeSourceId)
         val path = Uri.parse(channel.streamUrl).path.orEmpty().lowercase()
         val mediaBuilder = MediaItem.Builder()
             .setMediaId("ruvideo:" + channel.id)
@@ -281,6 +281,7 @@ internal fun RuVideoHubTvScreen(
         controller.setMediaItem(media)
         controller.prepare()
         controller.play()
+        context.startActivity(Intent(context, TvFullscreenActivity::class.java))
     }
 
     fun refreshPlayingChannel() {
@@ -565,30 +566,4 @@ internal fun RuVideoHubTvScreen(
         )
     }
 
-    selected?.let { channel ->
-        val controller = player
-        if (controller != null) {
-            TvPlayerDialog(
-                channel = channel,
-                channels = channels,
-                player = controller,
-                refreshing = streamRefreshing,
-                refreshError = streamRefreshError,
-                onSelectChannel = { playChannel(it) },
-                onReload = { refreshPlayingChannel() },
-                onOpenExternal = { current ->
-                    controller.pause()
-                    val launchError = openTvExternal(context, current)
-                    if (launchError == null) selected = null
-                    else streamRefreshError = launchError
-                },
-                onClose = {
-                    if (controller.currentMediaItem?.mediaId == "ruvideo:" + channel.id) {
-                        controller.pause()
-                    }
-                    selected = null
-                }
-            )
-        }
-    }
 }
