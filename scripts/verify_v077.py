@@ -12,7 +12,7 @@ assert "LaunchedEffect(title, artist)" in full
 assert "decorFitsSystemWindows = !immersive" in full
 assert "player.hasNextMediaItem()" in full
 assert "player.hasPreviousMediaItem()" in full
-assert "resolveRecommendedTrack(target.artist, target.title)" in full
+assert "resolvePlayableAlbumTrack(" in full
 assert "onPlayAlbumTrack(track.copy(collectionTitle = album.title))" in full
 assert "LazyColumn(Modifier.weight(1f)" in full
 assert "verticalScroll(" not in full
