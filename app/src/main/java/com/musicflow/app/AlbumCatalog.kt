@@ -27,39 +27,20 @@ internal data class AlbumListing(
  */
 internal object AlbumCatalog {
     private const val CACHE_TTL = 7L * 24L * 3600_000L
-    private val albumCache = ConcurrentHashMap<String, AlbumListing>()
+    private val albumCache = ConcurrentHashMap<Triple<String, String, String>, AlbumListing>()
 
     private data class MetadataSong(
         val artist: String, val title: String, val album: String,
         val albumId: String, val cover: String?, val durationMs: Long
     )
 
-    private fun norm(value: String): String = value.lowercase(Locale.ROOT)
-        .replace(Regex("(?i)\\b(feat\\.?|ft\\.?|featuring)\\b.*$"), "")
-        .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
-        .trim()
-        .replace(Regex("\\s+"), " ")
+    private fun norm(value: String): String = musicKey(value)
 
-    private fun sameSong(wanted: String, actual: String): Boolean {
-        val a = norm(wanted)
-        val b = norm(actual)
-        return a.isNotEmpty() && a == b
-    }
+    private fun sameSong(wanted: String, actual: String): Boolean =
+        norm(wanted).let { it.isNotEmpty() && it == norm(actual) }
 
-    private fun sameArtist(wanted: String, actual: String): Boolean {
-        val a = norm(wanted)
-        val b = norm(actual)
-        if (a.isBlank() || b.isBlank() || a == "неизвестный исполнитель") return false
-        if (a == b) return true
-        // Matching one of several credited performers is useful for Russian
-        // duets; check word boundaries, never a bare character substring.
-        val parts = wanted.split(',', '&', ';', '/')
-            .map(::norm).filter { it.length >= 3 }
-        if (parts.any { it == b }) return true
-        return (a.length >= 4 && b.length >= 4 &&
-            ((" " + a + " ").contains(" " + b + " ") ||
-             (" " + b + " ").contains(" " + a + " ")))
-    }
+    private fun sameArtist(wanted: String, actual: String): Boolean =
+        norm(wanted).let { it.isNotEmpty() && it != "неизвестный исполнитель" && it == norm(actual) }
 
     private fun enc(text: String): String = URLEncoder.encode(text.trim(), "UTF-8")
 
@@ -131,8 +112,7 @@ internal object AlbumCatalog {
                 val album = item.optJSONObject("album") ?: return@mapNotNull null
                 val albumId = album.optLong("id", 0)
                 val albumName = album.optString("title").trim()
-                val title = item.optString("title_short")
-                    .ifBlank { item.optString("title") }.trim()
+                val title = item.optString("title").ifBlank { item.optString("title_short") }.trim()
                 val artist = item.optJSONObject("artist")?.optString("name").orEmpty().trim()
                 if (albumId <= 0 || albumName.isEmpty() || title.isEmpty() || artist.isEmpty())
                     return@mapNotNull null
@@ -184,7 +164,9 @@ internal object AlbumCatalog {
             if (!track.collectionTitle.isNullOrBlank()) track
             else {
                 val candidate = metadata.firstOrNull {
-                    sameSong(track.title, it.title) && sameArtist(track.artist, it.artist)
+                    sameSong(track.title, it.title) && sameArtist(track.artist, it.artist) &&
+                        (track.durationSec <= 0 || it.durationMs <= 0 ||
+                            kotlin.math.abs(track.durationSec - it.durationMs / 1000) <= 8)
                 }
                 if (candidate == null) track
                 else {
@@ -212,7 +194,7 @@ internal object AlbumCatalog {
      * The selected recording must actually be present in the album listing.
      */
     suspend fun lookup(artist: String, trackTitle: String, albumHint: String?): AlbumListing? {
-        val key = norm(artist) + "|" + norm(trackTitle) + "|" + norm(albumHint.orEmpty())
+        val key = Triple(norm(artist), norm(trackTitle), norm(albumHint.orEmpty()))
         albumCache[key]?.let { return it }
         val candidates = combinedSearch("$artist $trackTitle", 25)
             .filter { sameSong(trackTitle, it.title) && sameArtist(artist, it.artist) }
@@ -228,7 +210,9 @@ internal object AlbumCatalog {
                     appleAlbum(song.albumId.substringAfter(':'), trackTitle)
                 else deezerAlbum(song.albumId.substringAfter(':'), trackTitle)
             }.getOrNull()
-            if (album != null) {
+            if (album != null && album.tracks.any {
+                    sameSong(trackTitle, it.title) && sameArtist(artist, it.artist)
+                }) {
                 albumCache[key] = album
                 return album
             }

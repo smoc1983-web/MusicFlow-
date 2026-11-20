@@ -48,8 +48,9 @@ internal fun musicKey(value: String): String =
     value.lowercase(Locale.ROOT).replace('ё', 'е').replace(wordBreak, " ").trim()
 
 internal fun recordingMatches(track: Track, artist: String, title: String, durationSec: Long = 0): Boolean =
-    musicKey(track.artist) == musicKey(artist) && musicKey(artist).isNotEmpty() &&
-        musicKey(track.title) == musicKey(title) && musicKey(title).isNotEmpty() &&
+    musicKey(artist).let { key ->
+        key.isNotEmpty() && key != "неизвестный исполнитель" && key == musicKey(track.artist)
+    } && musicKey(title).let { key -> key.isNotEmpty() && key == musicKey(track.title) } &&
         durationMatches(track.durationSec, durationSec)
 
 private fun durationMatches(left: Long, right: Long): Boolean =
@@ -72,19 +73,24 @@ private val providers = mapOf<String, suspend (String) -> List<Track>>(
 
 internal suspend fun searchMusic(
     query: String,
+    alternateQuery: String? = null,
+    accept: (Track) -> Boolean = { true },
     onResult: (String, List<Track>?, Throwable?) -> Unit
 ) = coroutineScope {
     providers.forEach { (source, search) ->
         launch {
             val tracks = try {
-                search(query)
+                val initial = search(query).filter { relevantMusic(it, query) && accept(it) }
+                if (initial.isEmpty() && !alternateQuery.isNullOrBlank() && alternateQuery != query) {
+                    search(alternateQuery).filter { relevantMusic(it, alternateQuery) && accept(it) }
+                } else initial
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: Exception) {
                 onResult(source, null, error)
                 return@launch
             }
-            onResult(source, tracks.filter { relevantMusic(it, query) }, null)
+            onResult(source, tracks, null)
         }
     }
 }
@@ -96,9 +102,13 @@ internal suspend fun findRecording(
 ): List<Track> {
     var matches = emptyList<Track>()
     withTimeoutOrNull(24_000L) {
-        searchMusic("$artist $title") { source, tracks, error ->
+        searchMusic(
+            "$artist $title",
+            alternateQuery = title,
+            accept = { recordingMatches(it, artist, title, durationSec) }
+        ) { source, tracks, error ->
             if (error != null) AppDiagnostics.failure("Search", "recording lookup source=$source", error)
-            matches += tracks.orEmpty().filter { recordingMatches(it, artist, title, durationSec) }
+            matches += tracks.orEmpty()
         }
     }
     return matches

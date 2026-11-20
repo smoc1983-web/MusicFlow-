@@ -64,6 +64,7 @@ internal fun FullPlayerDialog(
     artist: String,
     artwork: String?,
     playing: Boolean,
+    playbackStatus: String?,
     positionMs: Long,
     durationMs: Long,
     favorite: Boolean,
@@ -118,10 +119,13 @@ internal fun FullPlayerDialog(
     // every displayed card and risking a false album association.
     LaunchedEffect(page, title, artist, albumHint) {
         if (page != PlayerPage.ALBUM) return@LaunchedEffect
-        // Never display a different track's release while looking up metadata.
-        if (albumInfo?.tracks?.none {
-            it.title.equals(title, ignoreCase = true)
-        } == true) albumInfo = null
+        if (albumInfo?.let { listing ->
+                musicKey(listing.title) == musicKey(albumHint.orEmpty()) &&
+                    listing.tracks.any {
+                        musicKey(it.title) == musicKey(title) && musicKey(it.artist) == musicKey(artist)
+                    }
+            } == true) return@LaunchedEffect
+        albumInfo = null
         albumLoading = true
         albumMessage = null
         try {
@@ -304,6 +308,9 @@ internal fun FullPlayerDialog(
                             onClick = onStop) {
                             Icon(Icons.Filled.Close, "Выключить музыку", tint = Color.White)
                         }
+                    }
+                    playbackStatus?.let {
+                        Text(it, color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
                     }
                     when (page) {
                         PlayerPage.ALBUM -> {

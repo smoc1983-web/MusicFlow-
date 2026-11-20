@@ -616,7 +616,7 @@ private fun MusicScreen(
                         Icon(
                             if (player?.playWhenReady == true && player.playerError == null) androidx.compose.material.icons.Icons.Filled.Pause
                             else androidx.compose.material.icons.Icons.Filled.PlayArrow,
-                            contentDescription = if (playing) "Пауза" else "Воспроизвести",
+                            contentDescription = if (player?.playWhenReady == true && player.playerError == null) "Пауза" else "Воспроизвести",
                             tint = Color.White
                         )
                     }
@@ -654,6 +654,7 @@ private fun MusicScreen(
             artist = trackArtist,
             artwork = currentArtwork,
             playing = playing,
+            playbackStatus = playbackStatus,
             positionMs = positionMs,
             durationMs = durationMs,
             favorite = favorites.any { it.id == currentMediaId },
