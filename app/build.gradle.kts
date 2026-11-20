@@ -10,8 +10,8 @@ android {
         applicationId = "com.musicflow.zaycev79preview"
         minSdk = 26
         targetSdk = 35
-        versionCode = 79
-        versionName = "0.7.9-preview"
+        versionCode = 710
+        versionName = "0.7.10-preview"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

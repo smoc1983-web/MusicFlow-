@@ -45,7 +45,7 @@ internal object AppDiagnostics {
     fun warning(area: String, message: String) { append("WARN", area, message) }
     fun failure(area: String, operation: String, error: Throwable) {
         append("ERROR", area, operation + ": " +
-            error.javaClass.simpleName + ": " + error.message.orEmpty())
+            error.javaClass.simpleName + " cause=" + (error.cause?.javaClass?.simpleName ?: "none"))
     }
 
     private fun append(level: String, area: String, message: String) {

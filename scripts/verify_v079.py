@@ -6,14 +6,16 @@ playback = (root/"PlaybackService.kt").read_text(encoding="utf-8")
 home = (root/"HomePlaybackResolver.kt").read_text(encoding="utf-8")
 album = (root/"AlbumStreamResolver.kt").read_text(encoding="utf-8")
 full = (root/"FullPlayerDialog.kt").read_text(encoding="utf-8")
-assert 'zaycevTracks(requested)' in main
-assert 'zaycevTracks(term)' in home
-assert 'zaycevTracks(q)' in album
+sources = (root/'MusicSources.kt').read_text(encoding='utf-8')
+assert 'searchMusic(requested)' in main
+assert 'resolvePlayableAlbumTrack(' in home
+assert 'findRecording(artist, title, durationSec)' in album
+assert '::zaycevTracks' in sources
 assert 'zaycev://track/' in source
 assert 'pages/search/tracks' in source
 assert 'track/filezmeta' in source and 'track/play/' in source
 assert 'ZaycevStreamResolver.resolve(spec.uri)' in playback
-assert 'ZaycevStreamResolver.resolve(Uri.parse(uri))' in album
+assert 'probeAlbumStream' not in album
 assert 'id.startsWith("zaycev:")' in main
 assert 'resultListState.scrollToItem(0)' in main
 assert 'if (isActive) "♫" else "▶"' in full

@@ -146,11 +146,10 @@ internal fun FullPlayerDialog(
         scope.launch {
             try {
                 val track = resolvePlayableAlbumTrack(
-                    song.artist, song.title, availableTracks
+                    song.artist.ifBlank { album.artist }, song.title, availableTracks, song.durationMs / 1000
                 )
                 if (track != null) {
                     albumInfo = album
-                    page = PlayerPage.NOW_PLAYING
                     onPlayAlbumTrack(track.copy(collectionTitle = album.title))
                 } else {
                     albumMessage = "Для выбранной композиции нет доступного аудиопотока."
@@ -195,7 +194,7 @@ internal fun FullPlayerDialog(
                         else "Это первая композиция альбома."
                     } else {
                         val track = resolvePlayableAlbumTrack(
-                            target.artist, target.title, availableTracks
+                            target.artist.ifBlank { album.artist }, target.title, availableTracks, target.durationMs / 1000
                         )
                         if (track == null) albumMessage =
                             "Следующая композиция не найдена в доступных аудиокаталогах."
@@ -317,25 +316,32 @@ internal fun FullPlayerDialog(
                                         style = MaterialTheme.typography.bodySmall)
                                 }
                                 albumInfo?.let { listing ->
+                                    listing.artwork?.let { cover ->
+                                        Image(
+                                            painter = rememberAsyncImagePainter(cover),
+                                            contentDescription = "Обложка альбома",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.size(64.dp).clip(RoundedCornerShape(8.dp))
+                                        )
+                                    }
                                     Text(listing.title, color = Color.White,
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.titleLarge)
-                                    Text(listing.artist + " · " + listing.tracks.size +
-                                        " композиций", color = Color.LightGray)
+                                    Text(listOfNotNull(listing.artist, listing.year, "${listing.tracks.size} композиций")
+                                        .joinToString(" · "), color = Color.LightGray)
                                     Spacer(Modifier.height(8.dp))
                                     LazyColumn(Modifier.weight(1f),
                                         verticalArrangement = Arrangement.spacedBy(5.dp)) {
                                         itemsIndexed(listing.tracks) { index, song ->
-                                            val isActive = song.title.equals(title, ignoreCase = true) &&
-                                                (song.artist.equals(artist, ignoreCase = true) ||
-                                                    song.artist.isBlank() ||
-                                                    listing.artist.equals(artist, ignoreCase = true))
+                                            val isActive = musicKey(song.title) == musicKey(title) &&
+                                                musicKey(song.artist.ifBlank { listing.artist }) == musicKey(artist)
                                             Row(
                                                 Modifier.fillMaxWidth()
                                                     .clip(RoundedCornerShape(10.dp))
                                                     .background(if (isActive) Color(0xFF4A325E) else PlayerPanel)
                                                     .clickable(enabled = pendingTrack == null) {
                                                         if (isActive) {
+                                                            if (player.playerError != null) player.prepare()
                                                             if (!playing) player.play()
                                                         } else playAlbumSong(song, listing)
                                                     }

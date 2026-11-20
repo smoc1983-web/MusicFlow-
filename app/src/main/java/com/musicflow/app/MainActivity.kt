@@ -45,7 +45,8 @@ import androidx.media3.session.SessionToken
 import coil.compose.rememberAsyncImagePainter
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -61,7 +62,8 @@ internal data class Track(
     val artwork: String?,
     val stream: String,
     val durationSec: Long,
-    val collectionTitle: String? = null
+    val collectionTitle: String? = null,
+    val alternatives: List<MusicStream> = emptyList()
 )
 
 class MainActivity : ComponentActivity() {
@@ -71,7 +73,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppDiagnostics.initialize(this)
-        AppDiagnostics.info("App", "MusicFlow 0.7.2 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
+        AppDiagnostics.info("App", "MusicFlow 0.7.10 Preview launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener({
@@ -123,7 +125,8 @@ class MainActivity : ComponentActivity() {
                 id, obj.optString("title"), obj.optString("artist"),
                 obj.optString("artwork").takeIf { it.startsWith("https://") },
                 stream, obj.optLong("durationSec"),
-                obj.optString("collectionTitle").takeIf { it.isNotBlank() }
+                obj.optString("collectionTitle").takeIf { it.isNotBlank() },
+                decodeStreams(obj.optString("alternatives"))
             )
         }
     }.getOrDefault(emptyList())
@@ -139,6 +142,7 @@ class MainActivity : ComponentActivity() {
                 put("stream", t.stream)
                 put("durationSec", t.durationSec)
                 put("collectionTitle", t.collectionTitle ?: "")
+                put("alternatives", encodeStreams(t.alternatives))
             })
         }
         getSharedPreferences("musicflow", MODE_PRIVATE)
@@ -156,7 +160,7 @@ private fun MusicScreen(
     val resultListState = rememberLazyListState()
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
-    val searchSequence = remember { AtomicInteger(0) }
+    var searchJob by remember { mutableStateOf<Job?>(null) }
     val homeSequence = remember { AtomicInteger(0) }
     var pendingHomeSong by remember { mutableStateOf<String?>(null) }
     var homePlaybackMessage by remember { mutableStateOf<String?>(null) }
@@ -171,6 +175,8 @@ private fun MusicScreen(
     var problem by remember { mutableStateOf<String?>(null) }
     var expandedPlayer by remember { mutableStateOf(false) }
     var queueCatalog by remember { mutableStateOf<List<Track>>(emptyList()) }
+    var playbackStatus by remember { mutableStateOf<String?>(null) }
+    var playbackSource by remember { mutableStateOf<String?>(null) }
     var playing by remember { mutableStateOf(false) }
     var currentArtwork by remember { mutableStateOf<String?>(null) }
     var currentMediaId by remember { mutableStateOf("") }
@@ -181,93 +187,39 @@ private fun MusicScreen(
 
     fun fetch(query: String = "") {
         val requested = query.trim()
-        val requestNumber = searchSequence.incrementAndGet()
-        if (requested.isEmpty()) {
-            tracks = emptyList()
-            appliedSearch = ""
-            problem = null
-            busy = false
-            return
-        }
-        scope.launch {
-            busy = true
-            problem = null
-            tracks = emptyList()
-            appliedSearch = requested
+        searchJob?.cancel()
+        tracks = emptyList()
+        appliedSearch = requested
+        problem = null
+        busy = requested.isNotEmpty()
+        if (!busy) return
+        searchJob = scope.launch {
             if (tab == 1) resultListState.scrollToItem(0)
-            val errors = mutableListOf<String>()
-            AppDiagnostics.info("Search", "request started; queryLength=" + requested.length)
-            try {
-                // Each catalog is queried concurrently. The list updates when either finishes.
-                // No source selector or source labels are exposed in search results.
-                coroutineScope {
-                    launch {
-                            val result = runCatching { muzofondTracks(requested) }
-                            if (requestNumber == searchSequence.get()) {
-                                result.onSuccess { found ->
-                                    tracks = combineMusicTracks(tracks, found)
-                                    AppDiagnostics.info("Search", "Muzofond returned " + found.size + " songs")
-                                }.onFailure {
-                                    AppDiagnostics.failure("Search", "Muzofond", it)
-                                    errors += "Muzofond: " + (it.message ?: "ошибка сети")
-                                }
-                            }
-                        }
-                        launch {
-                            val result = runCatching { mailRuTracks(requested) }
-                            if (requestNumber == searchSequence.get()) {
-                                result.onSuccess { found ->
-                                    tracks = combineMusicTracks(tracks, found)
-                                    AppDiagnostics.info("Search", "Mail.ru returned " + found.size + " songs")
-                                }.onFailure {
-                                    AppDiagnostics.failure("Search", "Mail.ru", it)
-                                    errors += "Mail.ru: " + (it.message ?: "ошибка сети")
-                                }
-                            }
-                        }
-                        launch {
-                            val result = runCatching { zaycevTracks(requested) }
-                            if (requestNumber == searchSequence.get()) {
-                                result.onSuccess { found ->
-                                    tracks = combineMusicTracks(tracks, found)
-                                    AppDiagnostics.info(
-                                        "Search", "Zaycev returned " + found.size + " songs"
-                                    )
-                                }.onFailure {
-                                    AppDiagnostics.failure("Search", "Zaycev", it)
-                                    errors += "Zaycev: " + (it.message ?: "ошибка сети")
-                                }
-                            }
-                        }
+            var failures = 0
+            AppDiagnostics.info("Search", "request started")
+            searchMusic(requested) { source, found, error ->
+                if (error != null) {
+                    failures++
+                    AppDiagnostics.failure("Search", "source=$source", error)
+                } else {
+                    tracks = combineMusicTracks(tracks, found.orEmpty())
+                    AppDiagnostics.info("Search", "source=$source matches=" + found.orEmpty().size)
                 }
-                if (requestNumber == searchSequence.get() && tracks.isNotEmpty()) {
-                    // Enrich after live songs are shown. Metadata requests do not
-                    // delay audio search and never replace verified stream URLs.
-                    val batch = tracks.toList()
-                    scope.launch {
-                        val enriched = runCatching {
-                            AlbumCatalog.enrichTracks(context, batch, requested)
-                        }.getOrElse { failure ->
-                            AppDiagnostics.failure("Album", "enrich search results", failure)
-                            emptyList()
-                        }
-                        if (requestNumber == searchSequence.get() && enriched.isNotEmpty()) {
-                            tracks = combineMusicTracks(tracks, enriched)
-                            if (tab == 1) resultListState.scrollToItem(0)
-                        }
-                    }
-                }
-                if (requestNumber == searchSequence.get() && errors.isNotEmpty()) {
-                    problem = if (tracks.isEmpty()) {
-                        "Не удалось получить музыку. " + errors.joinToString("; ").take(320)
-                    } else {
-                        "Часть результатов временно недоступна. Можно слушать найденные песни."
-                    }
-                }
-            } finally {
-                if (requestNumber == searchSequence.get()) {
-                    AppDiagnostics.info("Search", "request finished; results=" + tracks.size)
-                    busy = false
+            }
+            busy = false
+            if (failures > 0) {
+                problem = if (tracks.isEmpty()) "Результаты недоступны. Проверьте подключение и повторите поиск."
+                else "Часть источников временно недоступна."
+            }
+            if (tracks.isNotEmpty()) {
+                val batch = tracks
+                try {
+                    val enriched = AlbumCatalog.enrichTracks(context, batch, requested)
+                    tracks = combineMusicTracks(tracks, enriched)
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (failure: Exception) {
+                    AppDiagnostics.failure("Album", "enrich search results", failure)
                 }
             }
         }
@@ -303,6 +255,20 @@ private fun MusicScreen(
     LaunchedEffect(player) {
         while (player != null) {
             playing = player.isPlaying
+            playbackSource = when (player.currentMediaItem?.mediaMetadata?.extras?.getString(MUSIC_SOURCE)) {
+                "zaycev" -> "Zaycev.net"
+                "muzofond" -> "Muzofond"
+                "mailru" -> "Mail.ru Music"
+                else -> null
+            }
+            playbackStatus = when {
+                player.playerError != null -> "Поток недоступен"
+                player.playbackState == androidx.media3.common.Player.STATE_BUFFERING -> "Подключение…"
+                player.isPlaying -> "Сейчас играет"
+                player.playbackState == androidx.media3.common.Player.STATE_ENDED -> "Воспроизведение завершено"
+                !player.playWhenReady -> "На паузе"
+                else -> null
+            }
             currentMediaId = player.currentMediaItem?.mediaId.orEmpty()
             currentArtwork = player.currentMediaItem?.mediaMetadata?.artworkUri?.toString()
             trackTitle = player.currentMediaItem?.mediaMetadata?.title?.toString() ?: ""
@@ -319,6 +285,9 @@ private fun MusicScreen(
             AppDiagnostics.warning("Player", "play requested before connection")
             return
         }
+        homeSequence.incrementAndGet()
+        pendingHomeSong = null
+        homePlaybackMessage = null
         queueCatalog = list.toList()
         AppDiagnostics.info("Player", "queue size=" + list.size + "; index=" + index)
         p.setMediaItems(list.map { t ->
@@ -330,6 +299,11 @@ private fun MusicScreen(
                         .setTitle(t.title)
                         .setArtist(t.artist)
                         .setAlbumTitle(t.collectionTitle)
+                        .setExtras(Bundle().apply {
+                            putString(MUSIC_STREAMS, encodeStreams(t.streams()))
+                            putString(MUSIC_SOURCE, t.id.substringBefore(':'))
+                            putLong(MUSIC_DURATION_SECONDS, t.durationSec)
+                        })
                         .setArtworkUri(t.artwork?.let(Uri::parse))
                         .build()
                 ).build()
@@ -562,7 +536,7 @@ private fun MusicScreen(
                         Text(track.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.LightGray)
                         if (isActive) {
                             Text(
-                                if (playing) "♫ Сейчас играет" else "♫ На паузе",
+                                playbackStatus.orEmpty(),
                                 color = Violet,
                                 style = MaterialTheme.typography.labelSmall
                             )
@@ -628,15 +602,19 @@ private fun MusicScreen(
                             Text(trackArtist, color = Color.LightGray, maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.bodySmall)
-                            Text("Открыть плеер", color = Violet,
+                            Text(listOfNotNull(playbackStatus, playbackSource).joinToString(" · "), color = Violet,
                                 style = MaterialTheme.typography.labelSmall)
                         }
                     }
                     IconButton(onClick = {
-                        if (playing) player?.pause() else player?.play()
+                        if (player?.playWhenReady == true && player.playerError == null) player.pause()
+                        else {
+                            if (player?.playerError != null) player.prepare()
+                            player?.play()
+                        }
                     }) {
                         Icon(
-                            if (playing) androidx.compose.material.icons.Icons.Filled.Pause
+                            if (player?.playWhenReady == true && player.playerError == null) androidx.compose.material.icons.Icons.Filled.Pause
                             else androidx.compose.material.icons.Icons.Filled.PlayArrow,
                             contentDescription = if (playing) "Пауза" else "Воспроизвести",
                             tint = Color.White
@@ -681,8 +659,7 @@ private fun MusicScreen(
             favorite = favorites.any { it.id == currentMediaId },
             onFavorite = { toggleCurrentFavorite() },
             onStop = { stopMusic() },
-            availableTracks = (queueCatalog + tracks + favorites.toList())
-                .distinctBy { it.id },
+            availableTracks = combineMusicTracks(queueCatalog, tracks + favorites.toList()),
             onPlayAlbumTrack = { track ->
                 queueAndPlay(listOf(track), 0)
             },
@@ -691,32 +668,26 @@ private fun MusicScreen(
     }
 }
 
-private fun combineMusicTracks(existing: List<Track>, incoming: List<Track>): List<Track> {
-    fun key(track: Track): String {
-        val artist = track.artist.trim().lowercase(java.util.Locale.ROOT)
-            .replace(Regex("\\s+"), " ")
-        val title = track.title.trim().lowercase(java.util.Locale.ROOT)
-            .replace(Regex("\\s+"), " ")
-        return artist + "\u0000" + title
-    }
-    val combined = LinkedHashMap<String, Track>()
-    for (track in existing + incoming) {
-        val id = key(track)
-        val original = combined[id]
-        if (original == null) {
-            combined[id] = track
-        } else {
-            // Keep the original working stream but enrich it with album and art
-            // metadata even when a different provider answers later.
-            combined[id] = original.copy(
-                artwork = original.artwork?.takeIf { it.isNotBlank() }
-                    ?: track.artwork,
-                collectionTitle = original.collectionTitle?.takeIf { it.isNotBlank() }
-                    ?: track.collectionTitle,
-                durationSec = if (original.durationSec > 0) original.durationSec
-                    else track.durationSec
-            )
+internal fun combineMusicTracks(existing: List<Track>, incoming: List<Track>): List<Track> {
+    val combined = existing.toMutableList()
+    for (track in incoming) {
+        val index = combined.indexOfFirst {
+            it.id == track.id || (track.artist != "Неизвестный исполнитель" &&
+                recordingMatches(it, track.artist, track.title, track.durationSec))
         }
+        if (index < 0) {
+            combined.add(track)
+            continue
+        }
+        val original = combined[index]
+        combined[index] = original.copy(
+            artwork = original.artwork?.takeIf { it.isNotBlank() } ?: track.artwork,
+            collectionTitle = original.collectionTitle?.takeIf { it.isNotBlank() }
+                ?: track.collectionTitle,
+            durationSec = original.durationSec.takeIf { it > 0 } ?: track.durationSec,
+            alternatives = (original.streams() + track.streams()).distinctBy { it.uri }
+                .drop(1).take(11)
+        )
     }
-    return combined.values.toList()
+    return combined
 }

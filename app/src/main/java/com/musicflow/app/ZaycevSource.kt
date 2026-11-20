@@ -41,7 +41,7 @@ internal suspend fun zaycevTracks(query: String): List<Track> = withContext(Disp
         val id = trackIds.optLong(index, -1L)
         if (id <= 0L) continue
         val metadata = info.optJSONObject(id.toString()) ?: continue
-        if (!metadata.optBoolean("playbackEnabled", false)) continue
+        if (!metadata.optBoolean("playbackEnabled", false) || metadata.optBoolean("isPreview", false)) continue
         val title = metadata.optString("track").trim()
         val artist = metadata.optString("artistName").trim()
         if (title.isBlank() || artist.isBlank()) continue
@@ -71,6 +71,10 @@ internal object ZaycevStreamResolver {
     private val trackIdRegex = Regex("[0-9]{1,16}")
     private val hashRegex = Regex("[a-zA-Z0-9_-]{8,128}")
 
+    fun invalidate(pseudoUri: Uri) {
+        pseudoUri.lastPathSegment?.let { cache.remove(it) }
+    }
+
     fun resolve(pseudoUri: Uri): Uri {
         require(pseudoUri.scheme == "zaycev" &&
             pseudoUri.host == "track" &&
@@ -85,7 +89,7 @@ internal object ZaycevStreamResolver {
         val request = JSONObject().put("trackIds", org.json.JSONArray().put(id.toLong()))
             .put("subscription", false)
         val meta = zaycevRequest(ZAYCEV_API + "track/filezmeta", request)
-        val tracks = meta.optJSONArray("tracks") ?: error("Сайт не вернул данные потока")
+        val tracks = meta.optJSONArray("tracks") ?: throw IOException("Сайт не вернул данные потока")
         val hash = (0 until tracks.length())
             .mapNotNull { tracks.optJSONObject(it) }
             .firstOrNull { it.optLong("id", -1) == id.toLong() }
@@ -102,7 +106,8 @@ internal object ZaycevStreamResolver {
             throw IOException("Zaycev вернул неподдерживаемый аудиосервер")
         }
         // Signed links expire. Only cache briefly and resolve anew for later playback.
-        cache[id] = Entry(media, now + 20_000L)
+        if (cache.size >= 256) cache.clear()
+        cache[id] = Entry(media, System.currentTimeMillis() + 20_000L)
         AppDiagnostics.info("Zaycev", "native playback URL resolved")
         return media
     }

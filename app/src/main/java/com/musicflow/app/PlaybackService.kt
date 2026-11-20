@@ -12,11 +12,16 @@ import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.common.util.UnstableApi
 import androidx.annotation.OptIn
 import java.util.Locale
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
+    private val recoveryScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var session: MediaSession? = null
 
     override fun onCreate() {
@@ -69,10 +74,10 @@ class PlaybackService : MediaSessionService() {
             )
             setHandleAudioBecomingNoisy(true)
         }
+        player.addListener(MusicPlaybackRecovery(player, recoveryScope))
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                val kind = player.currentMediaItem?.mediaId.orEmpty()
-                    .substringBefore(":").take(24)
+                val kind = player.currentMediaItem?.mediaMetadata?.extras?.getString(MUSIC_SOURCE) ?: "other"
                 AppDiagnostics.failure(
                     "Playback", "Media3 " + error.errorCodeName + " source=" + kind, error
                 )
@@ -99,6 +104,7 @@ class PlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     override fun onDestroy() {
+        recoveryScope.cancel()
         session?.let {
             it.player.release()
             it.release()

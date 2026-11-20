@@ -100,7 +100,7 @@ internal fun parseMailRuSearchJson(content: String): List<Track> {
     val tracks = ArrayList<Track>(minOf(items.length(), 50))
     for (i in 0 until minOf(items.length(), 50)) {
         val item = items.optJSONObject(i) ?: continue
-        if (item.optBoolean("IsRestricted", false)) continue
+        if (item.optBoolean("IsRestricted", false) || item.optBoolean("IsPreview", false)) continue
         val id = item.optString("File").trim()
         val stream = item.optString("URL").trim()
         if (id.isBlank() || stream.isBlank()) continue

@@ -38,8 +38,8 @@ internal suspend fun muzofondTracks(query: String): List<Track> =
                 try {
                     responseCode = connection.responseCode
                     if (responseCode == 404) continue
-                    if (responseCode == 403 || responseCode == 451) {
-                        throw IOException("HTTP $responseCode: доступ ограничен для текущего соединения. Проверь VPN или регион.")
+                    if (responseCode in setOf(401, 403, 451)) {
+                        throw IOException("HTTP $responseCode: доступ ограничен для текущего соединения.")
                     }
                     if (responseCode !in 200..299) {
                         throw IOException("Сервер ответил: HTTP $responseCode")
@@ -69,8 +69,7 @@ internal suspend fun muzofondTracks(query: String): List<Track> =
                 // retry the canonical /music/ path if no results were parsed.
             } catch (e: Exception) {
                 lastError = e
-                if (e.message?.contains("HTTP 403") == true ||
-                    e.message?.contains("HTTP 451") == true) break
+                if (listOf(401, 403, 451).any { e.message?.contains("HTTP $it") == true }) break
             }
         }
         if (lastError != null) throw lastError

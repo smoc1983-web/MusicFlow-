@@ -16,13 +16,14 @@ import java.util.concurrent.ConcurrentHashMap
 
 internal data class AlbumSong(val number: Int, val title: String, val artist: String, val durationMs: Long)
 internal data class AlbumListing(
-    val title: String, val artist: String, val releaseId: String, val tracks: List<AlbumSong>
+    val title: String, val artist: String, val releaseId: String, val tracks: List<AlbumSong>,
+    val artwork: String? = null, val year: String? = null
 )
 
 /**
  * Keyless public album metadata from Apple iTunes Search and Deezer APIs.
  * This class NEVER uses their previews as music streams. Audio remains sourced from
- * Muzofond and Mail.ru; only verified artist/track matches add album metadata.
+ * Zaycev.net, Muzofond and Mail.ru; only verified artist/track matches add album metadata.
  */
 internal object AlbumCatalog {
     private const val CACHE_TTL = 7L * 24L * 3600_000L
@@ -243,6 +244,8 @@ internal object AlbumCatalog {
         val array = data.optJSONArray("results") ?: return null
         var title = ""
         var artist = ""
+        var artwork: String? = null
+        var year: String? = null
         data class Entry(val disc: Int, val order: Int, val song: AlbumSong)
         val tracks = mutableListOf<Entry>()
         for (i in 0 until array.length()) {
@@ -250,6 +253,8 @@ internal object AlbumCatalog {
             if (item.optString("wrapperType") == "collection") {
                 title = item.optString("collectionName")
                 artist = item.optString("artistName")
+                artwork = item.optString("artworkUrl100").takeIf { it.startsWith("https://") }
+                year = item.optString("releaseDate").take(4).takeIf { it.length == 4 && it.all(Char::isDigit) }
             } else if (item.optString("wrapperType") == "track" &&
                 item.optString("kind") == "song") {
                 val name = item.optString("trackName")
@@ -268,7 +273,8 @@ internal object AlbumCatalog {
             artist = artist,
             releaseId = "itunes:$id",
             tracks = tracks.sortedWith(compareBy(Entry::disc, Entry::order))
-                .mapIndexed { index, entry -> entry.song.copy(number = index + 1) }
+                .mapIndexed { index, entry -> entry.song.copy(number = index + 1) },
+            artwork = artwork, year = year
         )
     }
 
@@ -279,8 +285,7 @@ internal object AlbumCatalog {
         val artist = data.optJSONObject("artist")?.optString("name").orEmpty()
         val tracks = (0 until array.length()).mapNotNull { i ->
             val track = array.optJSONObject(i) ?: return@mapNotNull null
-            val name = track.optString("title_short")
-                .ifBlank { track.optString("title") }
+            val name = track.optString("title").ifBlank { track.optString("title_short") }
             if (name.isBlank()) return@mapNotNull null
             AlbumSong(
                 number = i + 1,
@@ -291,6 +296,10 @@ internal object AlbumCatalog {
             )
         }
         if (tracks.size < 2 || tracks.none { sameSong(it.title, selectedTitle) }) return null
-        return AlbumListing(data.optString("title"), artist, "deezer:$id", tracks)
+        return AlbumListing(
+            data.optString("title"), artist, "deezer:$id", tracks,
+            artwork = data.optString("cover_medium").takeIf { it.startsWith("https://") },
+            year = data.optString("release_date").take(4).takeIf { it.length == 4 && it.all(Char::isDigit) }
+        )
     }
 }

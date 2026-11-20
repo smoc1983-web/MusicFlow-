@@ -12,6 +12,6 @@ assert 'onStop = { stopMusic() }' in main and 'onStop: () -> Unit' in full
 assert 'if (fullscreen && !showChannels)' in tv
 for item in ('RESIZE_MODE_ZOOM','RESIZE_MODE_FILL','ORIGINAL','FIT','CROP','STRETCH','RATIO169','RATIO43'):
     assert item in tv, item
-assert 'bestRecommendation' in resolver and 'withTimeoutOrNull' in resolver
+assert 'resolvePlayableAlbumTrack(' in resolver
 assert 'audiusTracks' not in main
 print("MusicFlow v0.7.5 static regression checks: PASS")
