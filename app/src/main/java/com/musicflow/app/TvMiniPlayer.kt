@@ -146,10 +146,10 @@ internal fun TvMiniPlayer(
                             useController = false
                             setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                            this.player = player
+                            // The bridge owns attachment and release.
                         } },
-                        update = { view -> view.player = player },
-                        onRelease = { view -> view.player = null },
+                        update = { view -> TvVideoSurfaceBridge.bindMini(view, player) },
+                        onRelease = { view -> TvVideoSurfaceBridge.releaseMini(view) },
                         modifier = Modifier.fillMaxSize()
                     )
                     Box(Modifier.matchParentSize().clickable(onClick = onExpand))
