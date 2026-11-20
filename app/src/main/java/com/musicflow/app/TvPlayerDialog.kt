@@ -36,6 +36,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -44,6 +46,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.VideoSize
 import androidx.media3.common.C
 import androidx.media3.common.Tracks
 import androidx.media3.common.TrackSelectionOverride
@@ -58,6 +61,69 @@ import kotlinx.coroutines.delay
 private val TvBackground = Color(0xFF100F17)
 private val TvPanel = Color(0xFF242032)
 private val TvAccent = Color(0xFFAC80FF)
+
+// Each sizing mode operates on the actual video surface, not on the dialog bounds.
+private enum class TvSizingMode(val title: String, val description: String) {
+    ORIGINAL("Оригинал", "Исходный размер без увеличения и обрезки"),
+    FIT("Вписать", "Все изображение с сохранением пропорций"),
+    CROP("Заполнить", "Весь экран без искажений, но края могут обрезаться"),
+    STRETCH("Растянуть", "По ширине и высоте экрана с изменением пропорций"),
+    RATIO169("16:9", "Изображение в области 16:9"),
+    RATIO43("4:3", "Изображение в области 4:3")
+}
+
+@Composable
+@OptIn(UnstableApi::class)
+private fun TvVideoFrame(
+    player: MediaController,
+    sizeMode: TvSizingMode,
+    videoSize: VideoSize,
+    modifier: Modifier = Modifier
+) {
+    BoxWithConstraints(modifier.background(Color.Black), contentAlignment = Alignment.Center) {
+        val density = LocalDensity.current.density
+        val sizing = when (sizeMode) {
+            TvSizingMode.RATIO169, TvSizingMode.RATIO43 -> {
+                val aspect = if (sizeMode == TvSizingMode.RATIO169) 16f / 9f else 4f / 3f
+                val width = minOf(maxWidth.value, maxHeight.value * aspect).dp
+                Modifier.size(width, width / aspect)
+            }
+            TvSizingMode.ORIGINAL -> {
+                if (videoSize.width < 1 || videoSize.height < 1) Modifier.fillMaxSize()
+                else {
+                    val nativeW = (videoSize.width * videoSize.pixelWidthHeightRatio / density).dp
+                    val nativeH = (videoSize.height / density).dp
+                    val scale = minOf(1f, maxWidth.value / nativeW.value,
+                        maxHeight.value / nativeH.value)
+                    Modifier.size(nativeW * scale, nativeH * scale)
+                }
+            }
+            else -> Modifier.fillMaxSize()
+        }
+        AndroidView(
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    useController = false
+                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                    keepScreenOn = true
+                    this.player = player
+                }
+            },
+            update = { view ->
+                view.player = player
+                view.resizeMode = when (sizeMode) {
+                    TvSizingMode.ORIGINAL, TvSizingMode.FIT ->
+                        AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    TvSizingMode.CROP -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                    TvSizingMode.STRETCH, TvSizingMode.RATIO169, TvSizingMode.RATIO43 ->
+                        AspectRatioFrameLayout.RESIZE_MODE_FILL
+                }
+            },
+            onRelease = { view -> view.player = null },
+            modifier = sizing.background(Color.Black)
+        )
+    }
+}
 
 private data class VideoQualityOption(
     val group: Tracks.Group,
@@ -92,8 +158,18 @@ internal fun TvPlayerDialog(
     val orientation = LocalConfiguration.current.orientation
     val isLandscape = orientation == Configuration.ORIENTATION_LANDSCAPE
     var fullscreen by remember { mutableStateOf(false) }
-    var fillVideo by remember { mutableStateOf(false) }
+    val tvPrefs = remember(context) {
+        context.getSharedPreferences("musicflow_tv_display", Context.MODE_PRIVATE)
+    }
+    val previousMode = remember(tvPrefs) { tvPrefs.getString("sizeMode", "") ?: "" }
+    var sizeMode by remember {
+        mutableStateOf(
+            TvSizingMode.entries.firstOrNull { it.name == previousMode } ?: TvSizingMode.FIT
+        )
+    }
+    var showSizing by remember { mutableStateOf(false) }
     var showQuality by remember { mutableStateOf(false) }
+    var videoSize by remember(player) { mutableStateOf(player.videoSize) }
     var currentTracks by remember(player) { mutableStateOf(player.currentTracks) }
     var showControls by remember { mutableStateOf(true) }
     var showChannels by remember { mutableStateOf(false) }
@@ -147,6 +223,9 @@ internal fun TvPlayerDialog(
             override fun onTracksChanged(tracks: Tracks) {
                 currentTracks = tracks
             }
+            override fun onVideoSizeChanged(size: VideoSize) {
+                videoSize = size
+            }
             override fun onPlayerError(error: PlaybackException) {
                 playbackError = error.errorCodeName + ": " +
                     (error.cause?.message ?: error.message.orEmpty()).take(180)
@@ -156,6 +235,7 @@ internal fun TvPlayerDialog(
         playbackState = player.playbackState
         isPlaying = player.isPlaying
         currentTracks = player.currentTracks
+        videoSize = player.videoSize
         onDispose { player.removeListener(listener) }
     }
     LaunchedEffect(channel.id) {
@@ -228,6 +308,18 @@ internal fun TvPlayerDialog(
             modifier = Modifier.fillMaxSize(),
             color = TvBackground
         ) {
+            Box(Modifier.fillMaxSize().background(Color.Black)) {
+                if (fullscreen && !showChannels) {
+                    TvVideoFrame(
+                        player = player,
+                        sizeMode = sizeMode,
+                        videoSize = videoSize,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    Box(Modifier.fillMaxSize().clickable {
+                        showControls = !showControls
+                    })
+                }
             Column(
                 modifier = Modifier.fillMaxSize()
                     .then(
@@ -324,31 +416,19 @@ internal fun TvPlayerDialog(
                         else Modifier.fillMaxWidth().aspectRatio(16f / 9f),
                         contentAlignment = Alignment.Center
                     ) {
-                        AndroidView(
-                            factory = { ctx ->
-                                PlayerView(ctx).apply {
-                                    useController = false
-                                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
-                                    keepScreenOn = true
-                                    this.player = player
+                        // In immersive mode video occupies the entire dialog behind these overlays.
+                        if (!fullscreen) {
+                            TvVideoFrame(
+                                player = player, sizeMode = sizeMode,
+                                videoSize = videoSize,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            Box(
+                                Modifier.matchParentSize().clickable {
+                                    showControls = !showControls
                                 }
-                            },
-                            update = { view ->
-                                view.player = player
-                                view.resizeMode = if (fillVideo)
-                                    AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                                else AspectRatioFrameLayout.RESIZE_MODE_FIT
-                            },
-                            onRelease = { view -> view.player = null },
-                            modifier = Modifier.fillMaxSize().background(Color.Black)
-                        )
-                        // Transparent tap target makes the controls reappear without video seeking.
-                        Box(
-                            Modifier.matchParentSize().clickable {
-                                showControls = !showControls
-                            }
-                        )
+                            )
+                        }
                         if (playbackState == Player.STATE_BUFFERING && playbackError == null) {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -425,13 +505,16 @@ internal fun TvPlayerDialog(
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            TextButton(onClick = { fillVideo = !fillVideo }) {
-                                Text(if (fillVideo) "Вписать" else "Заполнить")
+                            TextButton(onClick = { showSizing = true }) {
+                                Text("Размер: " + sizeMode.title)
                             }
                             TextButton(onClick = { showQuality = true }) {
                                 Text(if (qualityChoices.size > 1) "Качество" else "Исходное")
                             }
                             TextButton(onClick = {
+                                if (!fullscreen && previousMode.isBlank() && sizeMode == TvSizingMode.FIT) {
+                                    sizeMode = TvSizingMode.CROP
+                                }
                                 fullscreen = !fullscreen
                                 showControls = true
                             }) { Text(if (fullscreen) "Свернуть" else "⛶ Весь экран") }
@@ -469,7 +552,45 @@ internal fun TvPlayerDialog(
                     }
                 }
             }
+            }
         }
+
+    if (showSizing) {
+        AlertDialog(
+            onDismissRequest = { showSizing = false },
+            title = { Text("Размер изображения") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    TvSizingMode.entries.forEach { mode ->
+                        TextButton(
+                            onClick = {
+                                sizeMode = mode
+                                tvPrefs.edit().putString("sizeMode", mode.name).apply()
+                                AppDiagnostics.info("TV", "sizing mode = " + mode.name)
+                                showSizing = false
+                                showControls = true
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(Modifier.fillMaxWidth()) {
+                                Text(
+                                    (if (sizeMode == mode) "✓ " else "") + mode.title
+                                )
+                                Text(
+                                    mode.description,
+                                    color = Color.LightGray,
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSizing = false }) { Text("Закрыть") }
+            }
+        )
+    }
 
     if (showQuality) {
         AlertDialog(
