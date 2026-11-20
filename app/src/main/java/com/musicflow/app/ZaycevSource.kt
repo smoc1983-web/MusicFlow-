@@ -28,6 +28,12 @@ internal suspend fun zaycevTracks(query: String): List<Track> = withContext(Disp
     val address = ZAYCEV_API + "pages/search/tracks?q=" +
         URLEncoder.encode(term, "UTF-8") + "&page=1&limit=40"
     val root = zaycevRequest(address)
+    // Zaycev shows Top-100 when a query has no matches. Never present those
+    // unrelated popular songs as search results for the user's query.
+    if (root.optBoolean("popularInSearch", false)) {
+        AppDiagnostics.info("Search", "Zaycev search has no matching songs")
+        return@withContext emptyList()
+    }
     val trackIds = root.optJSONArray("trackIds") ?: return@withContext emptyList()
     val info = root.optJSONObject("tracksInfo") ?: return@withContext emptyList()
     val results = ArrayList<Track>(minOf(40, trackIds.length()))
