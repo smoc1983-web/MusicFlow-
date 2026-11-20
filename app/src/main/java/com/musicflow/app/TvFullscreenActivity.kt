@@ -101,6 +101,7 @@ class TvFullscreenActivity : ComponentActivity() {
         }
     }
     override fun onDestroy() {
+        TvVideoSurfaceBridge.fullscreenDestroyed()
         future?.let { MediaController.releaseFuture(it) }
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         super.onDestroy()
@@ -144,16 +145,16 @@ private fun FullscreenVideo(player: MediaController, mode: PictureMode,
                 useController = false
                 keepScreenOn = true
                 setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
-                this.player = player
+                // The bridge attaches only after the old surface is removed.
             }
         }, update = { view ->
-            view.player = player
+            TvVideoSurfaceBridge.bindFullscreen(view, player)
             view.resizeMode = when (mode) {
                 PictureMode.ORIGINAL, PictureMode.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
                 PictureMode.COVER -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                 else -> AspectRatioFrameLayout.RESIZE_MODE_FILL
             }
-        }, onRelease = { it.player = null },
+        }, onRelease = { TvVideoSurfaceBridge.releaseFullscreen(it) },
             modifier = frame.background(Color.Black))
     }
 }
