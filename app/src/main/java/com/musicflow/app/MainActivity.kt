@@ -42,15 +42,11 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import coil.compose.rememberAsyncImagePainter
 import com.google.common.util.concurrent.ListenableFuture
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.concurrent.atomic.AtomicInteger
 
 private val Violet = Color(0xFFAC80FF)
@@ -115,7 +111,10 @@ class MainActivity : ComponentActivity() {
             val obj = array.optJSONObject(index) ?: return@mapNotNull null
             val id = obj.optString("id")
             val stream = obj.optString("stream")
-            if (id.isBlank() || id.startsWith("archive:") || !stream.startsWith("https://")) null
+            if (id.isBlank() || id.startsWith("archive:") ||
+                stream.contains("api.audius.co", ignoreCase = true) ||
+                stream.contains("discoveryprovider.audius.co", ignoreCase = true) ||
+                !stream.startsWith("https://")) null
             else Track(
                 id, obj.optString("title"), obj.optString("artist"),
                 obj.optString("artwork").takeIf { it.startsWith("https://") },
@@ -159,8 +158,8 @@ private fun MusicScreen(
     var appliedSearch by remember { mutableStateOf("") }
     var searchMode by remember { mutableStateOf(SearchMode.ALL) }
     var sortMode by remember { mutableStateOf(SortMode.RELEVANCE) }
-    var tab by remember { mutableIntStateOf(0) }
-    var busy by remember { mutableStateOf(true) }
+    var tab by remember { mutableIntStateOf(1) }
+    var busy by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
     var expandedPlayer by remember { mutableStateOf(false) }
     var queueCatalog by remember { mutableStateOf<List<Track>>(emptyList()) }
@@ -175,6 +174,13 @@ private fun MusicScreen(
     fun fetch(query: String = "") {
         val requested = query.trim()
         val requestNumber = searchSequence.incrementAndGet()
+        if (requested.isEmpty()) {
+            tracks = emptyList()
+            appliedSearch = ""
+            problem = null
+            busy = false
+            return
+        }
         scope.launch {
             busy = true
             problem = null
@@ -187,19 +193,6 @@ private fun MusicScreen(
                 // No source selector or source labels are exposed in search results.
                 coroutineScope {
                     launch {
-                        val result = runCatching { audiusTracks(requested) }
-                        if (requestNumber == searchSequence.get()) {
-                            result.onSuccess { found ->
-                                tracks = combineMusicTracks(tracks, found)
-                                AppDiagnostics.info("Search", "Audius returned " + found.size + " songs")
-                            }.onFailure {
-                                AppDiagnostics.failure("Search", "Audius", it)
-                                errors += "Audius: " + (it.message ?: "ошибка сети")
-                            }
-                        }
-                    }
-                    if (requested.isNotBlank()) {
-                        launch {
                             val result = runCatching { muzofondTracks(requested) }
                             if (requestNumber == searchSequence.get()) {
                                 result.onSuccess { found ->
@@ -223,7 +216,6 @@ private fun MusicScreen(
                                 }
                             }
                         }
-                    }
                 }
                 if (requestNumber == searchSequence.get() && errors.isNotEmpty()) {
                     problem = if (tracks.isEmpty()) {
@@ -240,7 +232,7 @@ private fun MusicScreen(
             }
         }
     }
-    LaunchedEffect(Unit) { fetch() }
+    LaunchedEffect(Unit) { AppDiagnostics.info("Search", "Awaiting music search input") }
     LaunchedEffect(player) {
         while (player != null) {
             playing = player.isPlaying
@@ -316,12 +308,13 @@ private fun MusicScreen(
         Spacer(Modifier.height(18.dp))
 
         Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Главная", "Поиск", "Избранное", "ТВ", "Логи").forEachIndexed { index, title ->
+            listOf(1 to "Поиск", 2 to "Избранное", 3 to "ТВ", 4 to "Логи")
+                .forEach { (index, title) ->
                 FilterChip(
                     selected = tab == index,
                     onClick = {
                         tab = index
-                        if (index == 0 || index == 1) fetch(if (index == 1) search else "")
+                        if (index == 1 && search.isNotBlank()) fetch(search)
                     },
                     label = { Text(title) }
                 )
@@ -362,7 +355,7 @@ private fun MusicScreen(
             Spacer(Modifier.height(6.dp))
             Button(
                 onClick = { fetch(search) },
-                enabled = !busy,
+                enabled = !busy && search.isNotBlank(),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Искать")
@@ -388,20 +381,8 @@ private fun MusicScreen(
         problem?.let {
             Text(it, color = Color(0xFFFFB3A8), modifier = Modifier.padding(vertical = 10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { fetch(if (tab == 1) search else "") }) {
+                TextButton(onClick = { fetch(search) }) {
                     Text("Повторить")
-                }
-                TextButton(onClick = {
-                    runCatching {
-                        context.startActivity(
-                            Intent(
-                                Intent.ACTION_VIEW,
-                                Uri.parse("https://api.audius.co/v1/tracks/trending?app_name=MusicFlowAndroid&limit=2")
-                            )
-                        )
-                    }
-                }) {
-                    Text("Проверить API")
                 }
             }
         }
@@ -452,7 +433,12 @@ private fun MusicScreen(
             }
             if (visible.isEmpty() && !busy) item {
                 Text(
-                    if (tab == 2) "Избранного пока нет" else if (tab == 1 && tracks.isNotEmpty()) "Нет совпадений по выбранному полю. Попробуй режим «Везде»." else "Треки не найдены",
+                    when {
+                        tab == 2 -> "Избранного пока нет"
+                        tab == 1 && appliedSearch.isBlank() -> "Введите название песни или исполнителя для поиска"
+                        tab == 1 && tracks.isNotEmpty() -> "Нет совпадений по выбранному полю. Попробуй режим «Везде»."
+                        else -> "Треки не найдены"
+                    },
                     color = Color.LightGray, modifier = Modifier.padding(12.dp)
                 )
             }
@@ -544,68 +530,4 @@ private fun combineMusicTracks(existing: List<Track>, incoming: List<Track>): Li
         return artist + "\u0000" + title
     }
     return (existing + incoming).distinctBy(::key)
-}
-
-private suspend fun audiusTracks(query: String): List<Track> = withContext(Dispatchers.IO) {
-    val hosts = listOf("https://api.audius.co/v1", "https://discoveryprovider.audius.co/v1")
-    val diagnostics = mutableListOf<String>()
-    for (host in hosts) {
-        try {
-            val url = Uri.parse(host + if (query.isBlank()) "/tracks/trending" else "/tracks/search")
-                .buildUpon().appendQueryParameter("app_name", "MusicFlowAndroid")
-                .appendQueryParameter("limit", "40").apply {
-                    if (query.isNotBlank()) appendQueryParameter("query", query.trim())
-                }.build().toString()
-            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 12_000
-                readTimeout = 15_000
-                instanceFollowRedirects = true
-                setRequestProperty("Accept", "application/json")
-            }
-            val payload = try {
-                if (conn.responseCode !in 200..299) {
-                    val snippet = conn.errorStream?.bufferedReader()?.use { it.readText().take(100) } ?: ""
-                    error("HTTP " + conn.responseCode + (if (snippet.isBlank()) "" else ": " + snippet))
-                }
-                conn.inputStream.bufferedReader().use { it.readText() }
-            } finally {
-                conn.disconnect()
-            }
-            val array = JSONObject(payload).optJSONArray("data")
-                ?: error("Некорректный ответ каталога")
-            val result = mutableListOf<Track>()
-            for (index in 0 until array.length()) {
-                val item = array.optJSONObject(index) ?: continue
-                val id = item.optString("id")
-                val title = item.optString("title")
-                if (id.isBlank() || title.isBlank() || !item.optBoolean("is_streamable", true)) continue
-                val access = item.optJSONObject("access")
-                if (access != null && !access.optBoolean("stream", true)) continue
-                val artist = item.optJSONObject("user")?.optString("name")
-                    ?.takeIf(String::isNotBlank) ?: "Неизвестный исполнитель"
-                val art = item.optJSONObject("artwork")
-                val artwork = listOf("480x480", "1000x1000", "150x150")
-                    .firstNotNullOfOrNull { key ->
-                        art?.optString(key)?.takeIf { it.startsWith("https://") }
-                    }
-                val stream = Uri.parse(host + "/tracks/" + Uri.encode(id) + "/stream")
-                    .buildUpon().appendQueryParameter("app_name", "MusicFlowAndroid")
-                    .build().toString()
-                val collection = item.optJSONObject("album_backlink")?.optString("title")
-                    ?.takeIf { it.isNotBlank() }
-                result.add(Track(id, title, artist, artwork, stream, item.optLong("duration"), collection))
-            }
-            return@withContext result.distinctBy { it.id }
-        } catch (failure: Exception) {
-            val reason = when (failure) {
-                is java.net.UnknownHostException -> "DNS: адрес не найден"
-                is java.net.SocketTimeoutException -> "превышено время ожидания"
-                is javax.net.ssl.SSLException -> "ошибка TLS/SSL"
-                is java.net.ConnectException -> "соединение отклонено"
-                else -> (failure.message ?: failure.javaClass.simpleName).take(150)
-            }
-            diagnostics.add(host.substringAfter("https://").substringBefore("/") + ": " + reason)
-        }
-    }
-    throw IllegalStateException(diagnostics.joinToString("; ").ifBlank { "Нет ответа от Audius" })
 }

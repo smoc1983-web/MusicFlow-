@@ -23,18 +23,6 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - name: Diagnose Audius API (no credentials)
-        shell: bash
-        run: |
-          for base in "https://api.audius.co/v1" "https://discoveryprovider.audius.co/v1"; do
-            for params in "app_name=MusicFlowAndroid&limit=40" "limit=2"; do
-              echo "Endpoint: $base/tracks/trending?$params"
-              code=$(curl -L -sS --max-time 20 -o /tmp/audius-response.json -w "%{http_code}" "$base/tracks/trending?$params") || code="network-error"
-              echo "HTTP: $code"
-              head -c 500 /tmp/audius-response.json || true
-              echo ""
-            done
-          done
       - name: Check RuVideoHub playlist (diagnostic)
         shell: bash
         run: |

@@ -7,11 +7,11 @@ android {
     namespace = "com.musicflow.app"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.musicflow.logspreview"
+        applicationId = "com.musicflow.noaudiuspreview"
         minSdk = 26
         targetSdk = 35
-        versionCode = 72
-        versionName = "0.7.2-preview"
+        versionCode = 73
+        versionName = "0.7.3-preview"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
