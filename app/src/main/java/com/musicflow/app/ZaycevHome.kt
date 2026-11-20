@@ -150,6 +150,32 @@ internal fun MusicHomeScreen(
                 onClick = { onSearch("") },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("⌕  Поиск исполнителя или песни") }
+            // Zaycev thematic collections take priority over the long Top-100 list.
+            if (collections.isNotEmpty()) {
+                Spacer(Modifier.height(14.dp))
+                Text("🎼 Подборки Zaycev", style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    collections.forEach { collection ->
+                        FilterChip(
+                            selected = chosenCollection == collection.title,
+                            onClick = {
+                                chosenCollection = collection.title
+                                loading = true
+                            },
+                            label = {
+                                Text(collection.title, maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis)
+                            },
+                            modifier = Modifier.widthIn(max = 185.dp)
+                        )
+                    }
+                }
+            }
             Spacer(Modifier.height(12.dp))
             Text("Жанры", style = MaterialTheme.typography.titleMedium)
             Row(
@@ -198,34 +224,6 @@ internal fun MusicHomeScreen(
         }
         items(fresh.take(15), key = { "fresh_" + it.id }) { song ->
             HomeSongRow(song, onPlay, pendingSongId)
-        }
-        if (collections.isNotEmpty()) {
-            item {
-                Spacer(Modifier.height(10.dp))
-                Text("🎼 Тематические подборки", style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(8.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    collections.take(10).chunked(2).forEach { line ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            line.forEach { collection ->
-                                OutlinedButton(
-                                    modifier = Modifier.weight(1f).heightIn(min = 62.dp),
-                                    onClick = {
-                                        chosenCollection = collection.title
-                                        loading = true
-                                    }
-                                ) { Text(collection.title, maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis) }
-                            }
-                            if (line.size == 1) Spacer(Modifier.weight(1f))
-                        }
-                    }
-                }
-            }
         }
         item { Spacer(Modifier.height(18.dp)) }
     }
