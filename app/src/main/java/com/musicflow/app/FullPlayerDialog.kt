@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Favorite
@@ -56,6 +57,7 @@ internal fun FullPlayerDialog(
     durationMs: Long,
     favorite: Boolean,
     onFavorite: () -> Unit,
+    onStop: () -> Unit,
     onClose: () -> Unit
 ) {
     val resolvedArtwork by rememberCoverArt(artist, title, artwork)
@@ -129,8 +131,14 @@ internal fun FullPlayerDialog(
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White
                     )
-                    TextButton(onClick = { showQueue = !showQueue }) {
-                        Text(if (showQueue) "Плеер" else "Очередь")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { showQueue = !showQueue }) {
+                            Text(if (showQueue) "Плеер" else "Очередь")
+                        }
+                        IconButton(onClick = onStop) {
+                            Icon(Icons.Filled.Close, contentDescription = "Выключить музыку",
+                                tint = Color.White)
+                        }
                     }
                 }
                 if (showQueue) {

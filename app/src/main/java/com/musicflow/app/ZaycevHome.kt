@@ -29,7 +29,7 @@ import org.jsoup.nodes.Document
 import java.time.Duration
 
 /** Public Zaycev editorial metadata; audio is only played from verified MusicFlow streams. */
-private data class HomeSong(
+internal data class HomeSong(
     val id: String,
     val title: String,
     val artist: String,
@@ -91,6 +91,9 @@ private fun parseCollections(document: Document): List<HomeCollection> =
 @Composable
 internal fun MusicHomeScreen(
     onSearch: (String) -> Unit,
+    onPlay: (HomeSong) -> Unit,
+    pendingSongId: String?,
+    playbackMessage: String?,
     modifier: Modifier = Modifier
 ) {
     var popular by remember { mutableStateOf<List<HomeSong>>(emptyList()) }
@@ -140,7 +143,7 @@ internal fun MusicHomeScreen(
             Spacer(Modifier.height(12.dp))
             Text("Что послушаем?", style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold)
-            Text("Подборки обновляются из открытого каталога. Нажми на песню, чтобы найти доступный поток.",
+            Text("Нажми на песню — музыка запустится прямо здесь, если доступен её аудиопоток.",
                 color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
@@ -166,6 +169,10 @@ internal fun MusicHomeScreen(
             }
             if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
             message?.let { Text(it, color = Color(0xFFFFB3A8)) }
+            playbackMessage?.let {
+                Text(it, color = HomeHighlight, style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(vertical = 8.dp))
+            }
         }
         if (collected.isNotEmpty()) {
             item {
@@ -173,7 +180,7 @@ internal fun MusicHomeScreen(
                     fontWeight = FontWeight.SemiBold)
             }
             items(collected, key = { "genre_" + it.id }) { song ->
-                HomeSongRow(song, onSearch)
+                HomeSongRow(song, onPlay, pendingSongId)
             }
         }
         item {
@@ -182,7 +189,7 @@ internal fun MusicHomeScreen(
                 fontWeight = FontWeight.SemiBold)
         }
         items(popular.take(20), key = { "top_" + it.id }) { song ->
-            HomeSongRow(song, onSearch)
+            HomeSongRow(song, onPlay, pendingSongId)
         }
         item {
             Spacer(Modifier.height(10.dp))
@@ -190,7 +197,7 @@ internal fun MusicHomeScreen(
                 fontWeight = FontWeight.SemiBold)
         }
         items(fresh.take(15), key = { "fresh_" + it.id }) { song ->
-            HomeSongRow(song, onSearch)
+            HomeSongRow(song, onPlay, pendingSongId)
         }
         if (collections.isNotEmpty()) {
             item {
@@ -247,12 +254,16 @@ internal fun MusicHomeScreen(
 }
 
 @Composable
-private fun HomeSongRow(song: HomeSong, onSearch: (String) -> Unit) {
+private fun HomeSongRow(
+    song: HomeSong,
+    onPlay: (HomeSong) -> Unit,
+    pendingSongId: String?
+) {
     Row(
         modifier = Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(HomePanel)
-            .clickable { onSearch(song.artist + " " + song.title) }
+            .clickable(enabled = pendingSongId != song.id) { onPlay(song) }
             .padding(9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -270,7 +281,12 @@ private fun HomeSongRow(song: HomeSong, onSearch: (String) -> Unit) {
             Text(song.artist, color = Color.LightGray,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        if (song.durationSec > 0) {
+        if (pendingSongId == song.id) {
+            CircularProgressIndicator(
+                color = HomeHighlight, strokeWidth = 2.dp,
+                modifier = Modifier.size(22.dp)
+            )
+        } else if (song.durationSec > 0) {
             Text(formatTrackDuration(song.durationSec),
                 color = HomeHighlight, style = MaterialTheme.typography.labelSmall)
         } else Text("▶", color = HomeHighlight)

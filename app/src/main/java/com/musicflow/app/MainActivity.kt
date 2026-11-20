@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
@@ -152,6 +153,9 @@ private fun MusicScreen(
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val searchSequence = remember { AtomicInteger(0) }
+    val homeSequence = remember { AtomicInteger(0) }
+    var pendingHomeSong by remember { mutableStateOf<String?>(null) }
+    var homePlaybackMessage by remember { mutableStateOf<String?>(null) }
     val favorites = remember { mutableStateListOf<Track>().also { it.addAll(saved()) } }
     var tracks by remember { mutableStateOf<List<Track>>(emptyList()) }
     var search by remember { mutableStateOf("") }
@@ -270,6 +274,38 @@ private fun MusicScreen(
         p.play()
     }
 
+    fun stopMusic() {
+        val controller = player ?: return
+        controller.stop()
+        controller.clearMediaItems()
+        queueCatalog = emptyList()
+        expandedPlayer = false
+        pendingHomeSong = null
+        homeSequence.incrementAndGet()
+        AppDiagnostics.info("Player", "Music stopped and playback queue cleared by user")
+    }
+
+    fun playHomeSong(song: HomeSong) {
+        val request = homeSequence.incrementAndGet()
+        pendingHomeSong = song.id
+        homePlaybackMessage = "Подключение: " + song.title
+        scope.launch {
+            val candidate = resolveRecommendedTrack(song.artist, song.title)
+            if (request != homeSequence.get()) return@launch
+            pendingHomeSong = null
+            if (candidate == null) {
+                homePlaybackMessage = "Для этой записи не найден доступный поток. Попробуй другую композицию."
+                AppDiagnostics.warning("Home", "Selected song has no verified playable match")
+            } else {
+                homePlaybackMessage = null
+                val songWithCover = if (candidate.artwork.isNullOrBlank())
+                    candidate.copy(artwork = song.image) else candidate
+                queueAndPlay(listOf(songWithCover), 0)
+                AppDiagnostics.info("Home", "Recommended track started via embedded Media3 player")
+            }
+        }
+    }
+
     fun toggleCurrentFavorite() {
         val item = player?.currentMediaItem ?: return
         val id = item.mediaId
@@ -327,6 +363,9 @@ private fun MusicScreen(
                     search = suggested
                     if (suggested.isNotBlank()) fetch(suggested)
                 },
+                onPlay = { song -> playHomeSong(song) },
+                pendingSongId = pendingHomeSong,
+                playbackMessage = homePlaybackMessage,
                 modifier = Modifier.weight(1f)
             )
         } else if (tab == 3) {
@@ -453,6 +492,9 @@ private fun MusicScreen(
                 )
             }
         }
+
+
+        }
         if (trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
             val miniCover by rememberCoverArt(trackArtist, trackTitle, currentArtwork)
             Column(
@@ -501,6 +543,13 @@ private fun MusicScreen(
                             tint = Color.White
                         )
                     }
+                    IconButton(onClick = { stopMusic() }) {
+                        Icon(
+                            androidx.compose.material.icons.Icons.Filled.Close,
+                            contentDescription = "Выключить музыку",
+                            tint = Color.White
+                        )
+                    }
                 }
                 LinearProgressIndicator(
                     progress = { if (durationMs > 0L) {
@@ -512,8 +561,6 @@ private fun MusicScreen(
                 )
             }
             Spacer(Modifier.height(8.dp))
-        }
-
         }
     }
     if (expandedPlayer && player != null && trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
@@ -527,6 +574,7 @@ private fun MusicScreen(
             durationMs = durationMs,
             favorite = favorites.any { it.id == currentMediaId },
             onFavorite = { toggleCurrentFavorite() },
+            onStop = { stopMusic() },
             onClose = { expandedPlayer = false }
         )
     }
