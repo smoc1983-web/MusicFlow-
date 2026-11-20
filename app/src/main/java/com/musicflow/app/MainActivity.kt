@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -29,6 +30,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,7 +81,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppDiagnostics.initialize(this)
-        AppDiagnostics.info("App", "MusicFlow 0.7.10 Preview launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
+        AppDiagnostics.info("App", "MusicFlow 0.7.13 Preview launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener({
@@ -90,20 +92,41 @@ class MainActivity : ComponentActivity() {
             }, ContextCompat.getMainExecutor(this))
         }
         setContent {
-            val scheme = darkColorScheme(
-                primary = Violet,
-                background = Color(0xFF10131E),
-                surface = Panel,
-                onBackground = Color.White,
-                onSurface = Color.White
+            var themeStyle by remember {
+                mutableStateOf(MusicFlowStyle.fromSaved(
+                    getSharedPreferences("musicflow", MODE_PRIVATE)
+                        .getString("ui_theme", MusicFlowStyle.AURORA.name)
+                ))
+            }
+            val palette = musicFlowPalette(themeStyle)
+            val scheme = if (palette.isLight) lightColorScheme(
+                primary = palette.accent,
+                background = palette.background,
+                surface = palette.surface,
+                onBackground = palette.foreground,
+                onSurface = palette.foreground
+            ) else darkColorScheme(
+                primary = palette.accent,
+                background = palette.background,
+                surface = palette.surface,
+                onBackground = palette.foreground,
+                onSurface = palette.foreground
             )
             MaterialTheme(colorScheme = scheme) {
-                Surface(color = scheme.background) {
-                MusicScreen(
-                    player = playerState.value,
-                    saved = { loadFavorites() },
-                    save = { saveFavorites(it) }
-                )
+                CompositionLocalProvider(LocalMusicFlowPalette provides palette) {
+                    Surface(color = palette.background) {
+                        MusicScreen(
+                            player = playerState.value,
+                            saved = { loadFavorites() },
+                            save = { saveFavorites(it) },
+                            themeStyle = themeStyle,
+                            onThemeSelect = { selected ->
+                                themeStyle = selected
+                                getSharedPreferences("musicflow", MODE_PRIVATE).edit()
+                                    .putString("ui_theme", selected.name).apply()
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -160,8 +183,11 @@ class MainActivity : ComponentActivity() {
 private fun MusicScreen(
     player: MediaController?,
     saved: () -> List<Track>,
-    save: (List<Track>) -> Unit
+    save: (List<Track>) -> Unit,
+    themeStyle: MusicFlowStyle,
+    onThemeSelect: (MusicFlowStyle) -> Unit
 ) {
+    val palette = LocalMusicFlowPalette.current
     val scope = rememberCoroutineScope()
     val resultListState = rememberLazyListState()
     val context = LocalContext.current
@@ -178,6 +204,8 @@ private fun MusicScreen(
     var sortMode by remember { mutableStateOf(SortMode.RELEVANCE) }
     var tab by remember { mutableIntStateOf(0) }
     var sectionMenu by remember { mutableStateOf(false) }
+    var showAppearanceMenu by remember { mutableStateOf(false) }
+    var showThemePicker by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
     var expandedPlayer by remember { mutableStateOf(false) }
@@ -399,22 +427,36 @@ private fun MusicScreen(
     LaunchedEffect(tab, appliedSearch, searchMode, sortMode) {
         if (tab == 1 || tab == 2) resultListState.scrollToItem(0)
     }
+    Box(Modifier.fillMaxSize()) {
     Column(
-        Modifier.fillMaxSize().background(Color(0xFF10131E))
-            .padding(horizontal = 16.dp)
+        Modifier.fillMaxSize().background(palette.background)
+            .padding(horizontal = 12.dp)
     ) {
         Spacer(Modifier.height(7.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("MusicFlow", style = MaterialTheme.typography.titleLarge,
-                color = Color.White, fontWeight = FontWeight.Bold,
+                color = palette.foreground, fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f))
             IconButton(onClick = {
                 tab = 1
                 if (search.isNotBlank()) fetch(search)
-            }) { Icon(Icons.Filled.Search, contentDescription = "Поиск", tint = Color.White) }
-            IconButton(onClick = { tab = 4 }) {
-                Icon(Icons.Filled.MoreVert, contentDescription = "Диагностика",
-                    tint = Color.LightGray)
+            }) { Icon(Icons.Filled.Search, contentDescription = "Поиск", tint = palette.foreground) }
+            Box {
+                IconButton(onClick = { showAppearanceMenu = true }) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "Настройки",
+                        tint = palette.muted)
+                }
+                DropdownMenu(expanded = showAppearanceMenu,
+                    onDismissRequest = { showAppearanceMenu = false }) {
+                    DropdownMenuItem(text = { Text("Оформление") }, onClick = {
+                        showAppearanceMenu = false
+                        showThemePicker = true
+                    })
+                    DropdownMenuItem(text = { Text("Диагностика") }, onClick = {
+                        showAppearanceMenu = false
+                        tab = 4
+                    })
+                }
             }
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -446,7 +488,7 @@ private fun MusicScreen(
             if (tab == 1 || tab == 4) {
                 Spacer(Modifier.width(12.dp))
                 Text(if (tab == 1) "Поиск музыки" else "Диагностика",
-                    color = Violet, style = MaterialTheme.typography.labelLarge)
+                    color = palette.accent, style = MaterialTheme.typography.labelLarge)
             }
         }
         Spacer(Modifier.height(5.dp))
@@ -503,7 +545,7 @@ private fun MusicScreen(
                 Text("Искать")
             }
             Spacer(Modifier.height(6.dp))
-            Text("Сортировка", color = Color.LightGray, style = MaterialTheme.typography.labelMedium)
+            Text("Сортировка", color = palette.muted, style = MaterialTheme.typography.labelMedium)
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -547,18 +589,18 @@ private fun MusicScreen(
                             Text(
                                 "♫ " + albumGroup.albumTitle,
                                 style = MaterialTheme.typography.titleMedium,
-                                color = Violet,
+                                color = palette.accent,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
                                 albumGroup.artist.orEmpty() + " · " +
                                     albumGroup.songs.size + " композиций",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color.LightGray
+                                color = palette.muted
                             )
                         }
                     } else if (albumGroups.size > 1) {
-                        Text("Отдельные треки", color = Color.LightGray,
+                        Text("Отдельные треки", color = palette.muted,
                             style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier.padding(top = 8.dp))
                     }
@@ -569,7 +611,7 @@ private fun MusicScreen(
                 val isActive = currentMediaId == track.id
                 Row(
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                        .background(if (isActive) Color(0xFF3D2C52) else Panel).clickable {
+                        .background(if (isActive) Color(0xFF3D2C52) else palette.surface).clickable {
                             val albumQueue = if (albumGroup.albumTitle != null &&
                                 albumGroup.songs.size > 1) albumGroup.songs else visible
                             val index = albumQueue.indexOfFirst { it.id == track.id }
@@ -586,22 +628,22 @@ private fun MusicScreen(
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                        Text(track.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.LightGray)
+                        Text(track.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, color = palette.muted)
                         if (isActive) {
                             Text(
                                 playbackStatus.orEmpty(),
-                                color = Violet,
+                                color = palette.accent,
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
                         track.collectionTitle?.takeIf { it.isNotBlank() }?.let {
                             Text("Альбом: " + it, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                 color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
+                                 color = palette.muted, style = MaterialTheme.typography.labelSmall)
                         }
                         if (track.durationSec > 0L) {
                             Text(
                                 formatTrackDuration(track.durationSec),
-                                color = Violet, style = MaterialTheme.typography.labelSmall
+                                color = palette.accent, style = MaterialTheme.typography.labelSmall
                             )
                         }
                     }
@@ -621,7 +663,7 @@ private fun MusicScreen(
                         tab == 1 && tracks.isNotEmpty() -> "Нет совпадений по выбранному полю. Попробуй режим «Везде»."
                         else -> "Треки не найдены"
                     },
-                    color = Color.LightGray, modifier = Modifier.padding(12.dp)
+                    color = palette.muted, modifier = Modifier.padding(12.dp)
                 )
             }
         }
@@ -654,10 +696,10 @@ private fun MusicScreen(
                         Column(Modifier.weight(1f)) {
                             Text(trackTitle, fontWeight = FontWeight.SemiBold, maxLines = 1,
                                 overflow = TextOverflow.Ellipsis)
-                            Text(trackArtist, color = Color.LightGray, maxLines = 1,
+                            Text(trackArtist, color = palette.muted, maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.bodySmall)
-                            Text(listOfNotNull(playbackStatus, playbackSource).joinToString(" · "), color = Violet,
+                            Text(listOfNotNull(playbackStatus, playbackSource).joinToString(" · "), color = palette.accent,
                                 style = MaterialTheme.typography.labelSmall)
                         }
                     }
@@ -672,21 +714,21 @@ private fun MusicScreen(
                             if (player?.playWhenReady == true && player.playerError == null) androidx.compose.material.icons.Icons.Filled.Pause
                             else androidx.compose.material.icons.Icons.Filled.PlayArrow,
                             contentDescription = if (player?.playWhenReady == true && player.playerError == null) "Пауза" else "Воспроизвести",
-                            tint = Color.White
+                            tint = palette.foreground
                         )
                     }
                     IconButton(onClick = { player?.seekToNextMediaItem() }) {
                         Icon(
                             androidx.compose.material.icons.Icons.Filled.SkipNext,
                             contentDescription = "Следующий трек",
-                            tint = Color.White
+                            tint = palette.foreground
                         )
                     }
                     IconButton(onClick = { stopMusic() }) {
                         Icon(
                             androidx.compose.material.icons.Icons.Filled.Close,
                             contentDescription = "Выключить музыку",
-                            tint = Color.White
+                            tint = palette.foreground
                         )
                     }
                 }
@@ -695,26 +737,68 @@ private fun MusicScreen(
                         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
                     } else 0f },
                     modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
-                    color = Violet,
+                    color = palette.accent,
                     trackColor = Color(0xFF3F3550)
                 )
             }
             Spacer(Modifier.height(4.dp))
-        } else if (currentMediaId.startsWith("ruvideo:") && player != null) {
-            TvMiniPlayer(
-                player = player,
-                channelTitle = trackTitle,
-                onExpand = {
-                    if (TvPlaybackHandoff.snapshot() != null)
-                        context.startActivity(Intent(context, TvFullscreenActivity::class.java))
-                },
-                onStop = {
-                    stopMusic()
-                    TvPlaybackHandoff.clear()
-                }
-            )
-            Spacer(Modifier.height(4.dp))
         }
+    }
+    // Floating TV controls do not occupy list height. Channel rows scroll below.
+    if (currentMediaId.startsWith("ruvideo:") && player != null) {
+        TvMiniPlayer(
+            player = player,
+            channelTitle = trackTitle,
+            onExpand = {
+                if (TvPlaybackHandoff.snapshot() != null)
+                    context.startActivity(Intent(context, TvFullscreenActivity::class.java))
+            },
+            onStop = {
+                stopMusic()
+                TvPlaybackHandoff.clear()
+            }
+        )
+    }
+    }
+    if (showThemePicker) {
+        AlertDialog(
+            onDismissRequest = { showThemePicker = false },
+            title = { Text("Оформление MusicFlow") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    MusicFlowStyle.entries.forEach { style ->
+                        val choice = musicFlowPalette(style)
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .clickable {
+                                    onThemeSelect(style)
+                                    showThemePicker = false
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(Modifier.size(30.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(choice.background)) {
+                                Box(Modifier.align(Alignment.Center).size(16.dp)
+                                    .clip(RoundedCornerShape(7.dp))
+                                    .background(choice.accent))
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(style.title, fontWeight = FontWeight.SemiBold)
+                                Text(style.subtitle,
+                                    style = MaterialTheme.typography.labelSmall)
+                            }
+                            if (style == themeStyle) Text("✓", color = palette.accent)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showThemePicker = false }) { Text("Закрыть") }
+            }
+        )
     }
     if (expandedPlayer && player != null && trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
         FullPlayerDialog(
