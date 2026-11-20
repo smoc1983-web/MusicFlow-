@@ -6,6 +6,11 @@ import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.view.WindowManager
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.annotation.OptIn
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -20,6 +25,8 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,6 +44,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.C
+import androidx.media3.common.Tracks
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
@@ -48,6 +58,12 @@ import kotlinx.coroutines.delay
 private val TvBackground = Color(0xFF100F17)
 private val TvPanel = Color(0xFF242032)
 private val TvAccent = Color(0xFFAC80FF)
+
+private data class VideoQualityOption(
+    val group: Tracks.Group,
+    val index: Int,
+    val name: String
+)
 
 private tailrec fun Context.findTvActivity(): Activity? = when (this) {
     is Activity -> this
@@ -75,14 +91,31 @@ internal fun TvPlayerDialog(
     }
     val orientation = LocalConfiguration.current.orientation
     val isLandscape = orientation == Configuration.ORIENTATION_LANDSCAPE
-    var rotateToLandscape by remember { mutableStateOf(false) }
+    var fullscreen by remember { mutableStateOf(false) }
     var fillVideo by remember { mutableStateOf(false) }
+    var showQuality by remember { mutableStateOf(false) }
+    var currentTracks by remember(player) { mutableStateOf(player.currentTracks) }
     var showControls by remember { mutableStateOf(true) }
     var showChannels by remember { mutableStateOf(false) }
     var channelSearch by remember { mutableStateOf("") }
     var playbackState by remember(player) { mutableIntStateOf(player.playbackState) }
     var isPlaying by remember(player) { mutableStateOf(player.isPlaying) }
     var playbackError by remember(player, channel.id) { mutableStateOf<String?>(null) }
+    val expanded = fullscreen || isLandscape
+    val qualityChoices = currentTracks.groups
+        .filter { it.type == C.TRACK_TYPE_VIDEO }
+        .flatMap { group ->
+            (0 until group.length).mapNotNull { index ->
+                if (!group.isTrackSupported(index)) return@mapNotNull null
+                val format = group.getTrackFormat(index)
+                val description = when {
+                    format.height > 0 -> format.height.toString() + "p"
+                    format.bitrate > 0 -> (format.bitrate / 1000).toString() + " кбит/с"
+                    else -> "Дорожка " + (index + 1)
+                }
+                VideoQualityOption(group, index, description)
+            }
+        }.distinctBy { it.name }
     val index = channels.indexOfFirst { it.id == channel.id }
     val displayedIndex = if (index >= 0) index else 0
 
@@ -97,10 +130,11 @@ internal fun TvPlayerDialog(
             }
         }
     }
-    LaunchedEffect(activity, rotateToLandscape) {
-        activity?.requestedOrientation = if (rotateToLandscape) {
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    LaunchedEffect(activity, fullscreen) {
+        activity?.requestedOrientation = if (fullscreen) {
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         } else originalOrientation
+        AppDiagnostics.info("TV", if (fullscreen) "fullscreen requested" else "fullscreen closed")
     }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -110,6 +144,9 @@ internal fun TvPlayerDialog(
             override fun onIsPlayingChanged(value: Boolean) {
                 isPlaying = value
             }
+            override fun onTracksChanged(tracks: Tracks) {
+                currentTracks = tracks
+            }
             override fun onPlayerError(error: PlaybackException) {
                 playbackError = error.errorCodeName + ": " +
                     (error.cause?.message ?: error.message.orEmpty()).take(180)
@@ -118,14 +155,15 @@ internal fun TvPlayerDialog(
         player.addListener(listener)
         playbackState = player.playbackState
         isPlaying = player.isPlaying
+        currentTracks = player.currentTracks
         onDispose { player.removeListener(listener) }
     }
     LaunchedEffect(channel.id) {
         playbackError = null
         showControls = true
     }
-    LaunchedEffect(showControls, showChannels, isLandscape) {
-        if (showControls && !showChannels && isLandscape) {
+    LaunchedEffect(showControls, showChannels, fullscreen, isLandscape) {
+        if (showControls && !showChannels && fullscreen) {
             delay(6000)
             showControls = false
         }
@@ -153,18 +191,52 @@ internal fun TvPlayerDialog(
         onDismissRequest = {
             if (showChannels) showChannels = false else onClose()
         },
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = !fullscreen
+        )
     ) {
+        val dialogView = LocalView.current
+        DisposableEffect(dialogView, fullscreen) {
+            val window = (dialogView.parent as? DialogWindowProvider)?.window
+            window?.setLayout(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT
+            )
+            if (window != null) {
+                WindowCompat.setDecorFitsSystemWindows(window, !fullscreen)
+                val bars = WindowInsetsControllerCompat(window, window.decorView)
+                if (fullscreen) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                    bars.hide(WindowInsetsCompat.Type.systemBars())
+                    bars.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                    bars.show(WindowInsetsCompat.Type.systemBars())
+                }
+            }
+            onDispose {
+                if (window != null) {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                    WindowCompat.setDecorFitsSystemWindows(window, true)
+                    WindowInsetsControllerCompat(window, window.decorView)
+                        .show(WindowInsetsCompat.Type.systemBars())
+                }
+            }
+        }
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = TvBackground
         ) {
             Column(
                 modifier = Modifier.fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-                    .padding(if (isLandscape) 8.dp else 14.dp)
+                    .then(
+                        if (fullscreen) Modifier
+                        else Modifier.statusBarsPadding().navigationBarsPadding()
+                    )
+                    .padding(if (fullscreen) 0.dp else if (isLandscape) 8.dp else 14.dp)
             ) {
+                if (!fullscreen || showControls || showChannels) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -194,6 +266,7 @@ internal fun TvPlayerDialog(
                     TextButton(onClick = { showChannels = !showChannels }) {
                         Text(if (showChannels) "Эфир" else "Каналы")
                     }
+                }
                 }
 
                 if (showChannels) {
@@ -247,7 +320,7 @@ internal fun TvPlayerDialog(
                 } else {
                     Spacer(Modifier.height(8.dp))
                     Box(
-                        modifier = if (isLandscape) Modifier.fillMaxWidth().weight(1f)
+                        modifier = if (expanded) Modifier.fillMaxWidth().weight(1f)
                         else Modifier.fillMaxWidth().aspectRatio(16f / 9f),
                         contentAlignment = Alignment.Center
                     ) {
@@ -307,8 +380,8 @@ internal fun TvPlayerDialog(
                             }
                         }
                     }
-                    if (showControls || !isLandscape) {
-                        Spacer(Modifier.height(10.dp))
+                    if (showControls || !fullscreen) {
+                        Spacer(Modifier.height(if (fullscreen) 2.dp else 8.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceEvenly,
@@ -319,31 +392,52 @@ internal fun TvPlayerDialog(
                                 Icon(Icons.Filled.SkipPrevious, "Предыдущий канал",
                                     tint = Color.White)
                             }
+                            IconButton(
+                                onClick = { player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0L)) },
+                                enabled = player.isCurrentMediaItemSeekable
+                            ) { Icon(Icons.Filled.Replay10, "Назад 10 секунд", tint = Color.White) }
                             FilledIconButton(
                                 onClick = { if (isPlaying) player.pause() else player.play() },
                                 colors = IconButtonDefaults.filledIconButtonColors(
-                                    containerColor = TvAccent,
-                                    contentColor = Color.Black
+                                    containerColor = TvAccent, contentColor = Color.Black
                                 )
                             ) {
-                                Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                    if (isPlaying) "Пауза" else "Воспроизвести")
+                                Icon(
+                                    if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                    if (isPlaying) "Пауза" else "Воспроизвести"
+                                )
                             }
+                            IconButton(
+                                onClick = {
+                                    val length = player.duration
+                                    val dest = player.currentPosition + 10_000L
+                                    player.seekTo(if (length > 0) dest.coerceAtMost(length) else dest)
+                                },
+                                enabled = player.isCurrentMediaItemSeekable
+                            ) { Icon(Icons.Filled.Forward10, "Вперёд 10 секунд", tint = Color.White) }
                             IconButton(onClick = { changeChannel(1) },
                                 enabled = channels.size > 1) {
-                                Icon(Icons.Filled.SkipNext, "Следующий канал",
-                                    tint = Color.White)
+                                Icon(Icons.Filled.SkipNext, "Следующий канал", tint = Color.White)
                             }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             TextButton(onClick = { fillVideo = !fillVideo }) {
                                 Text(if (fillVideo) "Вписать" else "Заполнить")
                             }
+                            TextButton(onClick = { showQuality = true }) {
+                                Text(if (qualityChoices.size > 1) "Качество" else "Исходное")
+                            }
                             TextButton(onClick = {
-                                rotateToLandscape = !rotateToLandscape
+                                fullscreen = !fullscreen
                                 showControls = true
-                            }) { Text(if (isLandscape) "↕" else "⛶") }
+                            }) { Text(if (fullscreen) "Свернуть" else "⛶ Весь экран") }
                         }
                     }
-                    if (!isLandscape) {
+                    if (!expanded) {
                         Spacer(Modifier.height(16.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -376,5 +470,45 @@ internal fun TvPlayerDialog(
                 }
             }
         }
+
+    if (showQuality) {
+        AlertDialog(
+            onDismissRequest = { showQuality = false },
+            title = { Text("Качество телеканала") },
+            text = {
+                Column {
+                    if (qualityChoices.size <= 1) {
+                        Text("У этого потока нет нескольких доступных вариантов качества.")
+                    } else {
+                        Text("Доступные варианты из текущего видеопотока:")
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(onClick = {
+                            player.trackSelectionParameters =
+                                player.trackSelectionParameters.buildUpon()
+                                    .clearOverridesOfType(C.TRACK_TYPE_VIDEO).build()
+                            showQuality = false
+                        }) { Text("Автоматически") }
+                        qualityChoices.forEach { option ->
+                            TextButton(onClick = {
+                                player.trackSelectionParameters =
+                                    player.trackSelectionParameters.buildUpon()
+                                        .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+                                        .setOverrideForType(
+                                            TrackSelectionOverride(
+                                                option.group.mediaTrackGroup, listOf(option.index)
+                                            )
+                                        ).build()
+                                AppDiagnostics.info("TV", "quality switched to " + option.name)
+                                showQuality = false
+                            }) { Text(option.name) }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showQuality = false }) { Text("Закрыть") }
+            }
+        )
+    }
     }
 }
