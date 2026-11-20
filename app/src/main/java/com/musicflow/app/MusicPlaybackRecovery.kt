@@ -102,6 +102,16 @@ internal class MusicPlaybackRecovery(
             if (player.currentMediaItem !== failed || player.playerError !== error) return@launch
             if (candidate == null || attempted.size >= 6) {
                 AppDiagnostics.warning("Recovery", "no matching playable stream remains")
+                // An unavailable item must not stop the entire Zaycev collection.
+                // Keep this limited to an actual next item: never wrap endlessly.
+                val nextIndex = player.currentMediaItemIndex + 1
+                if (extras.getBoolean(MUSIC_HOME_PLAYLIST, false) &&
+                    nextIndex in 1 until player.mediaItemCount) {
+                    AppDiagnostics.warning("Recovery", "skipping unavailable collection entry")
+                    player.seekTo(nextIndex, 0L)
+                    player.prepare()
+                    player.play()
+                }
                 return@launch
             }
 

@@ -279,7 +279,7 @@ private fun MusicScreen(
         }
     }
 
-    fun queueAndPlay(list: List<Track>, index: Int) {
+    fun queueAndPlay(list: List<Track>, index: Int, homePlaylist: Boolean = false) {
         val p = player ?: run {
             problem = "Плеер подключается. Повторите попытку."
             AppDiagnostics.warning("Player", "play requested before connection")
@@ -303,6 +303,7 @@ private fun MusicScreen(
                             putString(MUSIC_STREAMS, encodeStreams(t.streams()))
                             putString(MUSIC_SOURCE, t.id.substringBefore(':'))
                             putLong(MUSIC_DURATION_SECONDS, t.durationSec)
+                            putBoolean(MUSIC_HOME_PLAYLIST, homePlaylist)
                         })
                         .setArtworkUri(t.artwork?.let(Uri::parse))
                         .build()
@@ -323,23 +324,25 @@ private fun MusicScreen(
         AppDiagnostics.info("Player", "Music stopped and playback queue cleared by user")
     }
 
-    fun playHomeSong(song: HomeSong) {
+    fun playHomeSong(song: HomeSong, section: List<HomeSong>) {
         val request = homeSequence.incrementAndGet()
         pendingHomeSong = song.id
         homePlaybackMessage = "Подключение: " + song.title
         scope.launch {
+            // Resolve only the selected entry upfront. The remaining Zaycev links
+            // are resolved lazily by Media3 as playback advances through the queue.
             val candidate = resolveRecommendedTrack(song.artist, song.title)
             if (request != homeSequence.get()) return@launch
             pendingHomeSong = null
-            if (candidate == null) {
+            val queue = buildHomePlaylistQueue(song, section, candidate)
+            if (queue == null) {
                 homePlaybackMessage = "Для этой записи не найден доступный поток. Попробуй другую композицию."
-                AppDiagnostics.warning("Home", "Selected song has no verified playable match")
+                AppDiagnostics.warning("Home", "Selected song has no playable queue entry")
             } else {
                 homePlaybackMessage = null
-                val songWithCover = if (candidate.artwork.isNullOrBlank())
-                    candidate.copy(artwork = song.image) else candidate
-                queueAndPlay(listOf(songWithCover), 0)
-                AppDiagnostics.info("Home", "Recommended track started via embedded Media3 player")
+                queueAndPlay(queue.tracks, queue.selectedIndex, homePlaylist = true)
+                AppDiagnostics.info("Home", "collection queue size=" + queue.tracks.size +
+                    "; chosen=" + queue.selectedIndex)
             }
         }
     }
@@ -404,7 +407,7 @@ private fun MusicScreen(
                     search = suggested
                     if (suggested.isNotBlank()) fetch(suggested)
                 },
-                onPlay = { song -> playHomeSong(song) },
+                onPlay = { song, section -> playHomeSong(song, section) },
                 pendingSongId = pendingHomeSong,
                 playbackMessage = homePlaybackMessage,
                 modifier = Modifier.weight(1f)

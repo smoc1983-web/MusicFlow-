@@ -19,6 +19,7 @@ internal data class MusicStream(val id: String, val uri: String) {
 internal const val MUSIC_STREAMS = "com.musicflow.music_streams"
 internal const val MUSIC_SOURCE = "com.musicflow.music_source"
 internal const val MUSIC_DURATION_SECONDS = "com.musicflow.music_duration_seconds"
+internal const val MUSIC_HOME_PLAYLIST = "com.musicflow.home_playlist"
 
 internal fun encodeStreams(streams: List<MusicStream>): String = JSONArray().apply {
     streams.forEach { put(JSONObject().put("id", it.id).put("uri", it.uri)) }

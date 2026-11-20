@@ -91,7 +91,7 @@ private fun parseCollections(document: Document): List<HomeCollection> =
 @Composable
 internal fun MusicHomeScreen(
     onSearch: (String) -> Unit,
-    onPlay: (HomeSong) -> Unit,
+    onPlay: (HomeSong, List<HomeSong>) -> Unit,
     pendingSongId: String?,
     playbackMessage: String?,
     modifier: Modifier = Modifier
@@ -135,6 +135,10 @@ internal fun MusicHomeScreen(
     }
 
     LaunchedEffect(Unit) { refreshHome() }
+    // Each visible Zaycev section is a separate listening queue.
+    // Selecting a row preserves its position within that section.
+    val popularQueue = popular.take(20)
+    val freshQueue = fresh.take(15)
     LazyColumn(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -206,7 +210,7 @@ internal fun MusicHomeScreen(
                     fontWeight = FontWeight.SemiBold)
             }
             items(collected, key = { "genre_" + it.id }) { song ->
-                HomeSongRow(song, onPlay, pendingSongId)
+                HomeSongRow(song, { selected -> onPlay(selected, collected) }, pendingSongId)
             }
         }
         item {
@@ -214,16 +218,16 @@ internal fun MusicHomeScreen(
             Text("🔥 Популярное", style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold)
         }
-        items(popular.take(20), key = { "top_" + it.id }) { song ->
-            HomeSongRow(song, onPlay, pendingSongId)
+        items(popularQueue, key = { "top_" + it.id }) { song ->
+            HomeSongRow(song, { selected -> onPlay(selected, popularQueue) }, pendingSongId)
         }
         item {
             Spacer(Modifier.height(10.dp))
             Text("✨ Новинки", style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold)
         }
-        items(fresh.take(15), key = { "fresh_" + it.id }) { song ->
-            HomeSongRow(song, onPlay, pendingSongId)
+        items(freshQueue, key = { "fresh_" + it.id }) { song ->
+            HomeSongRow(song, { selected -> onPlay(selected, freshQueue) }, pendingSongId)
         }
         item { Spacer(Modifier.height(18.dp)) }
     }
