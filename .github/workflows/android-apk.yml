@@ -31,6 +31,8 @@ jobs:
           grep -c '^#EXTINF:' /tmp/ruvideo.m3u8 || true
       - name: Verify Mail.ru Music endpoints (read-only)
         run: python3 scripts/diagnose_mailru.py
+      - name: Probe Zaycev public endpoints and artwork
+        run: python3 scripts/diagnose_zaycev.py
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Upload APK
