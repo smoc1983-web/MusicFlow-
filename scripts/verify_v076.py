@@ -10,7 +10,8 @@ manifest=Path("app/src/main/AndroidManifest.xml").read_text()
 assert "PLAYLIST, CHANNEL, FILE" in iptv
 assert "importLocalIptvPlaylist" in iptv
 assert "OpenDocument()" in tv
-assert "TvFullscreenActivity::class.java" in tv
+assert "TvFullscreenActivity::class.java" in main
+assert "TvPlaybackHandoff.set(channels, channel, activeSourceId)" in tv
 assert "TvPlayerDialog(" not in tv
 assert "TvFullscreenActivity" in manifest
 assert "WindowCompat.setDecorFitsSystemWindows(window, false)" in activity
