@@ -17,15 +17,17 @@ assert "freeX" in tv and "freeY" in tv
 assert "expanded = false" in tv
 assert "rememberSaveable" in tv
 assert "onExpand: () -> Unit" in tv
-assert "MusicFlowStyle.AURORA.name" in main
+assert "MusicFlowStyle.AB_ICY_NIGHT.name" in main
 assert 'putString("ui_theme", selected.name)' in main
 assert "LocalMusicFlowPalette provides palette" in main
-for theme in ("AURORA", "AMOLED", "MIDNIGHT", "GRAPHITE", "SOFT_LIGHT"):
+for theme in ("AB_PEARL", "AB_ICY_NIGHT", "AB_LILAC", "AB_AMBER", "AB_EMERALD", "AB_OBSIDIAN", "AB_ONYX", "AB_BLACK_ICE", "AB_AMETHYST", "AB_FLAT_GRAPHITE"):
     assert theme+"(" in app
+for removed in ("AURORA", "AMOLED", "MIDNIGHT", "GRAPHITE", "SOFT_LIGHT"):
+    assert not ("    "+removed+"(") in app
 assert "LocalMusicFlowPalette.current" in full
 assert "LocalMusicFlowPalette.current" in home
 assert '@mipmap/ic_launcher' in manifest
-assert 'versionName = "0.7.14-preview"' in gradle
+assert 'versionName = "0.7.15-preview"' in gradle
 assert Path("app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml").is_file()
 assert Path("app/src/main/res/drawable/ic_musicflow_foreground.xml").is_file()
 print("MusicFlow 0.7.13 themes, icon and floating player static checks PASS")
