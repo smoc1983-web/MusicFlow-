@@ -29,6 +29,7 @@ internal class MusicPlaybackRecovery(
     private val recoveryTokenKey = "com.musicflow.recovery_transition"
     private var nextRecoveryToken = 0
     private var pendingRecoveryToken: Int? = null
+    private var playlistGeneration = 0
     private var pending: Job? = null
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -40,6 +41,7 @@ internal class MusicPlaybackRecovery(
             return
         }
         pendingRecoveryToken = null
+        playlistGeneration++
         pending?.cancel()
         attempted.clear()
         blockedSources.clear()
@@ -53,6 +55,13 @@ internal class MusicPlaybackRecovery(
         val streams = decodeStreams(extras.getString(MUSIC_STREAMS))
         val uri = failed.localConfiguration?.uri ?: return
         val active = streams.firstOrNull { it.uri == uri.toString() } ?: return
+        // Media3 can create a fresh MediaItem wrapper during a retry. Compare
+        // the logical queue generation and track identity, not object identity.
+        val generation = playlistGeneration
+        val wasPlaying = player.playWhenReady
+        fun stillCurrent() = playlistGeneration == generation &&
+            player.currentMediaItem?.mediaId == failed.mediaId &&
+            player.currentMediaItem?.localConfiguration?.uri == uri
         val causes = generateSequence<Throwable>(error) { it.cause }.take(12).toList()
         val status = causes.firstNotNullOfOrNull {
             when (it) {
@@ -76,10 +85,11 @@ internal class MusicPlaybackRecovery(
             if (!retriedCurrent && (temporary || refreshZaycev)) {
                 retriedCurrent = true
                 delay(850)
-                if (player.currentMediaItem !== failed || player.playerError !== error) return@launch
+                if (!stillCurrent()) return@launch
                 if (refreshZaycev) ZaycevStreamResolver.invalidate(uri)
                 AppDiagnostics.info("Recovery", "retry source=${active.source}")
                 player.prepare()
+                if (wasPlaying) player.play()
                 return@launch
             }
             var available = streams
@@ -99,7 +109,7 @@ internal class MusicPlaybackRecovery(
                 available = (streams + refreshed).distinctBy { it.uri }
                 candidate = refreshed.firstOrNull { it.uri !in attempted }
             }
-            if (player.currentMediaItem !== failed || player.playerError !== error) return@launch
+            if (!stillCurrent()) return@launch
             if (candidate == null || attempted.size >= 6) {
                 AppDiagnostics.warning("Recovery", "no matching playable stream remains")
                 // An unavailable item must not stop the entire Zaycev collection.
@@ -110,7 +120,7 @@ internal class MusicPlaybackRecovery(
                     AppDiagnostics.warning("Recovery", "skipping unavailable collection entry")
                     player.seekTo(nextIndex, 0L)
                     player.prepare()
-                    player.play()
+                    if (wasPlaying) player.play()
                 }
                 return@launch
             }
@@ -133,6 +143,7 @@ internal class MusicPlaybackRecovery(
                 player.replaceMediaItem(index, updated)
                 player.seekTo(index, resumePositionMs)
                 player.prepare()
+                if (wasPlaying) player.play()
                 AppDiagnostics.info("Recovery", "switched source=${selected.source}")
             } catch (failure: Exception) {
                 pendingRecoveryToken = null
