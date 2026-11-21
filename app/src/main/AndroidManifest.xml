@@ -10,6 +10,7 @@
         <package android:name="com.idamob.tinkoff.android" />
         <package android:name="ru.sberbankmobile" />
         <package android:name="ru.ozon.fintech.finance" />
+        <package android:name="com.uma.musicvk" />
     </queries>
     <application
         android:label="MusicFlow"
