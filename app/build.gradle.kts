@@ -3,15 +3,36 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+val musicflowSigningStore = System.getenv("MUSICFLOW_SIGNING_KEYSTORE")
 android {
     namespace = "com.musicflow.app"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.musicflow.zaycev717preview"
+        applicationId = "com.musicflow.preview"
         minSdk = 26
         targetSdk = 35
-        versionCode = 717
-        versionName = "0.7.17-preview"
+        versionCode = 718
+        versionName = "0.7.18-preview"
+    }
+    // Signed releases use one persistent key stored in GitHub Actions secrets.
+    // Local debug builds keep working when the release key is unavailable.
+    signingConfigs {
+        if (!musicflowSigningStore.isNullOrBlank()) {
+            create("musicflowRelease") {
+                storeFile = file(musicflowSigningStore)
+                storePassword = System.getenv("MUSICFLOW_SIGNING_STORE_PASSWORD")
+                keyAlias = System.getenv("MUSICFLOW_SIGNING_KEY_ALIAS")
+                keyPassword = System.getenv("MUSICFLOW_SIGNING_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = false
+            if (!musicflowSigningStore.isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("musicflowRelease")
+            }
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
