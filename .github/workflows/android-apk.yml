@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -65,8 +66,40 @@ jobs:
         run: python3 scripts/verify_v0719.py
       - name: Verify v0.7.20 in-app updates and production UI labels
         run: python3 scripts/verify_v0720.py
+      - name: Verify v0.7.21 rounded menus and update compatibility wiring
+        run: python3 scripts/verify_v0721.py
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
+      - name: Retrieve installed v0.7.20 candidate for update test
+        id: baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/musicflow-v0720"
+          gh run download 44873126289 -n MusicFlow-apk -R "$GITHUB_REPOSITORY" -D "$RUNNER_TEMP/musicflow-v0720"
+          test -s "$RUNNER_TEMP/musicflow-v0720/app-debug.apk"
+      - name: Test real APK update compatibility (0.7.20 -> 0.7.21)
+        id: upgrade
+        if: steps.baseline.outcome == 'success'
+        run: |
+          bash scripts/check_upgrade_0720_0721.sh             "$RUNNER_TEMP/musicflow-v0720/app-debug.apk"             "app/build/outputs/apk/debug/app-debug.apk"
+      - name: Android emulator update install test (only for matching signatures)
+        if: steps.upgrade.outputs.compatible == 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          script: |
+            adb install "$RUNNER_TEMP/musicflow-v0720/app-debug.apk"
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb shell dumpsys package com.musicflow.preview | grep "versionCode=721"
+      - name: Upload update compatibility report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.20-to-0.7.21-compatibility
+          path: build/update_0720_to_0721_report.txt
+          if-no-files-found: warn
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
