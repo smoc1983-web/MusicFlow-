@@ -16,6 +16,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
@@ -24,6 +27,7 @@ class PlaybackService : MediaSessionService() {
     private val recoveryScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var session: MediaSession? = null
     private var audioEqualizer: NativeAudioEqualizer? = null
+    private var journal: PlaybackJournal? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -78,6 +82,16 @@ class PlaybackService : MediaSessionService() {
         val eq = NativeAudioEqualizer(this)
         audioEqualizer = eq
         player.addListener(eq)
+        val playbackJournal = PlaybackJournal(this, player)
+        journal = playbackJournal
+        playbackJournal.restore()
+        player.addListener(playbackJournal)
+        recoveryScope.launch {
+            while (isActive) {
+                delay(5_000L)
+                playbackJournal.persist()
+            }
+        }
         player.addListener(MusicPlaybackRecovery(player, recoveryScope))
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
@@ -108,6 +122,8 @@ class PlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     override fun onDestroy() {
+        journal?.persist()
+        journal = null
         recoveryScope.cancel()
         audioEqualizer?.release()
         audioEqualizer = null
