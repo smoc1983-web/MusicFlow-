@@ -35,7 +35,7 @@ assert "О приложении · обновления" in main
 assert 'android.permission.REQUEST_INSTALL_PACKAGES' in manifest
 assert '<cache-path name="musicflow_updates" path="updates/"' in paths
 assert 'applicationId = "com.musicflow.preview"' in gradle
-assert 'versionName = "0.7.29"' in gradle
+assert 'versionName = "0.7.30"' in gradle
 assert "MUSICFLOW_SIGNING_KEYSTORE" in gradle
 for secret in (
     "MUSICFLOW_SIGNING_KEYSTORE_BASE64",
