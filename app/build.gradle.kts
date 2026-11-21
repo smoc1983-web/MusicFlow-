@@ -11,8 +11,9 @@ android {
         applicationId = "com.musicflow.preview"
         minSdk = 26
         targetSdk = 35
-        versionCode = 732
-        versionName = "0.7.32"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        versionCode = 733
+        versionName = "0.7.33"
     }
     // Signed releases use one persistent key stored in GitHub Actions secrets.
     // Local debug builds keep working when the release key is unavailable.
@@ -62,4 +63,7 @@ dependencies {
     implementation("org.jsoup:jsoup:1.18.3")
     implementation("androidx.core:core:1.16.0")
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
 }
