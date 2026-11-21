@@ -6,7 +6,7 @@ group=(root/"AlbumGrouping.kt").read_text(encoding="utf-8")
 catalog=(root/"AlbumCatalog.kt").read_text(encoding="utf-8")
 assert "groupTracksByAlbum(visible)" in main
 assert "albumGroup.songs.size > 1" in main
-assert "collectionTitle = original.collectionTitle" in main
+assert "collectionTitle = primary.collectionTitle" in main
 assert "setAlbumTitle(t.collectionTitle)" in main
 assert "LaunchedEffect(title, artist)" in full
 assert "decorFitsSystemWindows = !immersive" in full
