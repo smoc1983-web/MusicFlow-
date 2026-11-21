@@ -89,7 +89,7 @@ class MainActivity : ComponentActivity() {
             java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
                 .deleteEntry("com.musicflow.app.vk.audio.credentials.v1")
         }
-        AppDiagnostics.info("App", "MusicFlow 0.7.32 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
+        AppDiagnostics.info("App", "MusicFlow 0.7.33 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener({
@@ -516,6 +516,20 @@ private fun MusicScreen(
             Text("MusicFlow", style = MaterialTheme.typography.titleLarge,
                 color = palette.foreground, fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f))
+            if (PlayerMinimizePolicy.canShowNowPlaying(
+                    hasTrack = trackTitle.isNotBlank(),
+                    isTelevision = currentMediaId.startsWith("ruvideo:")
+                )) {
+                TextButton(
+                    onClick = { expandedPlayer = true },
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                ) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = null,
+                        modifier = Modifier.size(16.dp))
+                    Text("Сейчас играет", style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1)
+                }
+            }
             IconButton(onClick = {
                 tab = 1
                 if (search.isNotBlank()) fetch(search)
