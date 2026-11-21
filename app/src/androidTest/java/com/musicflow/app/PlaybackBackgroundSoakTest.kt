@@ -137,7 +137,7 @@ class PlaybackBackgroundSoakTest {
                 val controller = future.get(2L, TimeUnit.SECONDS)
                 main { controller.stop(); controller.clearMediaItems() }
             }
-            MediaController.releaseFuture(future)
+            main { MediaController.releaseFuture(future) }
             wave.delete()
         }
     }
