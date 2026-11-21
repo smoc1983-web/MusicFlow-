@@ -336,8 +336,7 @@ private fun HomeSongRow(
     val palette = LocalMusicFlowPalette.current
     Row(
         modifier = Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(palette.surface)
+            .musicFlowGlass(palette, 12.dp)
             .clickable(enabled = pendingSongId != song.id) { onPlay(song) }
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
