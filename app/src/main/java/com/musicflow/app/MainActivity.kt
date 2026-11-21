@@ -666,7 +666,7 @@ private fun MusicScreen(
         )
         if (tab == 1 && appliedSearch.isNotBlank()) {
             Text(
-                if (vkConfigured) "VK Audio API подключён к общему поиску"
+                if (vkConfigured) "VK включён в поиск · проверьте права и аудиопоток через настройки"
                 else "VK Audio API не подключён. Другие источники работают без изменений.",
                 color = palette.muted,
                 style = MaterialTheme.typography.labelSmall,
@@ -878,7 +878,7 @@ private fun MusicScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text(
-                        if (vkConfigured) "Токен сохранён на устройстве в зашифрованном виде."
+                        if (vkConfigured) "Токен зашифрован. Работа аудиопотоков требует отдельной проверки."
                         else "VK пока не участвует в поиске. Настройки других источников не изменены.",
                         style = MaterialTheme.typography.bodySmall
                     )
