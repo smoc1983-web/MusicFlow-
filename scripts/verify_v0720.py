@@ -1,4 +1,4 @@
-"""MusicFlow 0.7.27: update popup on startup and remove Preview/history UI."""
+"""MusicFlow 0.7.28: update popup on startup and remove Preview/history UI."""
 from pathlib import Path
 root = Path("app/src/main")
 src = root / "java/com/musicflow/app"
@@ -13,8 +13,8 @@ build = Path(".github/workflows/android-apk.yml").read_text(encoding="utf-8")
 
 assert 'android:label="MusicFlow"' in manifest
 assert 'Preview' not in manifest
-assert 'versionName = "0.7.27"' in gradle
-assert 'versionCode = 727' in gradle
+assert 'versionName = "0.7.28"' in gradle
+assert 'versionCode = 728' in gradle
 assert 'applicationId = "com.musicflow.preview"' in gradle, "Preserve application ID for update compatibility"
 assert 'MusicFlowAutoUpdate()' in main
 assert 'Доступно обновление MusicFlow' in auto
@@ -34,4 +34,4 @@ assert 'signatures(incoming)' in updater
 assert 'gh release create "$TAG"' in publish
 assert '--prerelease' not in publish
 assert 'name: MusicFlow-apk' in build
-print("MusicFlow 0.7.27 in-app updates, branding and signing constraints PASS")
+print("MusicFlow 0.7.28 in-app updates, branding and signing constraints PASS")

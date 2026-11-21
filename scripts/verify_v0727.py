@@ -1,4 +1,4 @@
-"""Validate MusicFlow 0.7.27 upgrades through its official in-app installer."""
+"""Validate MusicFlow 0.7.28 upgrades through its official in-app installer."""
 from pathlib import Path
 root = Path("app/src/main/java/com/musicflow/app")
 updates = (root / "MusicFlowUpdates.kt").read_text(encoding="utf-8")
@@ -7,7 +7,7 @@ about = (root / "MusicFlowAboutDialog.kt").read_text(encoding="utf-8")
 gradle = Path("app/build.gradle.kts").read_text(encoding="utf-8")
 workflow = Path(".github/workflows/publish-v0727-inapp.yml").read_text(encoding="utf-8")
 assert 'applicationId = "com.musicflow.preview"' in gradle
-assert 'versionCode = 727' in gradle and 'versionName = "0.7.27"' in gradle
+assert 'versionCode = 728' in gradle and 'versionName = "0.7.28"' in gradle
 assert 'MUSICFLOW_SIGNING_KEYSTORE' in gradle
 assert 'getByName("release")' in gradle
 assert 'private const val OFFICIAL_PACKAGE = "com.musicflow.preview"' in updates
@@ -29,4 +29,4 @@ assert "versionCode='727'" in workflow
 assert 'MusicFlow_signing_release.jks.enc.b64' in workflow
 assert '-pbkdf2 -iter 350000' in workflow
 assert 'c461ee635d5b295ef6c765e1ae533d0079dc6e53cb2632a11a1b445773752410' in workflow
-print("MusicFlow 0.7.27 updater and release compatibility regression PASS")
+print("MusicFlow 0.7.28 updater and release compatibility regression PASS")
