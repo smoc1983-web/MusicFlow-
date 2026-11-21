@@ -12,7 +12,7 @@ gradle = Path("app/build.gradle.kts").read_text(encoding="utf-8")
 assert "surfaceContainer = palette.surface" in main
 assert "surfaceContainerHighest = palette.surface" in main
 assert main.count("containerColor = palette.surface") >= 2
-assert home.count("containerColor = palette.surface") >= 3
+assert home.count("containerColor = palette.surface") >= 2  # collections and genres menus remain
 assert 'CACHE_VERSION = "hq4_"' in cover
 assert "BitmapFactory.Options().apply { inJustDecodeBounds = true }" in cover
 assert 'listOf("RU", "US")' in cover
