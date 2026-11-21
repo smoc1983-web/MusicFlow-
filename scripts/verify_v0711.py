@@ -27,5 +27,5 @@ assert "ordered.size" in queue
 assert "internal const val MUSIC_HOME_PLAYLIST" in sources
 assert "player.seekTo(nextIndex, 0L)" in recovery
 assert "extras.getBoolean(MUSIC_HOME_PLAYLIST, false)" in recovery
-assert 'versionName = "0.7.18-preview"' in gradle
+assert 'versionName = "0.7.19-preview"' in gradle
 print("MusicFlow v0.7.11 collection queue static checks PASS")
