@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -32,7 +33,10 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
     var update by remember { mutableStateOf<MusicFlowUpdate?>(null) }
     var checking by remember { mutableStateOf(false) }
     var downloading by remember { mutableStateOf(false) }
-    var progress by remember { mutableIntStateOf(0) }
+    var transfer by remember {
+        mutableStateOf(MusicFlowBackgroundUpdates.Snapshot(
+            MusicFlowBackgroundUpdates.Phase.IDLE))
+    }
     var message by remember {
         mutableStateOf(MusicFlowUpdates.updateChannelMessage(context))
     }
@@ -75,6 +79,7 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
 
     LaunchedEffect(Unit) {
         if (!officialUpdateChannel) return@LaunchedEffect
+        MusicFlowBackgroundUpdates.savedRelease(context)?.let { update = it }
         checking = true
         try {
             val candidate = MusicFlowUpdates.latestRelease()
@@ -95,6 +100,20 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
         }
     }
 
+    LaunchedEffect(Unit) {
+        if (!officialUpdateChannel) return@LaunchedEffect
+        while (true) {
+            try {
+                transfer = MusicFlowBackgroundUpdates.snapshot(context)
+                val saved = MusicFlowBackgroundUpdates.savedRelease(context)
+                if (update == null && saved != null) update = saved
+            } catch (failure: Exception) {
+                AppDiagnostics.failure("Updates", "About background download status", failure)
+            }
+            delay(1000L)
+        }
+    }
+
     AlertDialog(
         onDismissRequest = { if (!downloading) onDismiss() },
         containerColor = palette.surface,
@@ -111,18 +130,25 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
                 Text(message, color = palette.muted,
                     style = MaterialTheme.typography.bodySmall)
                 if (checking || downloading) {
-                    if (downloading) {
-                        LinearProgressIndicator(
-                            progress = { progress / 100f },
-                            modifier = Modifier.fillMaxWidth(),
-                            color = palette.accent
-                        )
-                        Text("Загружено " + progress + "%",
-                            color = palette.foreground,
-                            style = MaterialTheme.typography.labelSmall)
-                    } else LinearProgressIndicator(
-                        modifier = Modifier.fillMaxWidth(), color = palette.accent
-                    )
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth(), color = palette.accent)
+                }
+                if (transfer.phase in setOf(
+                        MusicFlowBackgroundUpdates.Phase.WAITING,
+                        MusicFlowBackgroundUpdates.Phase.RUNNING
+                    )) {
+                    LinearProgressIndicator(
+                        progress = { transfer.progress / 100f },
+                        modifier = Modifier.fillMaxWidth(), color = palette.accent)
+                    Text("Скачивание в фоне: " + transfer.progress + "% · можно свернуть MusicFlow",
+                        color = palette.foreground, style = MaterialTheme.typography.labelSmall)
+                } else if (transfer.phase == MusicFlowBackgroundUpdates.Phase.DOWNLOADED) {
+                    Text("APK скачан. Нажмите «Проверить и установить» — подпись будет проверена.",
+                        color = palette.accent, style = MaterialTheme.typography.bodySmall)
+                } else if (transfer.phase == MusicFlowBackgroundUpdates.Phase.FAILED) {
+                    Text(transfer.error.orEmpty(),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall)
                 }
                 Button(
                     enabled = officialUpdateChannel && !checking && !downloading,
@@ -157,38 +183,49 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
                     Text("Проверить обновления")
                 }
                 update?.let { release ->
+                    val sameDownload = MusicFlowBackgroundUpdates.savedRelease(context)
+                        ?.versionCode == release.versionCode
+                    val inProgress = sameDownload && transfer.phase in setOf(
+                        MusicFlowBackgroundUpdates.Phase.WAITING,
+                        MusicFlowBackgroundUpdates.Phase.RUNNING)
+                    val finished = sameDownload &&
+                        transfer.phase == MusicFlowBackgroundUpdates.Phase.DOWNLOADED
                     Button(
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !downloading && !checking,
+                        enabled = !downloading && !checking && !inProgress,
                         onClick = {
-                            if (!MusicFlowUpdates.canInstall(context)) {
-                                message = "Разрешите установку APK для MusicFlow в настройках Android, " +
-                                    "затем нажмите «Установить» повторно."
-                                runCatching {
-                                    context.startActivity(MusicFlowUpdates.allowInstallIntent(context))
-                                }
-                            } else {
-                                downloading = true
-                                progress = 0
-                                message = "Скачивание официального APK…"
-                                scope.launch {
-                                    try {
-                                        val apk = MusicFlowUpdates.downloadVerified(context, release) { percent ->
-                                            withContext(Dispatchers.Main) { progress = percent }
+                            downloading = true
+                            scope.launch {
+                                try {
+                                    if (finished) {
+                                        val uri = MusicFlowBackgroundUpdates.verifiedInstallUri(context)
+                                        if (!MusicFlowUpdates.canInstall(context)) {
+                                            message = "Разрешите MusicFlow установку APK и повторите установку."
+                                            context.startActivity(MusicFlowUpdates.allowInstallIntent(context))
+                                        } else {
+                                            message = "Подтвердите установку в системном окне Android."
+                                            context.startActivity(MusicFlowUpdates.installerIntent(uri))
                                         }
-                                        downloading = false
-                                        message = "Подтвердите установку в системном окне Android."
-                                        context.startActivity(MusicFlowUpdates.installerIntent(apk))
-                                    } catch (error: Exception) {
-                                        message = "Обновление не установлено: " +
-                                            (error.message ?: "ошибка загрузки")
-                                    } finally {
-                                        downloading = false
+                                    } else {
+                                        MusicFlowBackgroundUpdates.enqueue(context, release)
+                                        transfer = MusicFlowBackgroundUpdates.snapshot(context)
+                                        message = "Загрузка передана Android. Можно свернуть приложение."
                                     }
+                                } catch (failure: Exception) {
+                                    message = "Ошибка обновления: " +
+                                        (failure.message ?: "не удалось загрузить или проверить APK")
+                                } finally {
+                                    downloading = false
                                 }
                             }
                         }
-                    ) { Text("Скачать и установить " + release.version) }
+                    ) {
+                        Text(when {
+                            inProgress -> "Загружается " + transfer.progress + "%"
+                            finished -> "Проверить и установить " + release.version
+                            else -> "Скачать " + release.version + " в фоне"
+                        })
+                    }
                 }
                 OutlinedButton(
                     modifier = Modifier.fillMaxWidth(),
