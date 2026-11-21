@@ -267,6 +267,7 @@ private fun MusicScreen(
     var showAppearanceMenu by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showEqualizerDialog by remember { mutableStateOf(false) }
+    var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showThemePicker by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
@@ -536,6 +537,10 @@ private fun MusicScreen(
                     DropdownMenuItem(text = { Text("Звук · эквалайзер") }, onClick = {
                         showAppearanceMenu = false
                         showEqualizerDialog = true
+                    })
+                    DropdownMenuItem(text = { Text("Таймер сна") }, onClick = {
+                        showAppearanceMenu = false
+                        showSleepTimerDialog = true
                     })
                     DropdownMenuItem(text = { Text("История прослушивания") }, onClick = {
                         showAppearanceMenu = false
@@ -876,6 +881,9 @@ private fun MusicScreen(
     }
     if (showEqualizerDialog) {
         MusicFlowEqualizerDialog(onDismiss = { showEqualizerDialog = false })
+    }
+    if (showSleepTimerDialog) {
+        MusicFlowSleepTimerDialog(onDismiss = { showSleepTimerDialog = false })
     }
     if (showThemePicker) {
         AlertDialog(
