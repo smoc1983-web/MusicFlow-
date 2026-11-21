@@ -23,6 +23,8 @@ assert "val wasPlaying = player.playWhenReady" in recovery
 assert recovery.count("if (wasPlaying) player.play()") >= 3
 assert "playlistGeneration == generation" in recovery
 assert "override fun onPlaybackStateChanged(playbackState: Int)" in recovery
+assert "override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int)" in recovery
+assert "private fun armStartupWatchdog()" in recovery
 assert "delay(12_000L)" in recovery
 assert 'item.mediaId.startsWith("ruvideo:")' in recovery
 assert "startupRetried = true" in recovery
