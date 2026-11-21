@@ -89,7 +89,7 @@ class MainActivity : ComponentActivity() {
             java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
                 .deleteEntry("com.musicflow.app.vk.audio.credentials.v1")
         }
-        AppDiagnostics.info("App", "MusicFlow 0.7.29 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
+        AppDiagnostics.info("App", "MusicFlow 0.7.30 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener({
@@ -423,7 +423,9 @@ private fun MusicScreen(
                         .setArtworkUri(t.artwork?.let(Uri::parse))
                         .build()
                 ).build()
-        }, index, 0L)
+        }, index, PlaybackJournal.resumePosition(
+            context, list[index].id, list[index].durationSec
+        ))
         p.prepare()
         p.play()
     }
@@ -535,6 +537,10 @@ private fun MusicScreen(
                         showAppearanceMenu = false
                         showEqualizerDialog = true
                     })
+                    DropdownMenuItem(text = { Text("История прослушивания") }, onClick = {
+                        showAppearanceMenu = false
+                        tab = 5
+                    })
                     DropdownMenuItem(text = { Text("Диагностика") }, onClick = {
                         showAppearanceMenu = false
                         tab = 4
@@ -554,6 +560,8 @@ private fun MusicScreen(
                     Text(when (tab) {
                         2 -> "Избранное"
                         3 -> "ТВ"
+                        6 -> "Русское радио"
+                        5 -> "История"
                         else -> "Музыка"
                     })
                     Spacer(Modifier.width(6.dp))
@@ -565,7 +573,8 @@ private fun MusicScreen(
                     modifier = Modifier.musicFlowMenuSurface(palette),
                     containerColor = palette.surface,
                     shadowElevation = 14.dp) {
-                    listOf(0 to "Музыка", 2 to "Избранное", 3 to "ТВ")
+                    listOf(0 to "Музыка", 2 to "Избранное", 6 to "Русское радио",
+                        5 to "История", 3 to "ТВ")
                         .forEach { (index, label) ->
                             DropdownMenuItem(text = { Text(label) },
                                 onClick = {
@@ -598,6 +607,20 @@ private fun MusicScreen(
             RuVideoHubTvScreen(player = player, modifier = Modifier.weight(1f))
         } else if (tab == 4) {
             DiagnosticsScreen(modifier = Modifier.weight(1f))
+        } else if (tab == 6) {
+            RussianRadioScreen(
+                activeId = currentMediaId,
+                playing = playing,
+                onPlay = { station -> queueAndPlay(listOf(station.toTrack()), 0) },
+                onStop = { stopMusic() },
+                modifier = Modifier.weight(1f)
+            )
+        } else if (tab == 5) {
+            MusicPlaybackHistoryScreen(
+                activeId = currentMediaId,
+                onPlay = { track -> queueAndPlay(listOf(track), 0) },
+                modifier = Modifier.weight(1f)
+            )
         } else {
         if (tab == 1) {
             Spacer(Modifier.height(6.dp))
@@ -793,7 +816,9 @@ private fun MusicScreen(
                     IconButton(onClick = {
                         if (player?.playWhenReady == true && player.playerError == null) player.pause()
                         else {
-                            if (player?.playerError != null) player.prepare()
+                            if (player?.playerError != null ||
+                                player?.playbackState == androidx.media3.common.Player.STATE_IDLE)
+                                player?.prepare()
                             player?.play()
                         }
                     }) {
