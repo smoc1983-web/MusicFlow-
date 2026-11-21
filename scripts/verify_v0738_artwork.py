@@ -11,7 +11,7 @@ assert "override fun onMediaItemTransition(mediaItem: MediaItem?" in main
 assert "override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata)" in main
 assert "fun updateActiveMedia" in main
 assert "LaunchedEffect(player, currentMediaId)" in main
-assert "CoverLookup.resolve(context, neighbor" in main
+assert "CoverLookup.resolve(context, nextArtist, nextTitle, provided)" in main
 assert "Icons.Filled.MusicNote" in full and "Icons.Filled.MusicNote" in main
 assert "rememberCoverArt(artist, title, artwork)" in full
 assert "rememberCoverArt(trackArtist, trackTitle, currentArtwork)" in main
