@@ -102,7 +102,7 @@ internal fun MusicFlowEqualizerDialog(onDismiss: () -> Unit) {
                         modifier = Modifier.weight(1f),
                         value = state.boostDb,
                         onValueChange = { value ->
-                            update(state.copy(boostDb = (value * 2).roundToInt() / 2f))
+                            update(state.copy(boostDb = (value * 2f).roundToInt() / 2f))
                         },
                         enabled = state.boostEnabled,
                         valueRange = 0f..3f
