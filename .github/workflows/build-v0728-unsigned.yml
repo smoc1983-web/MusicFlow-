@@ -1,4 +1,5 @@
 name: Build MusicFlow 0.7.28 release for local signing
+# Compile release from first-party VK portal source after test correction.
 on:
   push:
     branches: ["feature/musicflow-v0.7.28-vk-login-playprotect"]
