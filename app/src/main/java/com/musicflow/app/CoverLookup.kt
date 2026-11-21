@@ -40,6 +40,16 @@ internal object CoverLookup {
         }
     }
 
+    /**
+     * Instant per-recording artwork for Compose. A prefetched high-res URL is
+     * available without a network wait; never reuse the previous track's art.
+     */
+    internal fun cachedOrProvided(artist: String, title: String, provided: String?): String? {
+        val key = normalized(artist) + "|" + normalized(title)
+        val cached = cache[key]
+        return cached?.takeUnless { it == MISSING } ?: preferredProvided(provided)
+    }
+
     private fun needsUpgrade(url: String?): Boolean {
         if (url.isNullOrBlank()) return true
         val highResolution = preferredProvided(url).orEmpty()
@@ -247,7 +257,14 @@ internal object CoverLookup {
 @Composable
 internal fun rememberCoverArt(artist: String, title: String, provided: String?): State<String?> {
     val context = LocalContext.current
-    return produceState(initialValue = CoverLookup.preferredProvided(provided), artist, title, provided) {
-        value = CoverLookup.resolve(context, artist, title, provided)
+    // A remembered produceState keeps the previous track's result while a
+    // new key loads. Replacing the state itself clears that stale artwork in
+    // the same composition as the title/artist change.
+    val result = remember(artist, title, provided) {
+        mutableStateOf(CoverLookup.cachedOrProvided(artist, title, provided))
     }
+    LaunchedEffect(artist, title, provided) {
+        result.value = CoverLookup.resolve(context, artist, title, provided)
+    }
+    return result
 }
