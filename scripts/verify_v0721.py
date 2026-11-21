@@ -1,4 +1,4 @@
-"""MusicFlow 0.7.30: rounded menus and audited in-app upgrade tests."""
+"""MusicFlow 0.7.31: rounded menus and audited in-app upgrade tests."""
 from pathlib import Path
 
 root = Path("app/src/main")
@@ -37,4 +37,4 @@ assert "old_cert" in check and "new_cert" in check
 assert "compatible=false" in check
 assert "Do NOT uninstall v0.7.20" in check
 
-print("MusicFlow v0.7.30 rounded UI and Android upgrade checks PASS")
+print("MusicFlow v0.7.31 rounded UI and Android upgrade checks PASS")

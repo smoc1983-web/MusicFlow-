@@ -1,4 +1,4 @@
-"""MusicFlow 0.7.30: Russian radio, lyrics, queue, history and privacy regression."""
+"""MusicFlow 0.7.31: Russian radio, lyrics, queue, history and privacy regression."""
 from pathlib import Path
 import re
 

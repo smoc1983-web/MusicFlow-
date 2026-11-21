@@ -1,4 +1,4 @@
-"""MusicFlow 0.7.30: update popup on startup and remove Preview/history UI."""
+"""MusicFlow 0.7.31: update popup on startup and remove Preview/history UI."""
 from pathlib import Path
 root = Path("app/src/main")
 src = root / "java/com/musicflow/app"
@@ -34,4 +34,4 @@ assert 'signatures(incoming)' in updater
 assert 'gh release create "$TAG"' in publish
 assert '--prerelease' not in publish
 assert 'name: MusicFlow-apk' in build
-print("MusicFlow 0.7.30 in-app updates, branding and signing constraints PASS")
+print("MusicFlow 0.7.31 in-app updates, branding and signing constraints PASS")

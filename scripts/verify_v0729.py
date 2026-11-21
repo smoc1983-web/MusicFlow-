@@ -1,4 +1,4 @@
-"""MusicFlow 0.7.30: retired VK provider, Play Protect static audit and native sound."""
+"""MusicFlow 0.7.31: retired VK provider, Play Protect static audit and native sound."""
 from pathlib import Path
 import re
 

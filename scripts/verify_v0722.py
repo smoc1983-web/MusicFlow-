@@ -1,4 +1,4 @@
-"""Stable MusicFlow 0.7.30 and 0.7.23 APK update baseline static checks."""
+"""Stable MusicFlow 0.7.31 and 0.7.23 APK update baseline static checks."""
 from pathlib import Path
 src = Path("app/src/main/java/com/musicflow/app")
 gradle = Path("app/build.gradle.kts").read_text(encoding="utf-8")
@@ -26,4 +26,4 @@ assert "app:assembleRelease" in workflow
 assert "apksigner" in workflow
 assert "v0.7.23" in workflow
 assert "MUSICFLOW_SIGNING_KEYSTORE_BASE64" in publish
-print("MusicFlow v0.7.30 static signing and update prerequisites PASS")
+print("MusicFlow v0.7.31 static signing and update prerequisites PASS")
