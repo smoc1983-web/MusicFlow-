@@ -6,7 +6,7 @@ journal=(root/"PlaybackJournal.kt").read_text()
 screen=(root/"MusicPlaybackHistoryScreen.kt").read_text()
 stats=(root/"ListeningStatisticsStore.kt").read_text()
 tracker=(root/"ListeningProgressTracker.kt").read_text()
-assert 'versionCode = 734' in gradle and 'versionName = "0.7.34"' in gradle
+assert 'versionCode = 735' in gradle and 'versionName = "0.7.35"' in gradle
 assert 'applicationId = "com.musicflow.preview"' in gradle
 assert Path("app/src/test/java/com/musicflow/app/ListeningProgressTrackerTest.kt").is_file()
 assert Path("app/src/test/java/com/musicflow/app/ListeningStatisticsReducerTest.kt").is_file()
@@ -22,4 +22,4 @@ assert 'musicflow_listening_statistics_v1' in stats
 assert 'elapsedMs - old.elapsedMs' in tracker
 assert 'ruvideo:' in tracker and 'vk:' in tracker
 assert Path(".agents/skills/ub-mode/SKILL.md").is_file()
-print("PASS: 0.7.34 listening stats, verified history, queue-write optimization and ub-mode")
+print("PASS: 0.7.35 listening stats, verified history, queue-write optimization and ub-mode")
