@@ -3,6 +3,7 @@ package com.musicflow.app
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -17,8 +18,11 @@ import org.json.JSONObject
  * is preserved across UI process recreation and background playback.
  */
 internal class PlaybackJournal(context: Context, private val player: ExoPlayer) : Player.Listener {
-    private val preferences = context.applicationContext
+    private val application = context.applicationContext
+    private val preferences = application
         .getSharedPreferences("musicflow_player_state_v1", Context.MODE_PRIVATE)
+    private val listened = ListeningProgressTracker()
+    private var queueDirty = true
 
     private fun playable(uri: String, id: String): Boolean =
         (uri.startsWith("https://") || uri.startsWith("http://") ||
@@ -75,52 +79,76 @@ internal class PlaybackJournal(context: Context, private val player: ExoPlayer) 
         }.onFailure { AppDiagnostics.failure("Journal", "restore queue", it) }
     }
 
+    /**
+     * The service polls this method during playback. Queue JSON is only serialized
+     * when Media3's timeline changes; the position is persisted on every tick.
+     */
     fun persist() {
         runCatching {
-            val queue = JSONArray()
-            for (index in 0 until minOf(player.mediaItemCount, 80)) {
-                val item = player.getMediaItemAt(index)
-                val id = item.mediaId
-                val uri = item.localConfiguration?.uri?.toString().orEmpty()
-                if (!playable(uri, id)) continue
-                val extras = item.mediaMetadata.extras
-                queue.put(JSONObject().apply {
-                    put("id", id)
-                    put("uri", uri)
-                    put("title", item.mediaMetadata.title?.toString().orEmpty())
-                    put("artist", item.mediaMetadata.artist?.toString().orEmpty())
-                    put("album", item.mediaMetadata.albumTitle?.toString().orEmpty())
-                    put("artwork", item.mediaMetadata.artworkUri?.toString().orEmpty())
-                    put("duration", extras?.getLong(MUSIC_DURATION_SECONDS, 0L) ?: 0L)
-                    put("alternatives", extras?.getString(MUSIC_STREAMS).orEmpty())
-                    put("source", extras?.getString(MUSIC_SOURCE).orEmpty())
-                    put("home", extras?.getBoolean(MUSIC_HOME_PLAYLIST, false) ?: false)
-                })
+            val current = player.currentMediaItem
+            val tick = listened.sample(
+                current?.mediaId,
+                SystemClock.elapsedRealtime(),
+                player.currentPosition.coerceAtLeast(0L),
+                player.isPlaying
+            )
+            if (tick != null && current != null) {
+                runCatching {
+                    if (tick.qualifiedStart) appendHistory(current)
+                    ListeningStatisticsStore.record(application, current, tick)
+                }.onFailure { AppDiagnostics.failure("Journal", "listening stats", it) }
             }
+
             val editor = preferences.edit()
-                .putString("queue", queue.toString())
-                .putInt("index", player.currentMediaItemIndex.coerceAtLeast(0))
+            if (queueDirty) {
+                val queue = JSONArray()
+                for (index in 0 until minOf(player.mediaItemCount, 80)) {
+                    val item = player.getMediaItemAt(index)
+                    val id = item.mediaId
+                    val uri = item.localConfiguration?.uri?.toString().orEmpty()
+                    if (!playable(uri, id)) continue
+                    val extras = item.mediaMetadata.extras
+                    queue.put(JSONObject().apply {
+                        put("id", id)
+                        put("uri", uri)
+                        put("title", item.mediaMetadata.title?.toString().orEmpty())
+                        put("artist", item.mediaMetadata.artist?.toString().orEmpty())
+                        put("album", item.mediaMetadata.albumTitle?.toString().orEmpty())
+                        put("artwork", item.mediaMetadata.artworkUri?.toString().orEmpty())
+                        put("duration", extras?.getLong(MUSIC_DURATION_SECONDS, 0L) ?: 0L)
+                        put("alternatives", extras?.getString(MUSIC_STREAMS).orEmpty())
+                        put("source", extras?.getString(MUSIC_SOURCE).orEmpty())
+                        put("home", extras?.getBoolean(MUSIC_HOME_PLAYLIST, false) ?: false)
+                    })
+                }
+                editor.putString("queue", queue.toString())
+                queueDirty = false
+            }
+
+            editor.putInt("index", player.currentMediaItemIndex.coerceAtLeast(0))
                 .putBoolean("shuffle", player.shuffleModeEnabled)
                 .putInt("repeat", player.repeatMode)
-            val current = player.currentMediaItem
+
             val pos = player.currentPosition.coerceAtLeast(0L)
             val duration = player.duration.coerceAtLeast(0L)
             if (current != null && !current.mediaId.startsWith("radio:") &&
                 !current.mediaId.startsWith("ruvideo:") && duration > 0L) {
                 editor.putLong("resume_" + current.mediaId.take(160),
                     if (player.playbackState == Player.STATE_ENDED || pos >= duration - 4_000L) 0L else pos)
+                editor.putLong("length_" + current.mediaId.take(160), duration)
             }
             editor.apply()
-        }.onFailure { AppDiagnostics.failure("Journal", "persist queue", it) }
+        }.onFailure { AppDiagnostics.failure("Journal", "persist queue and position", it) }
     }
 
-    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-        if (mediaItem != null && !mediaItem.mediaId.startsWith("ruvideo:") &&
-            !mediaItem.mediaId.startsWith("vk:")) {
-            appendHistory(mediaItem)
-        }
+    override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+        queueDirty = true
         persist()
     }
+
+    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = persist()
+
+    override fun onIsPlayingChanged(isPlaying: Boolean) = persist()
 
     override fun onRepeatModeChanged(repeatMode: Int) = persist()
     override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = persist()
