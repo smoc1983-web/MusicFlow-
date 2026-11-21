@@ -244,8 +244,12 @@ private fun MusicScreen(
     var search by remember { mutableStateOf("") }
     var appliedSearch by remember { mutableStateOf("") }
     var searchMode by remember { mutableStateOf(SearchMode.ALL) }
-    // VK is an integrated search option, not a separate navigation tab.
-    var vkInlineSearch by remember { mutableStateOf(false) }
+    // VK is a native source in the common search, never a separate WebView tab.
+    var showVkConfiguration by remember { mutableStateOf(false) }
+    var vkTokenInput by remember { mutableStateOf("") }
+    var vkConfigured by remember { mutableStateOf(VkAudioSource.isConfigured()) }
+    var vkStatus by remember { mutableStateOf<String?>(null) }
+    var vkSourceError by remember { mutableStateOf<String?>(null) }
     var sortMode by remember { mutableStateOf(SortMode.RELEVANCE) }
     var tab by remember { mutableIntStateOf(0) }
     var sectionMenu by remember { mutableStateOf(false) }
@@ -581,7 +585,7 @@ private fun MusicScreen(
         } else {
         if (tab == 1) {
             Spacer(Modifier.height(6.dp))
-            if (!vkInlineSearch) Row(
+            Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
@@ -615,7 +619,6 @@ private fun MusicScreen(
                 Text("Искать")
             }
             Spacer(Modifier.height(6.dp))
-            if (!vkInlineSearch) {
             Text("Сортировка", color = palette.muted, style = MaterialTheme.typography.labelMedium)
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -629,34 +632,8 @@ private fun MusicScreen(
                     )
                 }
             }
-            }
         }
         Spacer(Modifier.height(12.dp))
-
-        // The user's original query is reused by the official VK search.
-        // No private VK audio API, scraping or fabricated playable Track entries.
-        if (tab == 1 && vkInlineSearch) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "Результаты VK Музыки",
-                    color = palette.accent,
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f)
-                )
-                TextButton(onClick = { vkInlineSearch = false }) {
-                    Text("К общим результатам")
-                }
-            }
-            key(appliedSearch) {
-                VkMusicScreen(
-                    initialQuery = appliedSearch,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        } else {
 
         if (busy && tab != 2) LinearProgressIndicator(Modifier.fillMaxWidth())
         problem?.let {
@@ -674,17 +651,17 @@ private fun MusicScreen(
             modifier = Modifier.padding(bottom = 8.dp)
         )
         if (tab == 1 && appliedSearch.isNotBlank()) {
-            OutlinedButton(
-                onClick = {
-                    player?.pause()
-                    vkInlineSearch = true
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Text("VK Музыка · искать «" + appliedSearch.take(35) + "»")
+            Text(
+                if (vkConfigured) "VK Audio API подключён к общему поиску"
+                else "VK Audio API не подключён. Другие источники работают без изменений.",
+                color = palette.muted,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+            vkSourceError?.let { message ->
+                Text("VK: " + message, color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall)
             }
-            Spacer(Modifier.height(6.dp))
         }
         val albumGroups = groupTracksByAlbum(visible)
         LazyColumn(
@@ -777,8 +754,6 @@ private fun MusicScreen(
                 )
             }
         }
-        } // Inline VK search / normal MusicFlow results
-
         }
         if (trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
             val miniCover by rememberCoverArt(trackArtist, trackTitle, currentArtwork)
