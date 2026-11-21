@@ -11,6 +11,9 @@ assert '7 -> "ТОП песен"' in main
 assert '7 to "ТОП песен"' in main
 assert "TopSongsScreen(" in main
 assert "onPlay = { track -> queueAndPlay(listOf(track), 0) }" in main
+# After a search starts and as new providers return tracks, the list resets to its top.
+assert "LaunchedEffect(tab, appliedSearch, searchMode, sortMode, tracks)" in main
+assert main.count("resultListState.requestScrollToItem(0)") >= 3
 assert "Другой источник" not in player
 assert "switchToAlternateSource" not in player
 assert 'https://api.listenbrainz.org/1/stats/sitewide/recordings' in top
