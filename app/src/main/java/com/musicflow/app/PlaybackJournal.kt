@@ -186,7 +186,8 @@ internal class PlaybackJournal(context: Context, private val player: ExoPlayer) 
                     editor.putBoolean("seekable_" + key, seekable)
                 }
                 if (duration > 0L) editor.putLong("length_" + key, duration)
-                if (duration > 0L || seekable || player.playbackState == Player.STATE_ENDED) {
+                if (deferredResume?.id != current.mediaId &&
+                    (duration > 0L || seekable || player.playbackState == Player.STATE_ENDED)) {
                     val nearEnd = duration > 0L && pos >= duration - 4_000L
                     editor.putLong("resume_" + key,
                         if (player.playbackState == Player.STATE_ENDED || nearEnd) 0L else pos)
