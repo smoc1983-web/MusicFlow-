@@ -61,6 +61,8 @@ jobs:
         run: python3 scripts/verify_v0717.py
       - name: Verify v0.7.18 in-app updates, donation and Telegram navigation
         run: python3 scripts/verify_v0718.py
+      - name: Verify v0.7.19 banking support, in-app APK installer and icon
+        run: python3 scripts/verify_v0719.py
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Upload APK
