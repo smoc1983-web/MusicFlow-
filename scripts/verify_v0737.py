@@ -10,12 +10,12 @@ player=(root/"FullPlayerDialog.kt").read_text(encoding="utf-8")
 journal=(root/"PlaybackJournal.kt").read_text(encoding="utf-8")
 gradle=Path("app/build.gradle.kts").read_text(encoding="utf-8")
 assert "onPlayChart: (TopSong, List<TopSong>) -> Unit" in home
-assert "onPlayChart(song, chartSongs)" in home
+assert "onPlayChart(song, chartSongs.toList())" in home
 assert "fun playChartSong(song: TopSong, chartSection: List<TopSong>)" in main
 assert "buildChartPlaylistQueue(song, chartSection, candidate)" in main
 assert "chartPlaylist = true" in main
 assert "ChartPlaylistQueue.parse" in service
-assert "ChartPlaylistQueue.build" in queue
+assert "internal fun build(" in queue
 assert "findRecording" in service
 assert 'MUSIC_CHART_PLAYLIST' in player
 assert "MUSIC_CHART_PLAYLIST" in recovery
