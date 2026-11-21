@@ -55,6 +55,7 @@ internal fun MusicFlowAutoUpdate() {
         AlertDialog(
             onDismissRequest = { if (!busy) available = null },
             containerColor = palette.surface,
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
             title = { Text("Доступно обновление MusicFlow", color = palette.foreground) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
