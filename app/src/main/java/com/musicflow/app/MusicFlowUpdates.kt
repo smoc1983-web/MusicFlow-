@@ -32,7 +32,7 @@ internal object MusicFlowUpdates {
     private const val API = "https://api.github.com/repos/smoc1983-web/MusicFlow-/releases?per_page=30"
     internal const val RELEASES_PAGE = "https://github.com/smoc1983-web/MusicFlow-/releases"
     internal const val SUPPORT_NUMBER = "+79128580680"
-    internal const val TELEGRAM_URL = "https://t.me/c/3702128532/1"
+    internal const val TELEGRAM_URL = "https://t.me/+IryIQ5fkmOszZWRi"
     private const val MAX_SIZE = 150L * 1024L * 1024L
 
     // Official updates are signed for com.musicflow.preview.

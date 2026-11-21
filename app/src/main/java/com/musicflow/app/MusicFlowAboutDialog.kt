@@ -249,9 +249,9 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
                 ) {
                     Icon(Icons.Filled.OpenInNew, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Telegram-канал MusicFlow")
+                    Text("Вступить в Telegram-канал MusicFlow")
                 }
-                Text("Ссылка откроется для участников канала.",
+                Text("Приглашение в канал. Новые пользователи могут присоединиться через Telegram, если ссылка активна.",
                     color = palette.muted,
                     style = MaterialTheme.typography.labelSmall)
             }
