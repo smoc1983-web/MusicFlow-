@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -82,7 +83,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppDiagnostics.initialize(this)
-        AppDiagnostics.info("App", "MusicFlow 0.7.25 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
+        VkAudioSource.initialize(this)
+        AppDiagnostics.info("App", "MusicFlow 0.7.26 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener({
@@ -275,6 +277,7 @@ private fun MusicScreen(
         tracks = emptyList()
         appliedSearch = requested
         problem = null
+        vkSourceError = null
         busy = requested.isNotEmpty()
         if (!busy) return
         searchJob = scope.launch {
@@ -284,6 +287,9 @@ private fun MusicScreen(
             searchMusic(requested) { source, found, error ->
                 if (error != null) {
                     failures++
+                    if (source == "vk") {
+                        vkSourceError = error.message ?: "VK не предоставил доступ к Audio API"
+                    }
                     AppDiagnostics.failure("Search", "source=$source", error)
                 } else {
                     tracks = combineMusicTracks(tracks, found.orEmpty())
@@ -519,6 +525,14 @@ private fun MusicScreen(
                         showAppearanceMenu = false
                         showThemePicker = true
                     })
+                    DropdownMenuItem(
+                        text = { Text(if (vkConfigured) "VK Audio API · настроен" else "VK Audio API · подключить") },
+                        onClick = {
+                            showAppearanceMenu = false
+                            vkTokenInput = ""
+                            vkStatus = null
+                            showVkConfiguration = true
+                        })
                     DropdownMenuItem(text = { Text("Диагностика") }, onClick = {
                         showAppearanceMenu = false
                         tab = 4
