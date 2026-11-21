@@ -11,8 +11,8 @@ android {
         applicationId = "com.musicflow.preview"
         minSdk = 26
         targetSdk = 35
-        versionCode = 727
-        versionName = "0.7.27"
+        versionCode = 728
+        versionName = "0.7.28"
     }
     // Signed releases use one persistent key stored in GitHub Actions secrets.
     // Local debug builds keep working when the release key is unavailable.
@@ -48,6 +48,7 @@ android {
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2025.09.00"))
     implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.browser:browser:1.8.0")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
