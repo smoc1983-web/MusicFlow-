@@ -109,12 +109,33 @@ internal object VkAudioSource {
         val token = readToken() ?: return@withContext "Не введён ключ доступа"
         val response = apiRequest(
             "audio.search", token,
-            mapOf("q" to "music", "count" to "1")
+            mapOf("q" to "music", "count" to "15")
         )
-        if (response.optJSONObject("response") != null) {
-            "Метод audio.search доступен. Воспроизведение зависит от прав на конкретные записи."
-        } else {
-            "VK не вернул результаты проверки"
+        val sample = parseSearchResults(response).firstOrNull()
+            ?: return@withContext "VK ответил, но не предоставил доступных аудиопотоков. " +
+                "Нативное воспроизведение VK не подтверждено."
+        val connection = URL(sample.stream).openConnection() as HttpURLConnection
+        connection.connectTimeout = 9_000
+        connection.readTimeout = 12_000
+        connection.instanceFollowRedirects = true
+        connection.setRequestProperty("Range", "bytes=0-1")
+        connection.setRequestProperty("Accept", "audio/*,application/vnd.apple.mpegurl,*/*")
+        try {
+            val code = connection.responseCode
+            val mime = connection.contentType.orEmpty().substringBefore(';').lowercase()
+            if (code !in 200..299 || mime.contains("html") || mime.contains("json")) {
+                "VK дал ссылку, но CDN не разрешил воспроизведение: HTTP $code. " +
+                    "Нативное воспроизведение не подтверждено."
+            } else {
+                val available = runCatching {
+                    connection.inputStream.use { it.read() >= 0 }
+                }.getOrDefault(false)
+                if (available) "Поиск и сетевой доступ к аудиопотоку VK подтверждены. " +
+                    "Проверьте воспроизведение в штатном плеере."
+                else "VK дал ссылку, но CDN не передал аудиоданные."
+            }
+        } finally {
+            connection.disconnect()
         }
     }
 
