@@ -39,6 +39,27 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
             .onFailure { message = "Невозможно открыть ссылку: " + (it.message ?: "") }
     }
 
+    LaunchedEffect(Unit) {
+        checking = true
+        try {
+            val candidate = MusicFlowUpdates.latestRelease()
+            if (candidate == null) {
+                message = "Подписанные APK-выпуски пока не опубликованы. Для дальнейших обновлений их необходимо публиковать в GitHub Releases."
+            } else if (candidate.versionCode > MusicFlowUpdates.currentCode(context)) {
+                update = candidate
+                message = "Доступна версия " + candidate.version + ". Размер: " +
+                    (candidate.bytes / 1_048_576) + " МБ."
+            } else {
+                message = "Установлена актуальная версия."
+            }
+        } catch (error: Exception) {
+            message = "Не удалось проверить обновления: " +
+                (error.message ?: "ошибка подключения")
+        } finally {
+            checking = false
+        }
+    }
+
     AlertDialog(
         onDismissRequest = { if (!downloading) onDismiss() },
         containerColor = palette.surface,
@@ -144,26 +165,41 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
                 HorizontalDivider(color = palette.accent.copy(alpha = 0.18f))
                 Text("Поддержать разработчика", fontWeight = FontWeight.SemiBold,
                     color = palette.foreground)
-                OutlinedButton(
+                Text("Перевод через СБП по номеру +7 912 858-06-80. Выберите банк — номер скопируется, а перевод подтвердите самостоятельно в банковском приложении.",
+                    color = palette.muted, style = MaterialTheme.typography.bodySmall)
+                MusicFlowBank.entries.forEach { bank ->
+                    OutlinedButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            try {
+                                val installed = MusicFlowBankSupport.open(context, bank)
+                                message = if (installed) {
+                                    "Номер скопирован. В ${bank.title} выберите перевод по номеру телефона и проверьте получателя."
+                                } else {
+                                    "Номер скопирован. Открыта официальная страница ${bank.title} в RuStore."
+                                }
+                            } catch (error: Exception) {
+                                message = "Номер скопирован, но открыть ${bank.title} не удалось: " +
+                                    (error.message ?: "ошибка")
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Filled.OpenInNew, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Поддержать через " + bank.title)
+                    }
+                }
+                TextButton(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
-                            as ClipboardManager
-                        clipboard.setPrimaryClip(
-                            ClipData.newPlainText("Телефон для перевода",
-                                MusicFlowUpdates.SUPPORT_NUMBER)
-                        )
-                        message = "Номер " + MusicFlowUpdates.SUPPORT_NUMBER +
-                            " скопирован. Перевод можно сделать через приложение вашего банка."
+                        MusicFlowBankSupport.copyPhone(context)
+                        message = "Номер " + MusicFlowUpdates.SUPPORT_NUMBER + " скопирован."
                     }
                 ) {
                     Icon(Icons.Filled.ContentCopy, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Скопировать +7 912 858-06-80")
+                    Text("Только скопировать номер")
                 }
-                Text("Перевод по номеру телефона через ваш банк.",
-                    color = palette.muted,
-                    style = MaterialTheme.typography.labelSmall)
                 OutlinedButton(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = { openLink(MusicFlowUpdates.TELEGRAM_URL) }
