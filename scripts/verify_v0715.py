@@ -32,5 +32,5 @@ assert "cover_xl" in cover and "cover_big" in cover
 assert "CACHE_VERSION" in cover and "musicBrainz" in cover
 assert "artistMatches" in cover and "verifiedArtist" in cover
 assert "preferredProvided" in cover and "1200x1200bb" in cover
-assert "versionName = \"0.7.34\"" in gradle
+assert "versionName = \"0.7.35\"" in gradle
 print("MusicFlow v0.7.15 artwork, AudioBook themes, navigation and TV checks PASS")
