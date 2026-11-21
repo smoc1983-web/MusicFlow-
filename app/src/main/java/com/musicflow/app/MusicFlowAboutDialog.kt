@@ -94,6 +94,7 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = { if (!downloading) onDismiss() },
         containerColor = palette.surface,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
         title = { Text("О приложении MusicFlow", color = palette.foreground) },
         text = {
             Column(
