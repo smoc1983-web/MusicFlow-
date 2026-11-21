@@ -16,6 +16,20 @@ import java.lang.ref.WeakReference
 internal object TvVideoSurfaceBridge {
     private var mini: WeakReference<PlayerView>? = null
     private var miniController: WeakReference<MediaController>? = null
+    private var mainController: WeakReference<MediaController>? = null
+
+    // Reuse the same connection to the playback session in both Activities.
+    // A second MediaController may clear or replace the active video surface.
+    fun registerMainController(controller: MediaController) {
+        mainController = WeakReference(controller)
+    }
+
+    fun unregisterMainController(controller: MediaController?) {
+        if (mainController?.get() === controller) mainController = null
+    }
+
+    fun sharedController(): MediaController? = mainController?.get()
+
     private var full: WeakReference<PlayerView>? = null
     private var mainIsResumed = false
     private var fullscreenRequested = false
@@ -63,11 +77,18 @@ internal object TvVideoSurfaceBridge {
     }
 
     fun bindFullscreen(view: PlayerView, controller: MediaController) {
-        requestFullscreen()
+        fullscreenRequested = true
         val previous = full?.get()
         if (previous != null && previous !== view) previous.player = null
+        val oldMini = mini?.get()
+        if (oldMini != null && oldMini.player === controller) {
+            // Media3 transfers the surface without resetting the playing item.
+            PlayerView.switchTargetView(controller, oldMini, view)
+        } else {
+            if (oldMini?.player != null) oldMini.player = null
+            if (view.player !== controller) view.player = controller
+        }
         full = WeakReference(view)
-        if (view.player !== controller) view.player = controller
     }
 
     fun releaseFullscreen(view: PlayerView) {
