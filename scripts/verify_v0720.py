@@ -13,8 +13,8 @@ build = Path(".github/workflows/android-apk.yml").read_text(encoding="utf-8")
 
 assert 'android:label="MusicFlow"' in manifest
 assert 'Preview' not in manifest
-assert 'versionName = "0.7.30"' in gradle
-assert 'versionCode = 730' in gradle
+assert 'versionName = "0.7.31"' in gradle
+assert 'versionCode = 731' in gradle
 assert 'applicationId = "com.musicflow.preview"' in gradle, "Preserve application ID for update compatibility"
 assert 'MusicFlowAutoUpdate()' in main
 assert 'Доступно обновление MusicFlow' in auto

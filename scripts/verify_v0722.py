@@ -8,8 +8,8 @@ about = (src / "MusicFlowAboutDialog.kt").read_text(encoding="utf-8")
 workflow = Path(".github/workflows/bootstrap-stable-signing.yml").read_text(encoding="utf-8")
 publish = Path(".github/workflows/publish-signed-apk.yml").read_text(encoding="utf-8")
 assert 'applicationId = "com.musicflow.preview"' in gradle
-assert 'versionCode = 730' in gradle
-assert 'versionName = "0.7.30"' in gradle
+assert 'versionCode = 731' in gradle
+assert 'versionName = "0.7.31"' in gradle
 assert 'create("musicflowRelease")' in gradle
 assert 'signingConfig = signingConfigs.getByName("musicflowRelease")' in gradle
 for key in ("MUSICFLOW_SIGNING_KEYSTORE", "MUSICFLOW_SIGNING_STORE_PASSWORD",

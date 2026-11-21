@@ -21,8 +21,8 @@ assert "shadowElevation = 14.dp" in main and "shadowElevation = 14.dp" in home
 assert "shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)" in about
 assert "shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)" in autoupdate
 
-assert 'versionName = "0.7.30"' in gradle
-assert "versionCode = 730" in gradle
+assert 'versionName = "0.7.31"' in gradle
+assert "versionCode = 731" in gradle
 assert 'applicationId = "com.musicflow.preview"' in gradle
 assert 'incoming.packageName != context.packageName' in updater
 assert "signatures(incoming)" in updater
