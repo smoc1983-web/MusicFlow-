@@ -1,5 +1,6 @@
 package com.musicflow.app
 
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
@@ -33,6 +34,25 @@ internal object MusicFlowUpdates {
     internal const val SUPPORT_NUMBER = "+79128580680"
     internal const val TELEGRAM_URL = "https://t.me/c/3702128532/1"
     private const val MAX_SIZE = 150L * 1024L * 1024L
+
+    // Official updates are signed for com.musicflow.preview.
+    // A .vktest variant has another package name and a debug signing key.
+    private const val OFFICIAL_PACKAGE = "com.musicflow.preview"
+
+    fun supportsOfficialUpdates(context: Context): Boolean =
+        context.packageName == OFFICIAL_PACKAGE
+
+    fun updateChannelMessage(context: Context): String =
+        if (supportsOfficialUpdates(context)) {
+            "Официальный канал обновлений MusicFlow · проверка подписи включена."
+        } else {
+            "Эта тестовая сборка (${context.packageName}) установлена отдельно. " +
+                "Она не может обновиться официальным APK для $OFFICIAL_PACKAGE: " +
+                "идентификатор приложения и ключ подписи отличаются. " +
+                "Для дальнейших обновлений один раз установите официальную " +
+                "версию, подписанную постоянным ключом. " +
+                "Не удаляйте приложение с важными данными без резервной копии."
+        }
 
     fun currentCode(context: Context): Long =
         PackageInfoCompat.getLongVersionCode(
@@ -92,6 +112,9 @@ internal object MusicFlowUpdates {
         update: MusicFlowUpdate,
         onProgress: suspend (Int) -> Unit
     ): Uri = withContext(Dispatchers.IO) {
+        if (!supportsOfficialUpdates(context)) {
+            throw IOException(updateChannelMessage(context))
+        }
         val folder = File(context.cacheDir, "updates").apply { mkdirs() }
         val temp = File(folder, "musicflow-download-tmp.apk")
         val file = File(folder, "musicflow-update.apk")
@@ -237,5 +260,6 @@ internal object MusicFlowUpdates {
     fun installerIntent(uri: Uri): Intent =
         Intent(Intent.ACTION_INSTALL_PACKAGE)
             .setData(uri)
+            .setClipData(ClipData.newUri(null, "MusicFlow update", uri))
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
 }
