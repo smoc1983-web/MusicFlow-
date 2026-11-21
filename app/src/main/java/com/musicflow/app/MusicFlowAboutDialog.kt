@@ -33,8 +33,11 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
     var checking by remember { mutableStateOf(false) }
     var downloading by remember { mutableStateOf(false) }
     var progress by remember { mutableIntStateOf(0) }
-    var message by remember { mutableStateOf("Обновления проверяются по официальным выпускам GitHub.") }
+    var message by remember {
+        mutableStateOf(MusicFlowUpdates.updateChannelMessage(context))
+    }
     val currentVersion = remember { MusicFlowUpdates.currentVersion(context) }
+    val officialUpdateChannel = remember { MusicFlowUpdates.supportsOfficialUpdates(context) }
 
     val localApkLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -71,6 +74,7 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
     }
 
     LaunchedEffect(Unit) {
+        if (!officialUpdateChannel) return@LaunchedEffect
         checking = true
         try {
             val candidate = MusicFlowUpdates.latestRelease()
@@ -121,7 +125,7 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
                     )
                 }
                 Button(
-                    enabled = !checking && !downloading,
+                    enabled = officialUpdateChannel && !checking && !downloading,
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
                         checking = true
@@ -199,7 +203,7 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
                     Spacer(Modifier.width(8.dp))
                     Text("Установить APK из памяти")
                 }
-                Text("Для обновления поверх текущей версии нужен тот же идентификатор приложения и ключ подписи.",
+                Text(MusicFlowUpdates.updateChannelMessage(context),
                     color = palette.muted, style = MaterialTheme.typography.labelSmall)
                 HorizontalDivider(color = palette.accent.copy(alpha = 0.18f))
                 Text("Поддержать разработчика", fontWeight = FontWeight.SemiBold,
