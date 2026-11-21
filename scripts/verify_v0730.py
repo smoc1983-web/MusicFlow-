@@ -1,4 +1,4 @@
-"""MusicFlow 0.7.35: Russian radio, lyrics, queue, history and privacy regression."""
+"""MusicFlow 0.7.36: Russian radio, lyrics, queue, history and privacy regression."""
 from pathlib import Path
 import re
 
@@ -14,7 +14,7 @@ sources = (root / "MusicSources.kt").read_text(encoding="utf-8")
 gradle = Path("app/build.gradle.kts").read_text(encoding="utf-8")
 workflow = Path(".github/workflows/android-apk.yml").read_text(encoding="utf-8")
 
-assert 'versionCode = 735' in gradle and 'versionName = "0.7.35"' in gradle
+assert 'versionCode = 736' in gradle and 'versionName = "0.7.36"' in gradle
 assert 'applicationId = "com.musicflow.preview"' in gradle
 assert 'applicationIdSuffix = ".dev"' in gradle
 assert '"vk" to ::' not in sources
