@@ -112,6 +112,8 @@ internal fun MusicHomeScreen(
     var homeQuery by remember { mutableStateOf("") }
     var collectionsExpanded by remember { mutableStateOf(false) }
     var genresExpanded by remember { mutableStateOf(false) }
+    var feedExpanded by remember { mutableStateOf(false) }
+    var feedSection by remember { mutableStateOf("Популярное") }
     var message by remember { mutableStateOf<String?>(null) }
     val genres = remember {
         listOf(
@@ -249,22 +251,49 @@ internal fun MusicHomeScreen(
             }
         }
         if (chosenCollection.isBlank()) {
-        item {
-            Spacer(Modifier.height(4.dp))
-            Text("🔥 Популярное", style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold)
-        }
-        items(popularQueue, key = { "top_" + it.id }) { song ->
-            HomeSongRow(song, { selected -> onPlay(selected, popularQueue) }, pendingSongId)
-        }
-        item {
-            Spacer(Modifier.height(10.dp))
-            Text("✨ Новинки", style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold)
-        }
-        items(freshQueue, key = { "fresh_" + it.id }) { song ->
-            HomeSongRow(song, { selected -> onPlay(selected, freshQueue) }, pendingSongId)
-        }
+            item {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Музыкальная лента",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f))
+                    Box {
+                        OutlinedButton(
+                            onClick = { feedExpanded = true },
+                            modifier = Modifier.height(42.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(feedSection)
+                            Spacer(Modifier.width(4.dp))
+                            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null,
+                                modifier = Modifier.size(18.dp))
+                        }
+                        DropdownMenu(
+                            expanded = feedExpanded,
+                            onDismissRequest = { feedExpanded = false }
+                        ) {
+                            listOf("Популярное", "Новинки").forEach { section ->
+                                DropdownMenuItem(text = { Text(section) }, onClick = {
+                                    feedSection = section
+                                    feedExpanded = false
+                                })
+                            }
+                        }
+                    }
+                }
+            }
+            if (feedSection == "Популярное") {
+                items(popularQueue, key = { "top_" + it.id }) { song ->
+                    HomeSongRow(song, { selected -> onPlay(selected, popularQueue) }, pendingSongId)
+                }
+            } else {
+                items(freshQueue, key = { "fresh_" + it.id }) { song ->
+                    HomeSongRow(song, { selected -> onPlay(selected, freshQueue) }, pendingSongId)
+                }
+            }
         } else if (collected.isEmpty() && !loading && message == null) {
             item { Text("В этом разделе пока нет доступных треков",
                 color = palette.muted, style = MaterialTheme.typography.bodySmall) }
