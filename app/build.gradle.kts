@@ -27,6 +27,10 @@ android {
         }
     }
     buildTypes {
+        getByName("debug") {
+            // Experimental VK build is intentionally side-by-side with signed stable.
+            applicationIdSuffix = ".vktest"
+        }
         getByName("release") {
             isMinifyEnabled = false
             if (!musicflowSigningStore.isNullOrBlank()) {
