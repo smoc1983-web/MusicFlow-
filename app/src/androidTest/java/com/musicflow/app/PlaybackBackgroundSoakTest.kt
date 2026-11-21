@@ -109,8 +109,14 @@ class PlaybackBackgroundSoakTest {
                 waitFor(30_000L) { main { controller.isPlaying } })
             assertTrue("Failed to move MusicFlow into background",
                 UiDevice.getInstance(instrumentation).pressHome())
+            val device = UiDevice.getInstance(instrumentation)
             val backgroundStartedAt = SystemClock.elapsedRealtime()
-            Thread.sleep(130_000L) // real wall-clock time; 6-hour synthetic test is separate
+            device.sleep() // Real display-off test; Media3 must hold the wake lock.
+            try {
+                Thread.sleep(130_000L) // real wall-clock; 6-hour synthetic test is separate
+            } finally {
+                device.wakeUp()
+            }
             val elapsed = SystemClock.elapsedRealtime() - backgroundStartedAt
             val isPlaying = main { controller.isPlaying }
             val positionMs = main { controller.currentPosition }
