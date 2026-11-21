@@ -19,7 +19,8 @@ assert 'staticCompositionLocalOf { musicFlowPalette(MusicFlowStyle.AB_ICY_NIGHT)
 for forbidden in ('"Aurora Glass"', '"AMOLED Neon"', '"Midnight Violet"', '"Graphite Gold"', '"Soft Light"'):
     assert forbidden not in theme
 assert "statusBarsPadding()" in main and "navigationBarsPadding()" in main
-assert 'Text("Музыкальная лента"' in home and 'feedSection == "Популярное"' in home
+assert 'listOf("Популярное", "ТОП песен", "Новинки")' in home
+assert 'when (feedSection)' in home
 assert "onPlay(selected, popularQueue)" in home and "onPlay(selected, freshQueue)" in home
 assert "cub.red" not in tv.lower() and "CUB IPTV" not in tv
 assert "importLocalIptvPlaylist" in tv and "newIptvSource(" in tv
