@@ -8,16 +8,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
- * Check public signed releases quietly on app startup. Present new updates
- * inside MusicFlow instead of sending the user to a browser.
- *
- * Installation is confirmed in Android's normal package installer. A release
- * must use the same package name and signing key as the installed application.
+ * Automatic update discovery and installer UI. Android DownloadManager owns
+ * the APK transfer, independently of this dialog and this Activity.
  */
 @Composable
 internal fun MusicFlowAutoUpdate() {
@@ -25,36 +21,69 @@ internal fun MusicFlowAutoUpdate() {
     val palette = LocalMusicFlowPalette.current
     val scope = rememberCoroutineScope()
     var available by remember { mutableStateOf<MusicFlowUpdate?>(null) }
-    var busy by remember { mutableStateOf(false) }
-    var progress by remember { mutableIntStateOf(0) }
+    var working by remember { mutableStateOf(false) }
+    var hidden by remember { mutableStateOf(false) }
+    var transfer by remember {
+        mutableStateOf(MusicFlowBackgroundUpdates.Snapshot(
+            MusicFlowBackgroundUpdates.Phase.IDLE))
+    }
     var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         if (!MusicFlowUpdates.supportsOfficialUpdates(context)) return@LaunchedEffect
+        val saved = MusicFlowBackgroundUpdates.savedRelease(context)
+        if (saved != null) available = saved
         val preferences = context.getSharedPreferences("musicflow_updates", Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
-        // Check every new app session. Older builds delayed newly published
-        // updates for six hours even when the user reopened MusicFlow.
         try {
             val latest = MusicFlowUpdates.latestRelease()
             if (latest != null && latest.versionCode > MusicFlowUpdates.currentCode(context)) {
                 val snoozedVersion = preferences.getLong("snoozed_version", 0L)
                 val snoozedUntil = preferences.getLong("snoozed_until", 0L)
-                if (latest.versionCode != snoozedVersion || now >= snoozedUntil) {
+                if (saved != null || latest.versionCode != snoozedVersion || now >= snoozedUntil) {
                     available = latest
                 }
             }
         } catch (failure: Exception) {
             AppDiagnostics.failure("Updates", "automatic update check", failure)
-            // The app works normally when offline or GitHub is unreachable;
-            // the About screen always provides an explicit retry.
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (!MusicFlowUpdates.supportsOfficialUpdates(context)) return@LaunchedEffect
+        while (true) {
+            try {
+                transfer = MusicFlowBackgroundUpdates.snapshot(context)
+                val saved = MusicFlowBackgroundUpdates.savedRelease(context)
+                if (saved != null && available == null && !hidden &&
+                    transfer.phase != MusicFlowBackgroundUpdates.Phase.IDLE) {
+                    available = saved
+                }
+            } catch (failure: Exception) {
+                AppDiagnostics.failure("Updates", "background download status", failure)
+            }
+            delay(1000L)
         }
     }
 
     val update = available
     if (update != null) {
+        val sameVersion = update.versionCode ==
+            MusicFlowBackgroundUpdates.savedRelease(context)?.versionCode
+        val loading = sameVersion && transfer.phase in setOf(
+            MusicFlowBackgroundUpdates.Phase.WAITING,
+            MusicFlowBackgroundUpdates.Phase.RUNNING
+        )
+        val downloaded = sameVersion &&
+            transfer.phase == MusicFlowBackgroundUpdates.Phase.DOWNLOADED
+        val progress = if (sameVersion) transfer.progress else 0
+        val transferError = if (sameVersion &&
+            transfer.phase == MusicFlowBackgroundUpdates.Phase.FAILED) transfer.error else null
+
         AlertDialog(
-            onDismissRequest = { if (!busy) available = null },
+            onDismissRequest = {
+                if (!working) { hidden = true; available = null }
+            },
             containerColor = palette.surface,
             shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
             title = { Text("Доступно обновление MusicFlow", color = palette.foreground) },
@@ -70,62 +99,79 @@ internal fun MusicFlowAutoUpdate() {
                         Text(update.notes.take(250), color = palette.foreground,
                             style = MaterialTheme.typography.bodySmall)
                     }
-                    if (busy) {
-                        LinearProgressIndicator(
-                            progress = { progress / 100f },
-                            modifier = Modifier.fillMaxWidth(),
-                            color = palette.accent
-                        )
-                        Text("Загрузка: " + progress + "%",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = palette.foreground)
+                    if (loading) {
+                        LinearProgressIndicator(progress = { progress / 100f },
+                            modifier = Modifier.fillMaxWidth(), color = palette.accent)
+                        Text("Скачивание: $progress% · можно свернуть приложение",
+                            color = palette.foreground,
+                            style = MaterialTheme.typography.bodySmall)
                     }
-                    if (error != null) {
-                        Text(error.orEmpty(), color = MaterialTheme.colorScheme.error,
+                    if (downloaded) {
+                        Text("APK скачан в фоне. Подпись будет проверена перед установкой.",
+                            color = palette.accent, style = MaterialTheme.typography.bodySmall)
+                    }
+                    val shownError = error ?: transferError
+                    if (shownError != null) {
+                        Text(shownError, color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodySmall)
                     }
                 }
             },
             confirmButton = {
                 Button(
-                    enabled = !busy,
+                    enabled = !working && !loading,
                     onClick = {
-                        if (!MusicFlowUpdates.canInstall(context)) {
-                            error = "Разрешите MusicFlow установку приложений в настройках Android и повторите установку."
-                            runCatching {
-                                context.startActivity(MusicFlowUpdates.allowInstallIntent(context))
-                            }
-                        } else {
-                            busy = true
-                            error = null
-                            progress = 0
-                            scope.launch {
-                                try {
-                                    val uri = MusicFlowUpdates.downloadVerified(context, update) { percent ->
-                                        withContext(Dispatchers.Main) { progress = percent }
+                        working = true
+                        error = null
+                        scope.launch {
+                            try {
+                                if (downloaded) {
+                                    // This reuses the existing package/version/signature checks.
+                                    val uri = MusicFlowBackgroundUpdates.verifiedInstallUri(context)
+                                    if (!MusicFlowUpdates.canInstall(context)) {
+                                        error = "Разрешите установку APK для MusicFlow и нажмите «Установить» снова."
+                                        context.startActivity(MusicFlowUpdates.allowInstallIntent(context))
+                                    } else {
+                                        context.startActivity(MusicFlowUpdates.installerIntent(uri))
+                                        hidden = true
+                                        available = null
                                     }
-                                    busy = false
-                                    context.startActivity(MusicFlowUpdates.installerIntent(uri))
-                                    available = null
-                                } catch (failure: Exception) {
-                                    error = "Не удалось установить обновление: " +
-                                        (failure.message ?: "ошибка загрузки")
-                                    busy = false
+                                } else {
+                                    MusicFlowBackgroundUpdates.enqueue(context, update)
+                                    transfer = MusicFlowBackgroundUpdates.snapshot(context)
                                 }
+                            } catch (failure: Exception) {
+                                error = "Не удалось подготовить обновление: " +
+                                    (failure.message ?: "ошибка загрузки")
+                            } finally {
+                                working = false
                             }
                         }
                     }
-                ) { Text(if (busy) "Загружается…" else "Скачать и установить") }
+                ) {
+                    Text(when {
+                        working -> "Проверка…"
+                        loading -> "Загружается…"
+                        downloaded -> "Проверить и установить"
+                        else -> "Скачать обновление"
+                    })
+                }
             },
             dismissButton = {
-                TextButton(enabled = !busy, onClick = {
-                    context.getSharedPreferences("musicflow_updates", Context.MODE_PRIVATE)
-                        .edit()
-                        .putLong("snoozed_version", update.versionCode)
-                        .putLong("snoozed_until", System.currentTimeMillis() + 24L * 60L * 60L * 1000L)
-                        .apply()
+                TextButton(enabled = !working, onClick = {
+                    if (!loading) {
+                        context.getSharedPreferences("musicflow_updates", Context.MODE_PRIVATE)
+                            .edit()
+                            .putLong("snoozed_version", update.versionCode)
+                            .putLong("snoozed_until",
+                                System.currentTimeMillis() + 24L * 60L * 60L * 1000L)
+                            .apply()
+                    }
+                    hidden = true
                     available = null
-                }) { Text("Позже", color = palette.accent) }
+                }) {
+                    Text(if (loading) "Скачать в фоне" else "Позже", color = palette.accent)
+                }
             }
         )
     }
