@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -18,27 +20,57 @@ internal object CoverLookup {
     private const val MISSING = "_missing_"
     private val cache = ConcurrentHashMap<String, String>()
     private val semaphore = Semaphore(2)
+    // Versioned cache: older builds may have stored small or incorrect images.
+    private const val CACHE_VERSION = "hq3_"
+    private const val POSITIVE_TTL = 14L * 86400_000L
+    private const val NEGATIVE_TTL = 12L * 3600_000L
 
-    /** Ask known artwork CDNs for their documented high-resolution rendition. */
+    /** Prefer native high-resolution endpoints where their URL format is known. */
     internal fun preferredProvided(url: String?): String? {
-        val original = url?.takeIf { it.startsWith("https://") } ?: return null
+        val original = url?.takeIf { it.startsWith("https://", ignoreCase = true) } ?: return null
         return when {
             original.contains("mzstatic.com", ignoreCase = true) ->
-                original.replace(Regex("[0-9]{2,4}x[0-9]{2,4}bb"), "1200x1200bb")
+                original.replace(Regex("""\d{2,4}x\d{2,4}(?:bb|-\d+)"""), "1200x1200bb")
             original.contains("coverartarchive.org", ignoreCase = true) ->
-                original.replace("/front-250", "/front-1200")
+                original.replace(Regex("""/front-(250|500)(?!\d)"""), "/front-1200")
+            original.contains("dzcdn.net", ignoreCase = true) ->
+                original.replace(Regex("""/(?:56|120|250|500)x(?:56|120|250|500)-"""), "/1000x1000-")
             else -> original
         }
     }
 
-    private fun needsUpgrade(url: String?): Boolean = url == null ||
-        url.contains("zaycev.net", ignoreCase = true) ||
-        url.contains("thumb", ignoreCase = true) ||
-        url.contains("100x100", ignoreCase = true) ||
-        url.contains("front-250", ignoreCase = true)
-    private fun normalized(s: String) = s.lowercase(Locale.ROOT)
-        .replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
-        .replace(Regex("\\s+"), " ")
+    private fun needsUpgrade(url: String?): Boolean {
+        if (url.isNullOrBlank()) return true
+        val highResolution = preferredProvided(url).orEmpty()
+        // A high-resolution endpoint from a trusted music metadata CDN is
+        // already suitable. Everything else may only be a tiny site thumbnail.
+        return !(
+            highResolution.contains("mzstatic.com", true) &&
+                highResolution.contains("1200x1200", true) ||
+            highResolution.contains("dzcdn.net", true) &&
+                highResolution.contains("1000x1000", true) ||
+            highResolution.contains("coverartarchive.org", true) &&
+                highResolution.contains("/front-1200", true)
+        )
+    }
+
+    private fun normalized(s: String): String = s.lowercase(Locale.ROOT)
+        .replace(Regex("""[^\p{L}\p{N}]+"""), " ").trim()
+        .replace(Regex("""\s+"""), " ")
+
+    /** Credits may list multiple performers, but never accept an unrelated artist. */
+    private fun artistMatches(requested: String, actual: String): Boolean {
+        val expected = normalized(requested)
+        val found = normalized(actual)
+        if (expected.isEmpty() || found.isEmpty()) return false
+        if (expected == found) return true
+        val separators = Regex("""(?i)\s*(?:,|&|/|\bfeat\.?|\bft\.?|\bи\b)\s*""")
+        val requestedArtists = requested.split(separators)
+            .map(::normalized).filter(String::isNotBlank)
+        val candidateArtists = actual.split(separators)
+            .map(::normalized).filter(String::isNotBlank)
+        return requestedArtists.any { it in candidateArtists }
+    }
 
     suspend fun resolve(context: Context, artist: String, title: String, provided: String?): String? {
         val original = preferredProvided(provided)
@@ -48,7 +80,7 @@ internal object CoverLookup {
         return withContext(Dispatchers.IO) {
             val prefs = context.applicationContext
                 .getSharedPreferences("musicflow_cover_cache", Context.MODE_PRIVATE)
-            val id = key.hashCode().toString() + "_" + key.length
+            val id = CACHE_VERSION + key.hashCode().toString() + "_" + key.length
             if (prefs.getLong("exp_" + id, 0L) > System.currentTimeMillis()) {
                 val old = prefs.getString(id, MISSING) ?: MISSING
                 cache[key] = old
@@ -57,11 +89,16 @@ internal object CoverLookup {
             semaphore.acquire()
             try {
                 cache[key]?.let { return@withContext it.takeUnless { v -> v == MISSING } ?: original }
-                val found = runCatching { iTunes(artist, title) }.getOrNull()
-                    ?: runCatching { musicBrainz(artist, title) }.getOrNull()
+                val found = coroutineScope {
+                    val apple = async { runCatching { iTunes(artist, title) }.getOrNull() }
+                    val deezer = async { runCatching { deezer(artist, title) }.getOrNull() }
+                    // Deezer and Apple can resolve independently of Zaycev artwork.
+                    apple.await() ?: deezer.await()
+                } ?: runCatching { musicBrainz(artist, title) }.getOrNull()
                 cache[key] = found ?: MISSING
                 prefs.edit().putString(id, found ?: MISSING)
-                    .putLong("exp_" + id, System.currentTimeMillis() + 7L * 86400_000L).apply()
+                    .putLong("exp_" + id, System.currentTimeMillis() +
+                        if (found == null) NEGATIVE_TTL else POSITIVE_TTL).apply()
                 found ?: original
             } finally {
                 semaphore.release()
@@ -73,7 +110,7 @@ internal object CoverLookup {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 6000
             readTimeout = 6000
-            setRequestProperty("User-Agent", "MusicFlow/0.7.4 (https://github.com/smoc1983-web/MusicFlow-)")
+            setRequestProperty("User-Agent", "MusicFlow/0.7.15 (https://github.com/smoc1983-web/MusicFlow-)")
             setRequestProperty("Accept", "application/json")
         }
         return try {
@@ -93,24 +130,43 @@ internal object CoverLookup {
 
     private fun iTunes(artist: String, title: String): String? {
         val q = URLEncoder.encode("$artist $title", "UTF-8")
-        val raw = fetch("https://itunes.apple.com/search?term=$q&media=music&entity=song&limit=8")
+        val raw = fetch(
+            "https://itunes.apple.com/search?term=$q&media=music&entity=song&limit=25"
+        )
         if (raw.isBlank()) return null
         val items = JSONObject(raw).optJSONArray("results") ?: return null
         val wantedTitle = normalized(title)
-        val wantedArtist = normalized(artist)
-        for (i in 0 until minOf(items.length(), 8)) {
+        for (i in 0 until minOf(items.length(), 25)) {
             val item = items.optJSONObject(i) ?: continue
-            val t = normalized(item.optString("trackName"))
-            val a = normalized(item.optString("artistName"))
-            val titleMatch = t == wantedTitle ||
-                (wantedTitle.length > 5 && (t.startsWith(wantedTitle + " ") || wantedTitle.startsWith(t + " ")))
-            val artistMatch = a == wantedArtist || (a.length >= 4 &&
-                (wantedArtist.contains(a) || a.contains(wantedArtist)))
-            if (!titleMatch || !artistMatch) continue
+            if (normalized(item.optString("trackName")) != wantedTitle) continue
+            if (!artistMatches(artist, item.optString("artistName"))) continue
             val url = item.optString("artworkUrl100")
             if (url.startsWith("https://")) {
-                return url.replace("100x100bb", "1200x1200bb").replace("100x100-75", "1200x1200-75")
+                return preferredProvided(url)
             }
+        }
+        return null
+    }
+
+    private fun deezer(artist: String, title: String): String? {
+        val q = URLEncoder.encode("$artist $title", "UTF-8")
+        val raw = fetch("https://api.deezer.com/search?q=$q&limit=30")
+        if (raw.isBlank()) return null
+        val tracks = JSONObject(raw).optJSONArray("data") ?: return null
+        val wantedTitle = normalized(title)
+        for (i in 0 until minOf(tracks.length(), 30)) {
+            val item = tracks.optJSONObject(i) ?: continue
+            val actualTitle = item.optString("title").ifBlank { item.optString("title_short") }
+            if (normalized(actualTitle) != wantedTitle) continue
+            val actualArtist = item.optJSONObject("artist")?.optString("name").orEmpty()
+            if (!artistMatches(artist, actualArtist)) continue
+            val album = item.optJSONObject("album") ?: continue
+            val candidate = sequenceOf(
+                album.optString("cover_xl"),
+                album.optString("cover_big"),
+                album.optString("cover_medium")
+            ).firstOrNull { it.startsWith("https://") } ?: continue
+            return preferredProvided(candidate)
         }
         return null
     }
@@ -125,6 +181,13 @@ internal object CoverLookup {
             val song = songs.optJSONObject(i) ?: continue
             if (song.optInt("score", 0) < 90 ||
                 normalized(song.optString("title")) != normalized(title)) continue
+            val credits = song.optJSONArray("artist-credit") ?: continue
+            val verifiedArtist = (0 until credits.length()).any { index ->
+                val item = credits.optJSONObject(index) ?: return@any false
+                val name = item.optJSONObject("artist")?.optString("name").orEmpty()
+                artistMatches(artist, name)
+            }
+            if (!verifiedArtist) continue
             val albums = song.optJSONArray("releases") ?: continue
             for (j in 0 until minOf(albums.length(), 2)) {
                 val uuid = albums.optJSONObject(j)?.optString("id").orEmpty()
