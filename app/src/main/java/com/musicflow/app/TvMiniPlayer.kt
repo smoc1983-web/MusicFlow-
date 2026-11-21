@@ -142,7 +142,10 @@ internal fun TvMiniPlayer(
                         .clip(RoundedCornerShape(12.dp)).background(Color.Black)
                 ) {
                     AndroidView(
-                        factory = { ctx -> PlayerView(ctx).apply {
+                        factory = { ctx ->
+                            (android.view.LayoutInflater.from(ctx).inflate(
+                                R.layout.musicflow_tv_texture_player, null, false
+                            ) as PlayerView).apply {
                             useController = false
                             setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
