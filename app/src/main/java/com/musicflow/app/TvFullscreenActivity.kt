@@ -78,17 +78,30 @@ class TvFullscreenActivity : ComponentActivity() {
             hide(WindowInsetsCompat.Type.systemBars())
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
-        val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
-        future = MediaController.Builder(this, token).buildAsync().also { f ->
-            f.addListener({
-                runCatching { controller.value = f.get() }
-                    .onFailure { AppDiagnostics.failure("TV", "fullscreen connection", it) }
-            }, ContextCompat.getMainExecutor(this))
+        // Use the SAME MediaController as the mini-player. Opening a second
+        // controller could leave the ExoPlayer surface on the wrong Activity.
+        val shared = TvVideoSurfaceBridge.sharedController()
+        if (shared != null) {
+            controller.value = shared
+            AppDiagnostics.info("TV", "fullscreen shared MediaController")
+        } else {
+            // Safe fallback if Android recreates an Activity without its parent.
+            val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
+            future = MediaController.Builder(this, token).buildAsync().also { f ->
+                f.addListener({
+                    runCatching { controller.value = f.get() }
+                        .onFailure { AppDiagnostics.failure("TV", "fullscreen connection", it) }
+                }, ContextCompat.getMainExecutor(this))
+            }
         }
         setContent {
+            val activeStyle = MusicFlowStyle.fromSaved(
+                getSharedPreferences("musicflow", MODE_PRIVATE).getString("ui_theme", null)
+            )
+            val palette = musicFlowPalette(activeStyle)
             MaterialTheme(colorScheme = darkColorScheme(
-                primary = Color(0xFFAC80FF), background = Color.Black,
-                surface = Color(0xFF181420), onSurface = Color.White
+                primary = palette.accent, background = Color.Black,
+                surface = palette.surface, onSurface = Color.White
             )) {
                 val player = controller.value
                 if (player == null) Box(Modifier.fillMaxSize().background(Color.Black),
