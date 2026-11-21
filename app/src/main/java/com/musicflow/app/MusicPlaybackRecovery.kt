@@ -31,6 +31,8 @@ internal class MusicPlaybackRecovery(
     private var pendingRecoveryToken: Int? = null
     private var playlistGeneration = 0
     private var pending: Job? = null
+    private var startupJob: Job? = null
+    private var startupRetried = false
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         val token = mediaItem?.mediaMetadata?.extras?.getInt(recoveryTokenKey, 0) ?: 0
@@ -38,10 +40,14 @@ internal class MusicPlaybackRecovery(
             // This transition belongs to our own fallback. Keep failed URLs
             // and blocked providers so the next failure cannot loop to them.
             pendingRecoveryToken = null
+            startupJob?.cancel()
+            startupRetried = false
             return
         }
         pendingRecoveryToken = null
         playlistGeneration++
+        startupJob?.cancel()
+        startupRetried = false
         pending?.cancel()
         attempted.clear()
         blockedSources.clear()
@@ -49,7 +55,35 @@ internal class MusicPlaybackRecovery(
         searchedAgain = false
     }
 
+    override fun onPlaybackStateChanged(playbackState: Int) {
+        startupJob?.cancel()
+        startupJob = null
+        if (playbackState != Player.STATE_BUFFERING || startupRetried ||
+            !player.playWhenReady || player.currentPosition > 1_000L ||
+            player.playerError != null) return
+        val item = player.currentMediaItem ?: return
+        // IPTV has different buffering semantics and must never be restarted here.
+        if (item.mediaId.startsWith("ruvideo:")) return
+        val uri = item.localConfiguration?.uri ?: return
+        val generation = playlistGeneration
+        startupJob = scope.launch {
+            delay(12_000L)
+            if (startupRetried || generation != playlistGeneration ||
+                player.playbackState != Player.STATE_BUFFERING ||
+                !player.playWhenReady || player.playerError != null ||
+                player.currentPosition > 1_000L ||
+                player.currentMediaItem?.mediaId != item.mediaId ||
+                player.currentMediaItem?.localConfiguration?.uri != uri) return@launch
+            startupRetried = true
+            if (uri.scheme == "zaycev") ZaycevStreamResolver.invalidate(uri)
+            AppDiagnostics.warning("Recovery", "music startup buffering; one automatic retry")
+            player.prepare()
+            player.play()
+        }
+    }
+
     override fun onPlayerError(error: PlaybackException) {
+        startupJob?.cancel()
         val failed = player.currentMediaItem ?: return
         val extras = failed.mediaMetadata.extras ?: return
         val streams = decodeStreams(extras.getString(MUSIC_STREAMS))
