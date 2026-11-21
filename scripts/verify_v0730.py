@@ -14,7 +14,7 @@ sources = (root / "MusicSources.kt").read_text(encoding="utf-8")
 gradle = Path("app/build.gradle.kts").read_text(encoding="utf-8")
 workflow = Path(".github/workflows/android-apk.yml").read_text(encoding="utf-8")
 
-assert 'versionCode = 737' in gradle and 'versionName = "0.7.37"' in gradle
+assert 'versionCode = 738' in gradle and 'versionName = "0.7.38"' in gradle
 assert 'applicationId = "com.musicflow.preview"' in gradle
 assert 'applicationIdSuffix = ".dev"' in gradle
 assert '"vk" to ::' not in sources

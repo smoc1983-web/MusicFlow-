@@ -94,6 +94,10 @@ jobs:
         run: python3 scripts/verify_v0736.py
       - name: Verify 0.7.37 chart next/previous queue and safe lazy resolution
         run: python3 scripts/verify_v0737.py
+      - name: Verify 0.7.38 Telegram invite and channel entry point
+        run: python3 scripts/verify_v0738.py
+      - name: Verify persistent background APK transfer and safe installer handoff
+        run: python3 scripts/verify_v0738_background.py
       - name: Run ub-mode Kotlin behavior tests
         run: gradle --no-daemon :app:testDebugUnitTest
       - name: Build debug APK
