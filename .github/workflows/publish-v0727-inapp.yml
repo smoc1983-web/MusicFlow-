@@ -1,0 +1,82 @@
+name: Publish MusicFlow 0.7.27 in-app update
+on:
+  push:
+    branches: ["feature/musicflow-v0.7.27-reliable-updates"]
+    paths: [".github/workflows/publish-v0727-inapp.yml"]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: musicflow-publish-0727
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Android SDK and build tools
+        run: yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Verify updater source contract
+        run: python3 scripts/verify_v0727.py
+      - name: Require existing permanent signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.MUSICFLOW_SIGNING_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.MUSICFLOW_SIGNING_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MUSICFLOW_SIGNING_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MUSICFLOW_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$KEYSTORE_BASE64" || -z "$STORE_PASSWORD" || -z "$KEY_ALIAS" || -z "$KEY_PASSWORD" ]]; then
+            echo "::error::Stable signing secrets are missing. Upload the ORIGINAL v0.7.22-v0.7.25 key to GitHub Actions secrets; never generate a replacement."
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/musicflow-release.jks"
+          echo "MUSICFLOW_SIGNING_KEYSTORE=$RUNNER_TEMP/musicflow-release.jks" >> "$GITHUB_ENV"
+          echo "MUSICFLOW_SIGNING_STORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "MUSICFLOW_SIGNING_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "MUSICFLOW_SIGNING_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+      - name: Compile signed 0.7.27 APK
+        run: gradle --no-daemon :app:assembleRelease
+      - name: Check version, package and identical permanent signer
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
+          SIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
+          test -s "$APK"
+          "$SIGNER" verify --verbose "$APK"
+          "$AAPT" dump badging "$APK" | grep -F "name='com.musicflow.preview' versionCode='727' versionName='0.7.27'"
+          curl -fLsS --retry 2 --connect-timeout 15 --max-time 120             "https://github.com/smoc1983-web/MusicFlow-/releases/download/v0.7.25/MusicFlow_0.7.25.apk"             -o "$RUNNER_TEMP/musicflow-0725.apk"
+          BASE_SIGNER=$("$SIGNER" verify --print-certs "$RUNNER_TEMP/musicflow-0725.apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
+          NEW_SIGNER=$("$SIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
+          test -n "$BASE_SIGNER"
+          test "$BASE_SIGNER" = "$NEW_SIGNER"
+          echo "Same package, greater version and same permanent signer: confirmed."
+          mkdir -p out
+          cp "$APK" out/MusicFlow_0.7.27.apk
+      - name: Publish signed update to the exact feed consumed by MusicFlow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view v0.7.27 >/dev/null 2>&1; then
+            echo "::error::v0.7.27 already published. Refuse to replace a signed release."
+            exit 1
+          fi
+          gh release create v0.7.27 out/MusicFlow_0.7.27.apk             --target "$GITHUB_SHA" --title "MusicFlow 0.7.27"             --notes "Подписанное обновление через интерфейс MusicFlow для официального пакета com.musicflow.preview. Исправлены обнаружение обновлений и проверка совместимости. VK Audio API остаётся экспериментальным источником, требует отдельно разрешённый VK доступ."
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.7.27"             --jq '.assets[].name' | grep -Fx MusicFlow_0.7.27.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.27-signed-compatible-apk
+          path: out/MusicFlow_0.7.27.apk
+          retention-days: 30
+          if-no-files-found: error

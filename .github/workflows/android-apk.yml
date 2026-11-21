@@ -76,6 +76,8 @@ jobs:
       # v0.7.24/25 used a WebView, which was intentionally removed.
       - name: Verify v0.7.26 native authorized VK provider
         run: python3 scripts/verify_v0726.py
+      - name: Verify reliable in-app updates and official release contract
+        run: python3 scripts/verify_v0727.py
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Upload APK

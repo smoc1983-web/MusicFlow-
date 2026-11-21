@@ -1,4 +1,4 @@
-"""v0.7.26: VK as a genuine optional native Media3 search/playback source."""
+"""v0.7.27: VK as a genuine optional native Media3 search/playback source."""
 from pathlib import Path
 
 src = Path("app/src/main/java/com/musicflow/app")
@@ -7,7 +7,7 @@ sources = (src / "MusicSources.kt").read_text(encoding="utf-8")
 vk = (src / "VkAudioSource.kt").read_text(encoding="utf-8")
 service = (src / "PlaybackService.kt").read_text(encoding="utf-8")
 gradle = Path("app/build.gradle.kts").read_text(encoding="utf-8")
-assert "versionCode = 726" in gradle and 'versionName = "0.7.26"' in gradle
+assert "versionCode = 727" in gradle and 'versionName = "0.7.27"' in gradle
 assert '"vk" to ::vkTracks' in sources
 assert 'VkAudioSource.initialize(this)' in main
 assert 'VkAudioSource.saveToken(vkTokenInput)' in main
@@ -32,4 +32,4 @@ assert 'getSharedPreferences(PREFERENCES' in vk
 assert '"access_token" to token' in vk
 assert 'VKAndroidApp' not in vk
 assert 'CookieManager' not in vk and 'WebView' not in vk
-print("MusicFlow 0.7.26 VK native provider wiring PASS (not live VK access)")
+print("MusicFlow 0.7.27 VK native provider wiring PASS (not live VK access)")
