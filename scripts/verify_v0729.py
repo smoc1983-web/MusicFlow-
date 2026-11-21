@@ -53,10 +53,12 @@ permissions = re.findall(r'<uses-permission\s+android:name="android.permission.(
 expected = {
     "INTERNET", "ACCESS_NETWORK_STATE", "REQUEST_INSTALL_PACKAGES",
     "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+    "WAKE_LOCK", "WAKE_WIFI_LOCK",
 }
 assert set(permissions) == expected, f"Unexpected Android permission: {permissions}"
+assert 'setWakeMode(C.WAKE_MODE_NETWORK)' in player
 assert "Audius" in readme and "Play Protect" in readme
 print("PASS: VK UI, source files, tokens and provider removed")
 print("PASS: user settings dialog and ExoPlayer audio-session effects wired")
-print("PASS: five standard Android permissions, in-app updates and permanent package ID")
+print("PASS: bounded Android permissions, Media3-managed screen-off wake locks and stable package ID")
 print("NOTE: this cannot guarantee Google Play Protect will not warn")
