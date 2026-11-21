@@ -99,7 +99,7 @@ private fun parseCollections(document: Document): List<HomeCollection> =
 internal fun MusicHomeScreen(
     onSearch: (String) -> Unit,
     onPlay: (HomeSong, List<HomeSong>) -> Unit,
-    onPlayChart: (TopSong) -> Unit,
+    onPlayChart: (TopSong, List<TopSong>) -> Unit,
     pendingSongId: String?,
     playbackMessage: String?,
     modifier: Modifier = Modifier
@@ -378,7 +378,7 @@ internal fun MusicHomeScreen(
                             isPending = pendingSongId == playbackKey,
                             enabled = pendingSongId == null,
                             isRussia = chartRegion == TopSongsRegion.RUSSIA,
-                            onPlay = { onPlayChart(song) }
+                            onPlay = { onPlayChart(song, chartSongs.toList()) }
                         )
                     }
                 }

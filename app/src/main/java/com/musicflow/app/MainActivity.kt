@@ -401,7 +401,7 @@ private fun MusicScreen(
         }
     }
 
-    fun queueAndPlay(list: List<Track>, index: Int, homePlaylist: Boolean = false) {
+    fun queueAndPlay(list: List<Track>, index: Int, homePlaylist: Boolean = false, chartPlaylist: Boolean = false) {
         val p = player ?: run {
             problem = "Плеер подключается. Повторите попытку."
             AppDiagnostics.warning("Player", "play requested before connection")
@@ -426,6 +426,7 @@ private fun MusicScreen(
                             putString(MUSIC_SOURCE, t.id.substringBefore(':'))
                             putLong(MUSIC_DURATION_SECONDS, t.durationSec)
                             putBoolean(MUSIC_HOME_PLAYLIST, homePlaylist)
+                            putBoolean(MUSIC_CHART_PLAYLIST, chartPlaylist)
                         })
                         .setArtworkUri(t.artwork?.let(Uri::parse))
                         .build()
@@ -471,7 +472,7 @@ private fun MusicScreen(
         }
     }
 
-    fun playChartSong(song: TopSong) {
+    fun playChartSong(song: TopSong, chartSection: List<TopSong>) {
         val request = homeSequence.incrementAndGet()
         pendingHomeSong = "chart:" + musicKey(song.artist) + ":" + musicKey(song.title)
         homePlaybackMessage = "Поиск записи: " + song.artist + " — " + song.title
@@ -486,8 +487,12 @@ private fun MusicScreen(
             }
             if (request != homeSequence.get()) return@launch
             pendingHomeSong = null
-            if (candidate != null) {
-                queueAndPlay(listOf(candidate), 0)
+            val chartQueue = ChartPlaylistQueue.build(song, chartSection, candidate)
+            if (chartQueue != null) {
+                queueAndPlay(chartQueue.tracks, chartQueue.selectedIndex,
+                    homePlaylist = true, chartPlaylist = true)
+                AppDiagnostics.info("Charts", "queue=" + chartQueue.tracks.size +
+                    "; selected=" + chartQueue.selectedIndex)
             } else {
                 homePlaybackMessage = "Запись не найдена: " + song.artist + " — " + song.title
             }
@@ -650,7 +655,7 @@ private fun MusicScreen(
                     if (suggested.isNotBlank()) fetch(suggested)
                 },
                 onPlay = { song, section -> playHomeSong(song, section) },
-                onPlayChart = { song -> playChartSong(song) },
+                onPlayChart = { song, section -> playChartSong(song, section) },
                 pendingSongId = pendingHomeSong,
                 playbackMessage = homePlaybackMessage,
                 modifier = Modifier.weight(1f)

@@ -20,6 +20,7 @@ internal const val MUSIC_STREAMS = "com.musicflow.music_streams"
 internal const val MUSIC_SOURCE = "com.musicflow.music_source"
 internal const val MUSIC_DURATION_SECONDS = "com.musicflow.music_duration_seconds"
 internal const val MUSIC_HOME_PLAYLIST = "com.musicflow.home_playlist"
+internal const val MUSIC_CHART_PLAYLIST = "com.musicflow.chart_playlist"
 
 internal fun encodeStreams(streams: List<MusicStream>): String = JSONArray().apply {
     streams.forEach { put(JSONObject().put("id", it.id).put("uri", it.uri)) }
@@ -34,6 +35,7 @@ internal fun decodeStreams(encoded: String?): List<MusicStream> = runCatching {
             val uri = android.net.Uri.parse(it.uri)
             val host = uri.host.orEmpty().lowercase(Locale.ROOT)
             when (it.source) {
+                "chart" -> ChartPlaylistQueue.parse(it.uri) != null
                 "zaycev" -> Regex("zaycev://track/[0-9]{1,16}").matches(it.uri)
                 "muzofond" -> uri.scheme == "https" &&
                     (host == "muzofond.fm" || host.endsWith(".muzofond.fm"))
