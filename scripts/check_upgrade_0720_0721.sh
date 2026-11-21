@@ -9,15 +9,15 @@ report="build/update_0720_to_0721_report.txt"
 aapt="${ANDROID_HOME}/build-tools/36.0.0/aapt"
 signer="${ANDROID_HOME}/build-tools/36.0.0/apksigner"
 
-old_badging="$("$aapt" dump badging "$old" | head -1)"
-new_badging="$("$aapt" dump badging "$new" | head -1)"
+old_badging="$("$aapt" dump badging "$old" | sed -n '1p')"
+new_badging="$("$aapt" dump badging "$new" | sed -n '1p')"
 extract() { sed -n "s/.*$2='\([^']*\)'.*/\1/p" <<< "$1"; }
 old_package="$(extract "$old_badging" name)"
 new_package="$(extract "$new_badging" name)"
 old_code="$(extract "$old_badging" versionCode)"
 new_code="$(extract "$new_badging" versionCode)"
-old_cert="$("$signer" verify --print-certs "$old" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)"
-new_cert="$("$signer" verify --print-certs "$new" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)"
+old_cert="$("$signer" verify --print-certs "$old" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | sed -n '1p')"
+new_cert="$("$signer" verify --print-certs "$new" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | sed -n '1p')"
 
 compatible=false
 if [[ -n "$old_package" && "$old_package" == "$new_package" &&
