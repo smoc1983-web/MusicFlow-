@@ -2,7 +2,7 @@ name: Verify 0.7.36 complete legacy static suite
 on:
   push:
     branches: ["feature/musicflow-v0.7.36-home-charts-ru"]
-    paths: [".github/workflows/verify-v0736-static.yml"]
+    paths: [".github/workflows/verify-v0736-static.yml", "scripts/verify_v0721.py"]
 permissions:
   contents: read
 jobs:
