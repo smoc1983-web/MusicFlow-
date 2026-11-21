@@ -35,6 +35,20 @@ import androidx.compose.ui.viewinterop.AndroidView
 private const val VK_MUSIC_HOME = "https://music.vk.com/"
 private const val VK_MUSIC_PACKAGE = "com.uma.musicvk"
 
+/**
+ * VK's historical public web search route. VK controls what it displays;
+ * authentication, localization and URL changes may alter its behavior.
+ * No private API or direct stream extraction takes place.
+ */
+internal fun vkMusicSearchUrl(query: String): String {
+    val clean = query.trim().take(180)
+    if (clean.isEmpty()) return VK_MUSIC_HOME
+    return Uri.Builder().scheme("https").authority("vk.com").appendPath("search")
+        .appendQueryParameter("c[q]", clean)
+        .appendQueryParameter("c[section]", "audio")
+        .build().toString()
+}
+
 private fun approvedVkHost(host: String?): Boolean {
     val normalized = host?.lowercase() ?: return false
     return normalized == "vk.com" || normalized.endsWith(".vk.com") ||
@@ -43,13 +57,17 @@ private fun approvedVkHost(host: String?): Boolean {
 }
 
 @Composable
-internal fun VkMusicScreen(modifier: Modifier = Modifier) {
+internal fun VkMusicScreen(
+    initialQuery: String = "",
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
     val palette = LocalMusicFlowPalette.current
     var web by remember { mutableStateOf<WebView?>(null) }
     var loading by remember { mutableStateOf(true) }
     var canGoBack by remember { mutableStateOf(false) }
     var pageProblem by remember { mutableStateOf<String?>(null) }
+    val requestedSearch = remember(initialQuery) { vkMusicSearchUrl(initialQuery) }
 
     fun openOfficialSite() {
         runCatching {
@@ -81,14 +99,15 @@ internal fun VkMusicScreen(modifier: Modifier = Modifier) {
 
     Column(modifier = modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
-            "VK Музыка",
+            if (initialQuery.isBlank()) "VK Музыка"
+            else "Поиск VK: " + initialQuery.take(80),
             color = palette.foreground,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold
         )
         Text(
-            "Официальный веб-плеер VK. Поиск, вход и воспроизведение выполняет VK; " +
-                "музыка VK не добавляется в очередь и загрузки MusicFlow.",
+            "VK открывается в общих результатах MusicFlow. " +
+                "Доступ к каталогу, авторизацию и воспроизведение контролирует VK.",
             color = palette.muted,
             style = MaterialTheme.typography.bodySmall
         )
@@ -190,7 +209,7 @@ internal fun VkMusicScreen(modifier: Modifier = Modifier) {
                         }
                     }
                     web = this
-                    loadUrl(VK_MUSIC_HOME)
+                    loadUrl(requestedSearch)
                 }
             },
             onRelease = { released ->
