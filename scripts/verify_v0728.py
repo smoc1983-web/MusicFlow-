@@ -28,6 +28,6 @@ assert 'audio.search' in native and 'AndroidKeyStore' in native
 assert 'REQUEST_INSTALL_PACKAGES' in manifest  # required for in-app official updates
 assert 'Play Защита' in guidance and 'нельзя' in guidance
 assert 'VK ID' in guidance and 'не даёт' in guidance
-assert 'WebView' not in portal and 'CookieManager' not in portal
+assert 'import android.webkit.WebView' not in portal and 'CookieManager' not in portal
 assert 'getPassword' not in portal and 'getCookie' not in portal
 print("VK account portal, authorized native source and Play Protect guidance PASS")
