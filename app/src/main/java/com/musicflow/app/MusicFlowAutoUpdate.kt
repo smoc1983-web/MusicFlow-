@@ -34,7 +34,7 @@ internal fun MusicFlowAutoUpdate() {
         val now = System.currentTimeMillis()
         // Avoid repetitive API requests while reopening the UI or rotating.
         val lastCheck = preferences.getLong("last_check", 0L)
-        if (lastCheck > 0 && now - lastCheck in 0 until 6L * 60L * 60L * 1000L) return@LaunchedEffect
+        if (lastCheck > 0 && now - lastCheck in 0L until 6L * 60L * 60L * 1000L) return@LaunchedEffect
         try {
             val latest = MusicFlowUpdates.latestRelease()
             preferences.edit().putLong("last_check", now).apply()
