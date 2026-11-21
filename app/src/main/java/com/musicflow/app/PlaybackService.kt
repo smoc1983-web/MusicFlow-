@@ -19,6 +19,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
@@ -36,7 +37,43 @@ class PlaybackService : MediaSessionService() {
         val upstream = DefaultDataSource.Factory(this)
         val resolvedDataSource = ResolvingDataSource.Factory(upstream) { spec ->
             val host = spec.uri.host?.lowercase(Locale.ROOT).orEmpty()
-            if (spec.uri.scheme == "zaycev") {
+            if (spec.uri.scheme == "chart") {
+                // The playback loader (not Compose UI) requests exactly one
+                // deferred chart entry when Next/Previous or autoplay reaches it.
+                val request = ChartPlaylistQueue.parse(spec.uri.toString())
+                    ?: throw java.io.IOException("Invalid chart track")
+                val track = runBlocking(Dispatchers.IO) {
+                    findRecording(request.artist, request.title).firstOrNull {
+                        recordingMatches(it, request.artist, request.title)
+                    }
+                } ?: throw java.io.IOException("Unavailable chart audio")
+                val chosen = android.net.Uri.parse(track.stream)
+                val playbackUri = when (chosen.scheme) {
+                    "zaycev" -> {
+                        if (!Regex("""zaycev://track/\d{1,16}""").matches(track.stream))
+                            throw java.io.IOException("Invalid Zaycev chart stream")
+                        ZaycevStreamResolver.resolve(chosen)
+                    }
+                    "https", "http" -> {
+                        if (!RussianRadioDirectory.isPublicStream(track.stream))
+                            throw java.io.IOException("Nonpublic chart audio host")
+                        chosen
+                    }
+                    else -> throw java.io.IOException("Unsupported chart stream")
+                }
+                val headers = when (track.id.substringBefore(':')) {
+                    "zaycev" -> mapOf("Referer" to "https://zaycev.net/",
+                        "User-Agent" to "Mozilla/5.0 (Linux; Android 14; Mobile) Chrome/130.0")
+                    "muzofond" -> mapOf("Referer" to "https://muzofond.fm/",
+                        "User-Agent" to "Mozilla/5.0 (Linux; Android 14; Mobile) Chrome/130.0",
+                        "Accept-Language" to "ru-RU,ru;q=0.9")
+                    "mailru" -> mapOf("Referer" to "https://my.mail.ru/music/",
+                        "User-Agent" to "Mozilla/5.0 (Linux; Android 14; Mobile) Chrome/130.0",
+                        "Accept-Language" to "ru-RU,ru;q=0.9")
+                    else -> emptyMap()
+                }
+                spec.withUri(playbackUri).withAdditionalHeaders(headers)
+            } else if (spec.uri.scheme == "zaycev") {
                 val real = ZaycevStreamResolver.resolve(spec.uri)
                 spec.withUri(real).withAdditionalHeaders(
                     mapOf(
