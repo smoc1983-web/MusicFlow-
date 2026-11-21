@@ -61,4 +61,5 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("org.jsoup:jsoup:1.18.3")
     implementation("androidx.core:core:1.16.0")
+    testImplementation("junit:junit:4.13.2")
 }
