@@ -22,6 +22,9 @@ assert 'MediaItem.Builder()' in main and '.setUri(t.stream)' in main
 assert 'ExoPlayer.Builder(this)' in service
 assert 'AES/GCM/NoPadding' in vk and 'AndroidKeyStore' in vk
 assert 'audio.search' in vk and '"url"' in vk
+assert 'connection.setRequestProperty("Range", "bytes=0-1")' in vk
+assert "Нативное воспроизведение VK не подтверждено" in vk
+assert "Проверьте воспроизведение в штатном плеере" in vk
 assert 'audio_api_unavailable' in vk and 'if (!isPlayableUrl(url)) continue' in vk
 assert 'VkAudioSource.isPlayableUrl(it.uri)' in sources
 assert 'if (source == "vk")' in main
