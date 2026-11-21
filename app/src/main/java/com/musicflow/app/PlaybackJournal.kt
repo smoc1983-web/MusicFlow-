@@ -23,6 +23,38 @@ internal class PlaybackJournal(context: Context, private val player: ExoPlayer) 
         .getSharedPreferences("musicflow_player_state_v1", Context.MODE_PRIVATE)
     private val listened = ListeningProgressTracker()
     private var queueDirty = true
+    private data class DeferredResume(
+        val id: String,
+        val positionMs: Long,
+        var firstAttemptAtMs: Long = 0L
+    )
+    private var deferredResume: DeferredResume? = null
+
+    private fun seekDeferredIfPossible() {
+        val request = deferredResume ?: return
+        val currentId = player.currentMediaItem?.mediaId.orEmpty()
+        if (currentId != request.id) {
+            deferredResume = null
+            return
+        }
+        val ready = player.playbackState == Player.STATE_READY
+        if (ResumePositionPolicy.canApplyAfterPrepare(
+                request.id, currentId, ready, player.isCurrentMediaItemSeekable
+            )) {
+            deferredResume = null // clear before Media3 emits position-change callbacks
+            player.seekTo(request.positionMs)
+            AppDiagnostics.info("Journal", "restored saved position on seekable timeline")
+            return
+        }
+        if (player.playWhenReady) {
+            val now = SystemClock.elapsedRealtime()
+            if (request.firstAttemptAtMs == 0L) request.firstAttemptAtMs = now
+            else if (now - request.firstAttemptAtMs > 20_000L) {
+                deferredResume = null
+                AppDiagnostics.warning("Journal", "resume skipped: timeline not seekable")
+            }
+        }
+    }
 
     private fun playable(uri: String, id: String): Boolean =
         (uri.startsWith("https://") || uri.startsWith("http://") ||
@@ -30,9 +62,15 @@ internal class PlaybackJournal(context: Context, private val player: ExoPlayer) 
             !id.startsWith("vk:")
 
     internal fun resumePosition(id: String, durationMs: Long): Long {
-        if (id.startsWith("radio:") || id.startsWith("ruvideo:") || durationMs <= 0L) return 0L
-        val pos = preferences.getLong("resume_" + id.take(160), 0L)
-        return pos.takeIf { it in 10_000L until (durationMs - 10_000L).coerceAtLeast(0L) } ?: 0L
+        val key = id.take(160)
+        val storedLength = preferences.getLong("length_" + key, 0L)
+        val length = durationMs.takeIf { it > 0L } ?: storedLength
+        return ResumePositionPolicy.resumePosition(
+            id,
+            preferences.getLong("resume_" + key, 0L),
+            length,
+            preferences.getBoolean("seekable_" + key, false)
+        )
     }
 
     fun restore() {
@@ -72,7 +110,15 @@ internal class PlaybackJournal(context: Context, private val player: ExoPlayer) 
                 val position = resumePosition(
                     id, queue[selected].mediaMetadata.extras?.getLong(MUSIC_DURATION_SECONDS, 0L)?.times(1000L) ?: 0L
                 )
-                player.setMediaItems(queue, selected, position)
+                val missingLength = queue[selected].mediaMetadata.extras
+                    ?.getLong(MUSIC_DURATION_SECONDS, 0L) ?: 0L
+                if (position > 0L && missingLength <= 0L) {
+                    // The source may have changed since the last session.
+                    // Re-check seekability after preparation before restoring.
+                    deferredResume = DeferredResume(id, position)
+                }
+                player.setMediaItems(queue, selected,
+                    if (deferredResume != null) 0L else position)
                 // Intentionally no autoplay on app start. The first user Play
                 // presses Prepare before Play when the service is still IDLE.
             }
@@ -132,12 +178,22 @@ internal class PlaybackJournal(context: Context, private val player: ExoPlayer) 
             val pos = player.currentPosition.coerceAtLeast(0L)
             val duration = player.duration.coerceAtLeast(0L)
             if (current != null && !current.mediaId.startsWith("radio:") &&
-                !current.mediaId.startsWith("ruvideo:") && duration > 0L) {
-                editor.putLong("resume_" + current.mediaId.take(160),
-                    if (player.playbackState == Player.STATE_ENDED || pos >= duration - 4_000L) 0L else pos)
-                editor.putLong("length_" + current.mediaId.take(160), duration)
+                !current.mediaId.startsWith("ruvideo:") && !current.mediaId.startsWith("vk:")) {
+                val key = current.mediaId.take(160)
+                val seekable = player.isCurrentMediaItemSeekable
+                if (player.playbackState == Player.STATE_READY ||
+                    player.playbackState == Player.STATE_ENDED) {
+                    editor.putBoolean("seekable_" + key, seekable)
+                }
+                if (duration > 0L) editor.putLong("length_" + key, duration)
+                if (duration > 0L || seekable || player.playbackState == Player.STATE_ENDED) {
+                    val nearEnd = duration > 0L && pos >= duration - 4_000L
+                    editor.putLong("resume_" + key,
+                        if (player.playbackState == Player.STATE_ENDED || nearEnd) 0L else pos)
+                }
             }
             editor.apply()
+            seekDeferredIfPossible()
         }.onFailure { AppDiagnostics.failure("Journal", "persist queue and position", it) }
     }
 
@@ -145,6 +201,12 @@ internal class PlaybackJournal(context: Context, private val player: ExoPlayer) 
         queueDirty = true
         persist()
     }
+
+    override fun onPositionDiscontinuity(
+        oldPosition: Player.PositionInfo,
+        newPosition: Player.PositionInfo,
+        reason: Int
+    ) = persist()
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = persist()
 
@@ -182,11 +244,17 @@ internal class PlaybackJournal(context: Context, private val player: ExoPlayer) 
 
     companion object {
         fun resumePosition(context: Context, id: String, durationSec: Long): Long {
-            if (durationSec <= 0 || id.startsWith("radio:") || id.startsWith("ruvideo:")) return 0L
-            val pos = context.getSharedPreferences("musicflow_player_state_v1", Context.MODE_PRIVATE)
-                .getLong("resume_" + id.take(160), 0L)
-            val length = durationSec * 1000L
-            return pos.takeIf { it >= 10_000L && pos < length - 10_000L } ?: 0L
+            val prefs = context.getSharedPreferences("musicflow_player_state_v1", Context.MODE_PRIVATE)
+            val key = id.take(160)
+            val recordedLength = prefs.getLong("length_" + key, 0L)
+            val length = if (durationSec > 0L && durationSec <= Long.MAX_VALUE / 1000L)
+                durationSec * 1000L else recordedLength
+            return ResumePositionPolicy.resumePosition(
+                id,
+                prefs.getLong("resume_" + key, 0L),
+                length,
+                prefs.getBoolean("seekable_" + key, false)
+            )
         }
 
         fun history(context: Context): List<Track> = runCatching {
