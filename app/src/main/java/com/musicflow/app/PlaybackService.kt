@@ -92,6 +92,19 @@ class PlaybackService : MediaSessionService() {
                 playbackJournal.persist()
             }
         }
+        // Only this playback service acts on the sleep deadline.
+        recoveryScope.launch {
+            while (isActive) {
+                val deadline = MusicFlowSleepTimerStore.deadlineMs(this@PlaybackService)
+                if (SleepTimerPolicy.isExpired(deadline, System.currentTimeMillis())) {
+                    MusicFlowSleepTimerStore.cancel(this@PlaybackService)
+                    player.pause()
+                    playbackJournal.persist()
+                    AppDiagnostics.info("SleepTimer", "Playback paused at deadline")
+                }
+                delay(1_000L)
+            }
+        }
         player.addListener(MusicPlaybackRecovery(player, recoveryScope))
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
