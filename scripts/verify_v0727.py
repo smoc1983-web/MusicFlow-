@@ -24,6 +24,9 @@ assert 'MusicFlowUpdates.installerIntent(uri)' in auto
 assert 'officialUpdateChannel && !checking && !downloading' in about
 assert 'apksigner' in workflow and 'gh release create' in workflow
 assert 'test "$BASE_SIGNER" = "$NEW_SIGNER"' in workflow
-assert 'MUSICFLOW_SIGNING_KEYSTORE_BASE64' in workflow
-assert 'versionCode=\'727\'' in workflow
+assert 'MUSICFLOW_SIGNING_BACKUP_PASSPHRASE' in workflow
+assert "versionCode='727'" in workflow
+assert 'MusicFlow_signing_release.jks.enc.b64' in workflow
+assert '-pbkdf2 -iter 350000' in workflow
+assert 'c461ee635d5b295ef6c765e1ae533d0079dc6e53cb2632a11a1b445773752410' in workflow
 print("MusicFlow 0.7.27 updater and release compatibility regression PASS")
