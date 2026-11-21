@@ -88,10 +88,12 @@ jobs:
         run: python3 scripts/verify_v0733.py
       - name: Verify 0.7.34 radio label and version metadata
         run: python3 scripts/verify_v0734.py
-      - name: Verify 0.7.36 top tracks navigation and player cleanup
+      - name: Verify 0.7.37 top tracks navigation and player cleanup
         run: python3 scripts/verify_v0735.py
-      - name: Verify 0.7.36 Russia and worldwide charts on home
+      - name: Verify 0.7.37 Russia and worldwide charts on home
         run: python3 scripts/verify_v0736.py
+      - name: Verify 0.7.37 chart next/previous queue and safe lazy resolution
+        run: python3 scripts/verify_v0737.py
       - name: Run ub-mode Kotlin behavior tests
         run: gradle --no-daemon :app:testDebugUnitTest
       - name: Build debug APK

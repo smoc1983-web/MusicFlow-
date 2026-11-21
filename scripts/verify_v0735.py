@@ -17,5 +17,5 @@ assert 'https://api.listenbrainz.org/1/stats/sitewide/recordings' in top
 for period in ("this_week", "this_month", "this_year"):
     assert period in top
 assert "listen_count" in top and "track_name" in top and "artist_name" in top
-assert "versionCode = 736" in gradle and 'versionName = "0.7.36"' in gradle
-print("PASS: chart-backed player, scrolling, clean UI (0.7.36)")
+assert "versionCode = 737" in gradle and 'versionName = "0.7.37"' in gradle
+print("PASS: chart-backed player, scrolling, clean UI (0.7.37)")

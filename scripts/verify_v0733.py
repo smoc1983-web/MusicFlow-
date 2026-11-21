@@ -1,4 +1,4 @@
-"""MusicFlow 0.7.36 integration wiring. Behavior is tested by Kotlin/JUnit and Android emulator."""
+"""MusicFlow 0.7.37 integration wiring. Behavior is tested by Kotlin/JUnit and Android emulator."""
 from pathlib import Path
 
 root = Path("app/src/main/java/com/musicflow/app")
@@ -10,7 +10,7 @@ service = (root / "PlaybackService.kt").read_text()
 manifest = Path("app/src/main/AndroidManifest.xml").read_text()
 workflow = Path(".github/workflows/android-background-soak.yml").read_text()
 
-assert 'versionCode = 736' in gradle and 'versionName = "0.7.36"' in gradle
+assert 'versionCode = 737' in gradle and 'versionName = "0.7.37"' in gradle
 assert 'applicationId = "com.musicflow.preview"' in gradle
 assert 'applicationIdSuffix = ".dev"' in gradle
 assert 'ResumePositionPolicy.resumePosition(' in journal
@@ -35,4 +35,4 @@ assert Path("app/src/test/java/com/musicflow/app/PlayerMinimizePolicyTest.kt").e
 assert Path("app/src/test/java/com/musicflow/app/BackgroundPlaybackSoakModelTest.kt").exists()
 assert Path("app/src/androidTest/java/com/musicflow/app/PlaybackBackgroundSoakTest.kt").exists()
 assert 'reactivecircus/android-emulator-runner@v2' in workflow
-print("PASS: 0.7.36 deferred position, swipe/arrow minimize, Now Playing button, screen-off soak wiring")
+print("PASS: 0.7.37 deferred position, swipe/arrow minimize, Now Playing button, screen-off soak wiring")
