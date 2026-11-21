@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppDiagnostics.initialize(this)
-        AppDiagnostics.info("App", "MusicFlow 0.7.17 Preview launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
+        AppDiagnostics.info("App", "MusicFlow 0.7.18 Preview launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener({
@@ -245,6 +245,7 @@ private fun MusicScreen(
     var tab by remember { mutableIntStateOf(0) }
     var sectionMenu by remember { mutableStateOf(false) }
     var showAppearanceMenu by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
     var showThemePicker by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
@@ -510,6 +511,10 @@ private fun MusicScreen(
                     DropdownMenuItem(text = { Text("Диагностика") }, onClick = {
                         showAppearanceMenu = false
                         tab = 4
+                    })
+                    DropdownMenuItem(text = { Text("О приложении · обновления") }, onClick = {
+                        showAppearanceMenu = false
+                        showAboutDialog = true
                     })
                 }
             }
@@ -813,6 +818,9 @@ private fun MusicScreen(
             }
         )
     }
+    }
+    if (showAboutDialog) {
+        MusicFlowAboutDialog(onDismiss = { showAboutDialog = false })
     }
     if (showThemePicker) {
         AlertDialog(
