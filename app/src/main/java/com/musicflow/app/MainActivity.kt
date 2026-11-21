@@ -285,6 +285,8 @@ private fun MusicScreen(
     fun fetch(query: String = "") {
         val requested = query.trim()
         searchJob?.cancel()
+        // Reset the next LazyColumn measurement, not only the old list layout.
+        resultListState.requestScrollToItem(0)
         tracks = emptyList()
         appliedSearch = requested
         problem = null
@@ -299,6 +301,9 @@ private fun MusicScreen(
                     failures++
                     AppDiagnostics.failure("Search", "source=$source", error)
                 } else {
+                    // Results arrive independently from different providers and
+                    // can insert new album groups above the first visible item.
+                    resultListState.requestScrollToItem(0)
                     tracks = combineMusicTracks(tracks, found.orEmpty())
                     AppDiagnostics.info("Search", "source=$source matches=" + found.orEmpty().size)
                 }
@@ -312,6 +317,7 @@ private fun MusicScreen(
                 val batch = tracks
                 try {
                     val enriched = AlbumCatalog.enrichTracks(context, batch, requested)
+                    resultListState.requestScrollToItem(0)
                     tracks = combineMusicTracks(tracks, enriched)
                 } catch (cancel: CancellationException) {
                     throw cancel
@@ -493,8 +499,11 @@ private fun MusicScreen(
         1 -> filterAndSortTracks(tracks, appliedSearch, searchMode, sortMode)
         else -> tracks
     }
-    LaunchedEffect(tab, appliedSearch, searchMode, sortMode) {
-        if (tab == 1 || tab == 2) resultListState.scrollToItem(0)
+    LaunchedEffect(tab, appliedSearch, searchMode, sortMode, tracks) {
+        if (tab == 1) {
+            resultListState.requestScrollToItem(0)
+            resultListState.scrollToItem(0)
+        } else if (tab == 2) resultListState.scrollToItem(0)
     }
     // Android 15+ draws behind status and navigation bars by default.
     // Insets belong to the whole screen, including header actions and floating TV.
