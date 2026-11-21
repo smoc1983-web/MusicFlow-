@@ -46,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.session.MediaController
@@ -81,7 +82,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppDiagnostics.initialize(this)
-        AppDiagnostics.info("App", "MusicFlow 0.7.14 Preview launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
+        AppDiagnostics.info("App", "MusicFlow 0.7.15 Preview launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener({
@@ -112,6 +113,12 @@ class MainActivity : ComponentActivity() {
                 onBackground = palette.foreground,
                 onSurface = palette.foreground
             )
+            SideEffect {
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = palette.isLight
+                    isAppearanceLightNavigationBars = palette.isLight
+                }
+            }
             MaterialTheme(colorScheme = scheme) {
                 CompositionLocalProvider(LocalMusicFlowPalette provides palette) {
                     Surface(color = palette.background) {
@@ -441,12 +448,22 @@ private fun MusicScreen(
     LaunchedEffect(tab, appliedSearch, searchMode, sortMode) {
         if (tab == 1 || tab == 2) resultListState.scrollToItem(0)
     }
-    Box(Modifier.fillMaxSize()) {
+    // Android 15+ draws behind status and navigation bars by default.
+    // Insets belong to the whole screen, including header actions and floating TV.
+    Box(
+        Modifier.fillMaxSize()
+            .background(Brush.verticalGradient(
+                listOf(palette.gradientTop, palette.background, palette.gradientBottom)
+            ))
+            .statusBarsPadding()
+            .navigationBarsPadding()
+    ) {
     Column(
-        Modifier.fillMaxSize().background(palette.background)
+        Modifier.fillMaxSize()
+            .background(palette.background.copy(alpha = 0.83f))
             .padding(horizontal = 12.dp)
     ) {
-        Spacer(Modifier.height(7.dp))
+        Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("MusicFlow", style = MaterialTheme.typography.titleLarge,
                 color = palette.foreground, fontWeight = FontWeight.Bold,
