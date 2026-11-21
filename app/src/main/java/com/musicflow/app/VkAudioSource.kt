@@ -64,16 +64,18 @@ internal object VkAudioSource {
             ?.remove(TOKEN_CIPHERTEXT)?.remove(TOKEN_IV)?.apply()
     }
 
-    private fun readToken(): String? = runCatching {
+    private fun readToken(): String? {
         val context = application ?: return null
-        val prefs = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-        val data = prefs.getString(TOKEN_CIPHERTEXT, null) ?: return null
-        val iv = prefs.getString(TOKEN_IV, null) ?: return null
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, encryptionKey(),
-            GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)))
-        String(cipher.doFinal(Base64.decode(data, Base64.NO_WRAP)), Charsets.UTF_8)
-    }.getOrNull()
+        return runCatching {
+            val prefs = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            val data = prefs.getString(TOKEN_CIPHERTEXT, null) ?: return@runCatching null
+            val iv = prefs.getString(TOKEN_IV, null) ?: return@runCatching null
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, encryptionKey(),
+                GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)))
+            String(cipher.doFinal(Base64.decode(data, Base64.NO_WRAP)), Charsets.UTF_8)
+        }.getOrNull()
+    }
 
     private fun encryptionKey(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
