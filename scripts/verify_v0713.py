@@ -9,7 +9,7 @@ home=(src/"ZaycevHome.kt").read_text(encoding="utf-8")
 manifest=Path("app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 gradle=Path("app/build.gradle.kts").read_text(encoding="utf-8")
 assert "Floating TV controls do not occupy list height" in main
-assert "Box(Modifier.fillMaxSize())" in main
+assert "Box(" in main and "statusBarsPadding()" in main and "navigationBarsPadding()" in main
 assert "TvMiniPlayer(" in main and "onStop = {" in main
 assert "detectDragGestures" in tv
 assert "horizontalPosition" in tv and "verticalPosition" in tv
