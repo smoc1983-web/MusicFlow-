@@ -1,0 +1,104 @@
+name: Publish MusicFlow 0.7.37 verified locally signed update
+on:
+  push:
+    branches: ["feature/musicflow-v0.7.37-chart-queue"]
+    paths: [".github/release-assets/v0737/unsigned-to-signed.patch.zst.b64"]
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: musicflow-v0737-offline-verified
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout release manifests and signed delta
+        uses: actions/checkout@v4
+      - name: Prepare zstd and Android build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v zstd >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y zstd
+          fi
+          yes | sdkmanager "build-tools;36.0.0" >/dev/null || test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+      - name: Retrieve exactly validated unsigned APK
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/unsigned" out
+          gh run download 44939529163 -R "$GITHUB_REPOSITORY" \
+            -n MusicFlow-0.7.37-aligned-unsigned --dir "$RUNNER_TEMP/unsigned"
+          UNSIGNED="$RUNNER_TEMP/unsigned/MusicFlow_0.7.37-aligned-unsigned.apk"
+          echo "UNSIGNED_SHA256_PENDING  $UNSIGNED" | sha256sum -c -
+      - name: Reconstruct signed APK without uploading signing credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          PATCH="$RUNNER_TEMP/unsigned-to-signed.patch.zst"
+          base64 -d .github/release-assets/v0737/unsigned-to-signed.patch.zst.b64 > "$PATCH"
+          echo "PATCH_SHA256_PENDING  $PATCH" | sha256sum -c -
+          zstd -q -d \
+            --patch-from="$RUNNER_TEMP/unsigned/MusicFlow_0.7.37-aligned-unsigned.apk" \
+            "$PATCH" -o out/MusicFlow_0.7.37.apk
+          echo "SIGNED_SHA256_PENDING  out/MusicFlow_0.7.37.apk" | sha256sum -c -
+      - name: Validate signed package, version, archive and stable certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=out/MusicFlow_0.7.37.apk
+          SIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
+          ZIPALIGN="$ANDROID_HOME/build-tools/36.0.0/zipalign"
+          "$ZIPALIGN" -c -p 4 "$APK"
+          "$SIGNER" verify --verbose "$APK"
+          "$AAPT" dump badging "$APK" | grep -F "name='com.musicflow.preview' versionCode='737' versionName='0.7.37'"
+          FINGERPRINT=$("$SIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
+          test "$FINGERPRINT" = "c461ee635d5b295ef6c765e1ae533d0079dc6e53cb2632a11a1b445773752410"
+          sha256sum "$APK" > out/SHA256SUMS.txt
+      - name: Publish GitHub release for in-app updater
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view v0.7.37 -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release v0.7.37 already exists; refusing to overwrite."
+            exit 1
+          fi
+          cat > out/RELEASE_NOTES.md <<'NOTES'
+          MusicFlow 0.7.37 — последовательное воспроизведение песен из ТОПа.
+
+          - Выбранный российский или мировой ТОП становится единой очередью Media3, сохраняя порядок чарта.
+          - Кнопки «Назад»/«Далее», список очереди и автоматический переход работают внутри чарта без возврата на главный экран.
+          - Источник следующей композиции находится только во время её воспроизведения, а не при открытии ТОПа. Поиск проверяет совпадение названия и исполнителя.
+          - Недоступные записи обрабатываются штатным восстановлением и переходом по очереди, если есть следующий трек.
+          - Очередь сохраняется после перезапуска; границы ТОПа не подменяются альбомами.
+          - Исправления поиска и работа с российскими/мировыми чартами сохранены.
+          - Версия 0.7.37 (versionCode 737), пакет com.musicflow.preview и прежний сертификат подписи.
+
+          Обновление доступно через MusicFlow: «О приложении» → «Проверить обновления».
+          Для поиска каждого нового аудиопотока нужна сеть, возможна задержка. Некоторых записей может не оказаться в доступных источниках.
+          Непосредственная проверка переключения на Samsung S24 ещё требуется. Приватный ключ и пароли в GitHub не передаются.
+          NOTES
+          gh release create v0.7.37 out/MusicFlow_0.7.37.apk out/SHA256SUMS.txt \
+            -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "MusicFlow 0.7.37 · Переключение песен ТОПа в плеере" \
+            --notes-file out/RELEASE_NOTES.md
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.7.37" \
+            --jq '.assets[].name' | grep -Fx 'MusicFlow_0.7.37.apk'
+      - name: Save verified signed APK to CI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.37-official-signed
+          path: |
+            out/MusicFlow_0.7.37.apk
+            out/SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error
