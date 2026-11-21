@@ -5,6 +5,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -33,6 +35,35 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
     var progress by remember { mutableIntStateOf(0) }
     var message by remember { mutableStateOf("Обновления проверяются по официальным выпускам GitHub.") }
     val currentVersion = remember { MusicFlowUpdates.currentVersion(context) }
+
+    val localApkLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            if (!MusicFlowUpdates.canInstall(context)) {
+                message = "Для установки APK разрешите установки из MusicFlow и выберите файл повторно."
+                runCatching {
+                    context.startActivity(MusicFlowUpdates.allowInstallIntent(context))
+                }
+            } else {
+                downloading = true
+                message = "Проверяем выбранный APK и подпись…"
+                scope.launch {
+                    try {
+                        val imported = MusicFlowUpdates.importVerified(context, uri)
+                        downloading = false
+                        message = "Подтвердите установку в Android."
+                        context.startActivity(MusicFlowUpdates.installerIntent(imported))
+                    } catch (error: Exception) {
+                        message = "Не удалось обновить приложение: " +
+                            (error.message ?: "неподходящий APK")
+                    } finally {
+                        downloading = false
+                    }
+                }
+            }
+        }
+    }
 
     fun openLink(url: String) {
         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
@@ -154,6 +185,21 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
                         }
                     ) { Text("Скачать и установить " + release.version) }
                 }
+                OutlinedButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !checking && !downloading,
+                    onClick = { localApkLauncher.launch(arrayOf(
+                        "application/vnd.android.package-archive",
+                        "application/octet-stream",
+                        "application/zip"
+                    )) }
+                ) {
+                    Icon(Icons.Filled.Download, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Установить APK из памяти")
+                }
+                Text("Для обновления поверх текущей версии нужен тот же идентификатор приложения и ключ подписи.",
+                    color = palette.muted, style = MaterialTheme.typography.labelSmall)
                 OutlinedButton(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = { openLink(MusicFlowUpdates.RELEASES_PAGE) }
