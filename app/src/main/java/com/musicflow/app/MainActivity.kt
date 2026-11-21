@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppDiagnostics.initialize(this)
-        AppDiagnostics.info("App", "MusicFlow 0.7.20 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
+        AppDiagnostics.info("App", "MusicFlow 0.7.21 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener({
@@ -506,7 +506,9 @@ private fun MusicScreen(
                 }
                 DropdownMenu(expanded = showAppearanceMenu,
                     onDismissRequest = { showAppearanceMenu = false },
-                    containerColor = palette.surface) {
+                    modifier = Modifier.musicFlowMenuSurface(palette),
+                    containerColor = palette.surface,
+                    shadowElevation = 14.dp) {
                     DropdownMenuItem(text = { Text("Оформление") }, onClick = {
                         showAppearanceMenu = false
                         showThemePicker = true
@@ -538,7 +540,9 @@ private fun MusicScreen(
                 }
                 DropdownMenu(expanded = sectionMenu,
                     onDismissRequest = { sectionMenu = false },
-                    containerColor = palette.surface) {
+                    modifier = Modifier.musicFlowMenuSurface(palette),
+                    containerColor = palette.surface,
+                    shadowElevation = 14.dp) {
                     listOf(0 to "Музыка", 2 to "Избранное", 3 to "ТВ")
                         .forEach { (index, label) ->
                             DropdownMenuItem(text = { Text(label) },
