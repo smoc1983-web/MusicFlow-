@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppDiagnostics.initialize(this)
-        AppDiagnostics.info("App", "MusicFlow 0.7.15 Preview launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
+        AppDiagnostics.info("App", "MusicFlow 0.7.16 Preview launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener({
@@ -102,18 +102,38 @@ class MainActivity : ComponentActivity() {
                 ))
             }
             val palette = musicFlowPalette(themeStyle)
+            // Material3 DropdownMenu/AlertDialog use surfaceContainer, not surface.
+            // Override the container family so popups match the AudioBook theme.
             val scheme = if (palette.isLight) lightColorScheme(
                 primary = palette.accent,
+                onPrimary = palette.background,
+                secondary = palette.accent,
                 background = palette.background,
                 surface = palette.surface,
+                surfaceContainer = palette.surface,
+                surfaceContainerLow = palette.surface,
+                surfaceContainerHigh = palette.surface,
+                surfaceContainerHighest = palette.surface,
+                surfaceVariant = palette.surface,
                 onBackground = palette.foreground,
-                onSurface = palette.foreground
+                onSurface = palette.foreground,
+                onSurfaceVariant = palette.foreground,
+                outline = palette.muted
             ) else darkColorScheme(
                 primary = palette.accent,
+                onPrimary = palette.background,
+                secondary = palette.accent,
                 background = palette.background,
                 surface = palette.surface,
+                surfaceContainer = palette.surface,
+                surfaceContainerLow = palette.surface,
+                surfaceContainerHigh = palette.surface,
+                surfaceContainerHighest = palette.surface,
+                surfaceVariant = palette.surface,
                 onBackground = palette.foreground,
-                onSurface = palette.foreground
+                onSurface = palette.foreground,
+                onSurfaceVariant = palette.foreground,
+                outline = palette.muted
             )
             SideEffect {
                 WindowCompat.getInsetsController(window, window.decorView).apply {
@@ -481,7 +501,8 @@ private fun MusicScreen(
                         tint = palette.muted)
                 }
                 DropdownMenu(expanded = showAppearanceMenu,
-                    onDismissRequest = { showAppearanceMenu = false }) {
+                    onDismissRequest = { showAppearanceMenu = false },
+                    containerColor = palette.surface) {
                     DropdownMenuItem(text = { Text("Оформление") }, onClick = {
                         showAppearanceMenu = false
                         showThemePicker = true
@@ -508,7 +529,8 @@ private fun MusicScreen(
                         modifier = Modifier.size(18.dp))
                 }
                 DropdownMenu(expanded = sectionMenu,
-                    onDismissRequest = { sectionMenu = false }) {
+                    onDismissRequest = { sectionMenu = false },
+                    containerColor = palette.surface) {
                     listOf(0 to "Музыка", 2 to "Избранное", 3 to "ТВ")
                         .forEach { (index, label) ->
                             DropdownMenuItem(text = { Text(label) },
