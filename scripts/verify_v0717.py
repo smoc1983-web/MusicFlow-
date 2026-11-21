@@ -20,5 +20,5 @@ assert "Text(trackArtist, color = palette.muted" in main
 assert "Text(playbackStatus.orEmpty(), color = palette.accent" in main
 assert "MusicFlowStyle.AB_ICY_NIGHT" in theme
 assert "MusicFlowStyle.AURORA" not in theme
-assert 'versionName = "0.7.28"' in gradle
+assert 'versionName = "0.7.29"' in gradle
 print("MusicFlow v0.7.17 graphite launcher and mini-player checks PASS")

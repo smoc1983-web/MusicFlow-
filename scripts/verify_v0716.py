@@ -31,5 +31,5 @@ assert "startupRetried = true" in recovery
 assert "player.currentMediaItem !== failed" not in recovery
 assert "MusicFlowStyle.AURORA" not in themes
 assert "MusicFlowStyle.AB_ICY_NIGHT" in themes
-assert 'versionName = "0.7.28"' in gradle
+assert 'versionName = "0.7.29"' in gradle
 print("MusicFlow v0.7.16 visual/popup/playback static regressions PASS")
