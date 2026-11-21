@@ -1,5 +1,6 @@
 package com.musicflow.app
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -9,6 +10,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -110,6 +113,17 @@ internal fun SyncedLyricsScreen(
     modifier: Modifier = Modifier
 ) {
     val palette = LocalMusicFlowPalette.current
+    val context = LocalContext.current
+    val preferences = remember(context) {
+        context.getSharedPreferences("musicflow_lyrics_timing_v1", Context.MODE_PRIVATE)
+    }
+    var offsetMs by remember {
+        mutableIntStateOf(LyricsTiming.clamp(preferences.getInt("offset_ms", 0)))
+    }
+    fun changeOffset(newValue: Int) {
+        offsetMs = LyricsTiming.clamp(newValue)
+        preferences.edit().putInt("offset_ms", offsetMs).apply()
+    }
     var lyrics by remember(artist, title, durationMs) { mutableStateOf<TrackLyrics?>(null) }
     var loading by remember(artist, title, durationMs) { mutableStateOf(true) }
     var error by remember(artist, title, durationMs) { mutableStateOf<String?>(null) }
@@ -129,14 +143,31 @@ internal fun SyncedLyricsScreen(
     }
 
     val lines = lyrics?.synced.orEmpty()
-    val active = lines.indexOfLast { it.timeMs <= positionMs }.coerceAtLeast(0)
+    val active = LyricsTiming.activeIndex(lines.map { it.timeMs }, positionMs, offsetMs)
     LaunchedEffect(active, lines.size) {
-        if (lines.isNotEmpty()) state.animateScrollToItem((active - 2).coerceAtLeast(0))
+        if (active >= 0) state.animateScrollToItem((active - 2).coerceAtLeast(0))
     }
 
     Column(modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Текст песни · LRCLIB", color = palette.muted,
             style = MaterialTheme.typography.labelMedium)
+        if (lines.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { changeOffset(offsetMs - 250) },
+                    enabled = offsetMs > -5000) { Text("−") }
+                val offsetLabel = (if (offsetMs > 0) "+" else "") +
+                    "%.2f с".format(java.util.Locale.ROOT, offsetMs / 1000f)
+                Text(offsetLabel, modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.labelLarge)
+                TextButton(onClick = { changeOffset(offsetMs + 250) },
+                    enabled = offsetMs < 5000) { Text("+") }
+                TextButton(onClick = { changeOffset(0) },
+                    enabled = offsetMs != 0) { Text("Сброс") }
+            }
+            Text("«+» — текст раньше, «−» — позже · шаг 0,25 с",
+                style = MaterialTheme.typography.labelSmall, color = palette.muted)
+        }
         when {
             loading -> LinearProgressIndicator(Modifier.fillMaxWidth())
             error != null -> Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
