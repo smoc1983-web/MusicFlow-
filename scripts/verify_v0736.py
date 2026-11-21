@@ -9,7 +9,8 @@ assert 'listOf("Популярное", "ТОП песен", "Новинки")' i
 assert 'Text("Музыкальная лента"' not in home
 assert 'TopSongsDirectory.fetch(chartPeriod, chartRegion)' in home
 assert 'itemsIndexed(chartSongs,' in home
-assert 'TopSongsRegion.RUSSIA' in home and 'TopSongsRegion.WORLD' in home
+assert 'TopSongsRegion.RUSSIA' in home and 'TopSongsRegion.entries' in home
+assert 'TopSongsRegion.WORLD' in charts
 assert 'onPlayChart = { song -> playChartSong(song) }' in main
 assert '7 -> "ТОП песен"' not in main
 assert '7 to "ТОП песен"' not in main
