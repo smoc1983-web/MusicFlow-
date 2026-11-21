@@ -23,6 +23,7 @@ import androidx.media3.session.MediaSessionService
 class PlaybackService : MediaSessionService() {
     private val recoveryScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var session: MediaSession? = null
+    private var audioEqualizer: NativeAudioEqualizer? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -74,6 +75,9 @@ class PlaybackService : MediaSessionService() {
             )
             setHandleAudioBecomingNoisy(true)
         }
+        val eq = NativeAudioEqualizer(this)
+        audioEqualizer = eq
+        player.addListener(eq)
         player.addListener(MusicPlaybackRecovery(player, recoveryScope))
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
@@ -105,6 +109,8 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         recoveryScope.cancel()
+        audioEqualizer?.release()
+        audioEqualizer = null
         session?.let {
             it.player.release()
             it.release()
