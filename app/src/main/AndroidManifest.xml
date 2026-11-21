@@ -5,10 +5,16 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <!-- Allow resolving the three verified banking apps on Android 11+. -->
+    <queries>
+        <package android:name="com.idamob.tinkoff.android" />
+        <package android:name="ru.sberbankmobile" />
+        <package android:name="ru.ozon.fintech.finance" />
+    </queries>
     <application
-        android:label="MusicFlow 0.7.18 Preview"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher"
+        android:label="MusicFlow 0.7.19 Preview"
+        android:icon="@mipmap/ic_launcher_graphite_v19"
+        android:roundIcon="@mipmap/ic_launcher_graphite_v19"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:usesCleartextTraffic="true"
         android:allowBackup="true">
