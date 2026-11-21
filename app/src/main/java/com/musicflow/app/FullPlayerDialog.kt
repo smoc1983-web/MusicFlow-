@@ -1,6 +1,7 @@
 package com.musicflow.app
 
 import android.view.WindowManager
+import android.os.Bundle
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Replay10
@@ -57,7 +59,7 @@ private val PlayerBackground = Color(0xFF10131E)
 private val PlayerPanel = Color(0xFF1D2333)
 private val PlayerAccent = Color(0xFFB99CFF)
 
-private enum class PlayerPage { NOW_PLAYING, QUEUE, ALBUM }
+private enum class PlayerPage { NOW_PLAYING, QUEUE, ALBUM, LYRICS }
 
 @Composable
 internal fun FullPlayerDialog(
@@ -143,6 +145,31 @@ internal fun FullPlayerDialog(
             albumMessage = "Не удалось получить список композиций."
         } finally {
             albumLoading = false
+        }
+    }
+
+    fun switchToAlternateSource() {
+        val item = player.currentMediaItem ?: return
+        val extras = item.mediaMetadata.extras ?: return
+        val streams = decodeStreams(extras.getString(MUSIC_STREAMS))
+        if (streams.size < 2 || player.currentMediaItemIndex < 0) return
+        val activeUri = item.localConfiguration?.uri?.toString().orEmpty()
+        val position = player.currentPosition.coerceAtLeast(0L)
+        val active = streams.indexOfFirst { it.uri == activeUri }.coerceAtLeast(0)
+        val next = streams[(active + 1) % streams.size]
+        val updated = item.buildUpon().setUri(next.uri)
+            .setMediaMetadata(item.mediaMetadata.buildUpon().setExtras(
+                Bundle(extras).apply { putString(MUSIC_SOURCE, next.source) }
+            ).build()).build()
+        try {
+            val selected = player.currentMediaItemIndex
+            player.replaceMediaItem(selected, updated)
+            player.seekTo(selected, position)
+            player.prepare()
+            player.play()
+            AppDiagnostics.info("Player", "manual alternate source=" + next.source)
+        } catch (failure: Exception) {
+            AppDiagnostics.failure("Player", "manual alternate source", failure)
         }
     }
 
@@ -283,6 +310,7 @@ internal fun FullPlayerDialog(
                                 PlayerPage.NOW_PLAYING -> "Сейчас играет"
                                 PlayerPage.QUEUE -> "Очередь"
                                 PlayerPage.ALBUM -> "Треки альбома"
+                                PlayerPage.LYRICS -> "Текст песни"
                             },
                             modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.titleMedium,
@@ -298,6 +326,14 @@ internal fun FullPlayerDialog(
                             onClick = { page = if (page == PlayerPage.QUEUE)
                                 PlayerPage.NOW_PLAYING else PlayerPage.QUEUE }) {
                             Icon(Icons.Filled.QueueMusic, "Очередь", tint = palette.accent)
+                        }
+                        if (!player.currentMediaItem?.mediaId.orEmpty().startsWith("radio:")) {
+                            IconButton(modifier = Modifier.size(38.dp),
+                                onClick = { page = if (page == PlayerPage.LYRICS)
+                                    PlayerPage.NOW_PLAYING else PlayerPage.LYRICS }) {
+                                Icon(Icons.Filled.Subtitles, "Текст песни",
+                                    tint = palette.accent)
+                            }
                         }
                         IconButton(modifier = Modifier.size(38.dp),
                             onClick = { immersive = !immersive }) {
@@ -318,6 +354,15 @@ internal fun FullPlayerDialog(
                         Text(it, color = palette.muted, style = MaterialTheme.typography.labelSmall)
                     }
                     when (page) {
+                        PlayerPage.LYRICS -> {
+                            SyncedLyricsScreen(
+                                artist = artist,
+                                title = title,
+                                durationMs = durationMs,
+                                positionMs = positionMs,
+                                modifier = Modifier.weight(1f).fillMaxWidth()
+                            )
+                        }
                         PlayerPage.ALBUM -> {
                             Column(Modifier.weight(1f).fillMaxWidth()) {
                                 if (albumLoading) {
@@ -532,7 +577,14 @@ internal fun FullPlayerDialog(
                                     tint = palette.foreground)
                             }
                             FilledIconButton(
-                                onClick = { if (playing) player.pause() else player.play() },
+                                onClick = {
+                                    if (playing) player.pause()
+                                    else {
+                                        if (player.playbackState == Player.STATE_IDLE ||
+                                            player.playerError != null) player.prepare()
+                                        player.play()
+                                    }
+                                },
                                 modifier = Modifier.size(60.dp),
                                 colors = IconButtonDefaults.filledIconButtonColors(
                                     containerColor = palette.accent,
@@ -592,6 +644,17 @@ internal fun FullPlayerDialog(
                                     tint = if (repeat == Player.REPEAT_MODE_OFF)
                                         palette.muted else palette.accent
                                 )
+                            }
+                        }
+                        val playableSources = decodeStreams(
+                            player.currentMediaItem?.mediaMetadata?.extras?.getString(MUSIC_STREAMS)
+                        )
+                        if (playableSources.distinctBy { it.uri }.size > 1) {
+                            TextButton(
+                                onClick = { switchToAlternateSource() },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Другой источник · " + playableSources.size.toString() + " варианта")
                             }
                         }
                         if (pendingNavigation) {
