@@ -77,6 +77,9 @@ class PlaybackService : MediaSessionService() {
                     .build(),
                 true
             )
+            // ExoPlayer retains wake and Wi-Fi locks while background audio is active.
+            // Do not hold either lock after pause or playback stops.
+            setWakeMode(C.WAKE_MODE_NETWORK)
             setHandleAudioBecomingNoisy(true)
         }
         val eq = NativeAudioEqualizer(this)
