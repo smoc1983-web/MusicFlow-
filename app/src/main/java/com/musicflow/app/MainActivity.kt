@@ -89,7 +89,7 @@ class MainActivity : ComponentActivity() {
             java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
                 .deleteEntry("com.musicflow.app.vk.audio.credentials.v1")
         }
-        AppDiagnostics.info("App", "MusicFlow 0.7.30 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
+        AppDiagnostics.info("App", "MusicFlow 0.7.32 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener({
