@@ -36,18 +36,18 @@ jobs:
           gh run download 44942144715 -R "$GITHUB_REPOSITORY" \
             -n MusicFlow-0.7.38-aligned-unsigned --dir "$RUNNER_TEMP/unsigned"
           UNSIGNED="$RUNNER_TEMP/unsigned/MusicFlow_0.7.38-aligned-unsigned.apk"
-          echo "UNSIGNED_SHA256_PENDING  $UNSIGNED" | sha256sum -c -
+          echo "312e7e2e57e2eff7ac4d2c0d1691fca3640ba473c4ff2a3692dbadad6419e0da  $UNSIGNED" | sha256sum -c -
       - name: Reconstruct signed APK without uploading signing credentials
         shell: bash
         run: |
           set -euo pipefail
           PATCH="$RUNNER_TEMP/unsigned-to-signed.patch.zst"
           base64 -d .github/release-assets/v0738/unsigned-to-signed.patch.zst.b64 > "$PATCH"
-          echo "PATCH_SHA256_PENDING  $PATCH" | sha256sum -c -
+          echo "99e72a2cc510b1dd0a857e59f94ed663e25fe9a020458c57b6a72f9537d22d22  $PATCH" | sha256sum -c -
           zstd -q -d \
             --patch-from="$RUNNER_TEMP/unsigned/MusicFlow_0.7.38-aligned-unsigned.apk" \
             "$PATCH" -o out/MusicFlow_0.7.38.apk
-          echo "SIGNED_SHA256_PENDING  out/MusicFlow_0.7.38.apk" | sha256sum -c -
+          echo "b6944385ff778e348f2eef18aa1398a14477a625cb3e10fc4c9cf01c47662ecb  out/MusicFlow_0.7.38.apk" | sha256sum -c -
       - name: Validate signed package, version, archive and stable certificate
         shell: bash
         run: |
