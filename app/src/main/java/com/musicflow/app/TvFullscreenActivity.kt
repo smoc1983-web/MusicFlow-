@@ -154,7 +154,9 @@ private fun FullscreenVideo(player: MediaController, mode: PictureMode,
             else -> Modifier.fillMaxSize()
         }
         AndroidView(factory = { ctx ->
-            PlayerView(ctx).apply {
+            (android.view.LayoutInflater.from(ctx).inflate(
+                R.layout.musicflow_tv_texture_player, null, false
+            ) as PlayerView).apply {
                 useController = false
                 keepScreenOn = true
                 setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
