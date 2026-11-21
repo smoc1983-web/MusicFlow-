@@ -87,7 +87,9 @@ class MainActivity : ComponentActivity() {
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener({
                 runCatching {
-                    playerState.value = future.get()
+                    playerState.value = future.get().also {
+                        TvVideoSurfaceBridge.registerMainController(it)
+                    }
                     AppDiagnostics.info("Player", "controller connected")
                 }.onFailure { AppDiagnostics.failure("Player", "connect", it) }
             }, ContextCompat.getMainExecutor(this))
@@ -150,6 +152,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        TvVideoSurfaceBridge.unregisterMainController(playerState.value)
         controllerFuture?.let { MediaController.releaseFuture(it) }
         super.onDestroy()
     }
