@@ -98,7 +98,7 @@ class MainActivity : ComponentActivity() {
             var themeStyle by remember {
                 mutableStateOf(MusicFlowStyle.fromSaved(
                     getSharedPreferences("musicflow", MODE_PRIVATE)
-                        .getString("ui_theme", MusicFlowStyle.AURORA.name)
+                        .getString("ui_theme", MusicFlowStyle.AB_ICY_NIGHT.name)
                 ))
             }
             val palette = musicFlowPalette(themeStyle)
