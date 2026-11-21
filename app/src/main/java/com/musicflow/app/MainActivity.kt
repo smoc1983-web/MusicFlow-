@@ -267,6 +267,7 @@ private fun MusicScreen(
     var sectionMenu by remember { mutableStateOf(false) }
     var showAppearanceMenu by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
+    var showProTrialDialog by remember { mutableStateOf(false) }
     var showEqualizerDialog by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showThemePicker by remember { mutableStateOf(false) }
@@ -658,6 +659,14 @@ private fun MusicScreen(
                         showAppearanceMenu = false
                         tab = 4
                     })
+                    // Development builds only: do not expose mock billing in signed releases.
+                    if ((context.applicationInfo.flags and
+                            android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                        DropdownMenuItem(text = { Text("MusicFlow Pro · тест") }, onClick = {
+                            showAppearanceMenu = false
+                            showProTrialDialog = true
+                        })
+                    }
                     DropdownMenuItem(text = { Text("О приложении · обновления") }, onClick = {
                         showAppearanceMenu = false
                         showAboutDialog = true
@@ -1044,6 +1053,9 @@ private fun MusicScreen(
                 TextButton(onClick = { showThemePicker = false }) { Text("Закрыть") }
             }
         )
+    }
+    if (showProTrialDialog) {
+        MusicFlowProTrialDialog(onDismiss = { showProTrialDialog = false })
     }
     if (expandedPlayer && player != null && trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
         FullPlayerDialog(
