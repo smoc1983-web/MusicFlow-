@@ -14,7 +14,7 @@ workflow = Path(".github/workflows/android-apk.yml").read_text(encoding="utf-8")
 check = Path("scripts/check_upgrade_0720_0721.sh").read_text(encoding="utf-8")
 
 assert main.count("Modifier.musicFlowMenuSurface(palette)") >= 2
-assert home.count("Modifier.musicFlowMenuSurface(palette)") >= 3
+assert home.count("Modifier.musicFlowMenuSurface(palette)") >= 2  # collection and genre dropdowns remain
 assert "RoundedCornerShape(20.dp)" in menus
 assert "palette.accent.copy(alpha = 0.25f)" in menus
 assert "shadowElevation = 14.dp" in main and "shadowElevation = 14.dp" in home
