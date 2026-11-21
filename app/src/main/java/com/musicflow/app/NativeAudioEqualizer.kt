@@ -3,8 +3,8 @@ package com.musicflow.app
 import android.content.Context
 import android.content.SharedPreferences
 import android.media.audiofx.Equalizer
+import android.media.audiofx.LoudnessEnhancer
 import androidx.media3.common.Player
-import kotlin.math.abs
 import kotlin.math.ln
 import kotlin.math.roundToInt
 
@@ -18,7 +18,9 @@ import kotlin.math.roundToInt
 internal data class AudioEqState(
     val enabled: Boolean = false,
     val preset: String = "flat",
-    val gainsDb: List<Float> = List(5) { 0f }
+    val gainsDb: List<Float> = List(5) { 0f },
+    val boostEnabled: Boolean = false,
+    val boostDb: Float = 1f
 )
 
 internal object AudioEqSettings {
@@ -42,7 +44,10 @@ internal object AudioEqSettings {
         return AudioEqState(
             enabled = prefs.getBoolean("enabled", false),
             preset = prefs.getString("preset", "flat").orEmpty(),
-            gainsDb = gains
+            gainsDb = gains,
+            boostEnabled = prefs.getBoolean("boost_enabled", false),
+            boostDb = prefs.getFloat("boost_db", 1f)
+                .let { if (it.isFinite()) it.coerceIn(0f, 3f) else 1f }
         )
     }
 
@@ -51,6 +56,8 @@ internal object AudioEqSettings {
             .edit()
             .putBoolean("enabled", state.enabled)
             .putString("preset", state.preset)
+            .putBoolean("boost_enabled", state.boostEnabled)
+            .putFloat("boost_db", state.boostDb.coerceIn(0f, 3f))
         state.gainsDb.forEachIndexed { index, gain ->
             editor.putFloat("gain_$index", gain.coerceIn(-10f, 10f))
         }
@@ -82,6 +89,7 @@ internal class NativeAudioEqualizer(context: Context) :
     private val preferences = application.getSharedPreferences(AudioEqSettings.PREFS, Context.MODE_PRIVATE)
     private var audioSessionId = -1
     private var equalizer: Equalizer? = null
+    private var enhancer: LoudnessEnhancer? = null
 
     init {
         preferences.registerOnSharedPreferenceChangeListener(this)
@@ -96,33 +104,57 @@ internal class NativeAudioEqualizer(context: Context) :
     }
 
     override fun onSharedPreferenceChanged(prefs: SharedPreferences?, key: String?) {
-        if (key == "enabled" || key == "preset" || key?.startsWith("gain_") == true) {
+        if (key == "enabled" || key == "preset" || key?.startsWith("gain_") == true ||
+            key == "boost_enabled" || key == "boost_db") {
             refresh()
         }
     }
 
     fun refresh() {
         val state = AudioEqSettings.load(application)
-        if (!state.enabled || audioSessionId <= 0) {
+        if (audioSessionId <= 0) {
             releaseEffect()
             return
         }
-        try {
-            val effect = equalizer ?: Equalizer(0, audioSessionId).also { equalizer = it }
-            val range = effect.bandLevelRange
-            val count = effect.numberOfBands.toInt()
-            for (index in 0 until count) {
-                val band = index.toShort()
-                val hz = effect.getCenterFreq(band) / 1000f
-                val target = AudioEqSettings.gainAtFrequency(state.gainsDb, hz)
-                val millibels = (target * 100f).roundToInt()
-                    .coerceIn(range[0].toInt(), range[1].toInt())
-                effect.setBandLevel(band, millibels.toShort())
+        if (!state.enabled) {
+            runCatching { equalizer?.release() }
+            equalizer = null
+        } else {
+            try {
+                val effect = equalizer ?: Equalizer(0, audioSessionId).also { equalizer = it }
+                val range = effect.bandLevelRange
+                val count = effect.numberOfBands.toInt()
+                for (index in 0 until count) {
+                    val band = index.toShort()
+                    val hz = effect.getCenterFreq(band) / 1000f
+                    val target = AudioEqSettings.gainAtFrequency(state.gainsDb, hz)
+                    val millibels = (target * 100f).roundToInt()
+                        .coerceIn(range[0].toInt(), range[1].toInt())
+                    effect.setBandLevel(band, millibels.toShort())
+                }
+                effect.enabled = true
+            } catch (failure: Exception) {
+                runCatching { equalizer?.release() }
+                equalizer = null
+                AppDiagnostics.failure("AudioEQ", "Equalizer unavailable on device", failure)
             }
-            effect.enabled = true
-        } catch (failure: Exception) {
-            releaseEffect()
-            AppDiagnostics.failure("AudioEQ", "Android audio effects unavailable", failure)
+        }
+
+        // Fixed target gain with limited 0..3 dB range. This is NOT dynamic
+        // loudness normalization and is never activated automatically.
+        if (!state.boostEnabled || state.boostDb <= 0f) {
+            runCatching { enhancer?.release() }
+            enhancer = null
+        } else {
+            try {
+                val effect = enhancer ?: LoudnessEnhancer(audioSessionId).also { enhancer = it }
+                effect.setTargetGain((state.boostDb.coerceIn(0f, 3f) * 100).roundToInt())
+                effect.enabled = true
+            } catch (failure: Exception) {
+                runCatching { enhancer?.release() }
+                enhancer = null
+                AppDiagnostics.failure("AudioEQ", "Loudness enhancer unavailable on device", failure)
+            }
         }
     }
 
@@ -136,5 +168,9 @@ internal class NativeAudioEqualizer(context: Context) :
         equalizer = null
         runCatching { old?.enabled = false }
         runCatching { old?.release() }
+        val oldEnhancer = enhancer
+        enhancer = null
+        runCatching { oldEnhancer?.enabled = false }
+        runCatching { oldEnhancer?.release() }
     }
 }
