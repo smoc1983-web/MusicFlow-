@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppDiagnostics.initialize(this)
-        AppDiagnostics.info("App", "MusicFlow 0.7.16 Preview launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
+        AppDiagnostics.info("App", "MusicFlow 0.7.17 Preview launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener({
@@ -729,10 +729,9 @@ private fun MusicScreen(
         if (trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
             val miniCover by rememberCoverArt(trackArtist, trackTitle, currentArtwork)
             Column(
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                    .background(Brush.horizontalGradient(
-                        listOf(Color(0xFF28243B), Color(0xFF191D2B))
-                    )).padding(horizontal = 9.dp, vertical = 6.dp)
+                modifier = Modifier.fillMaxWidth()
+                    .musicFlowGlass(palette, radius = 18.dp)
+                    .padding(horizontal = 10.dp, vertical = 7.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -746,7 +745,7 @@ private fun MusicScreen(
                             painter = rememberAsyncImagePainter(miniCover),
                             contentDescription = "Обложка текущей композиции",
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(46.dp).clip(RoundedCornerShape(10.dp))
+                            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
                         )
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
@@ -794,7 +793,7 @@ private fun MusicScreen(
                     } else 0f },
                     modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
                     color = palette.accent,
-                    trackColor = Color(0xFF3F3550)
+                    trackColor = palette.accent.copy(alpha = 0.23f)
                 )
             }
             Spacer(Modifier.height(4.dp))
