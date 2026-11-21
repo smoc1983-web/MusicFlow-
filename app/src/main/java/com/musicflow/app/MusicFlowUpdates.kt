@@ -91,7 +91,7 @@ internal object MusicFlowUpdates {
                 val major = match.groupValues[1].toLongOrNull() ?: continue
                 val minor = match.groupValues[2].toLongOrNull() ?: continue
                 val patch = match.groupValues[3].toLongOrNull() ?: continue
-                if (minor !in 0..99 || patch !in 0..99 || major > 100_000) continue
+                if (minor !in 0L..99L || patch !in 0L..99L || major > 100_000L) continue
                 val code = major * 10_000L + minor * 100L + patch
                 val assets = release.optJSONArray("assets") ?: continue
                 for (j in 0 until assets.length()) {
