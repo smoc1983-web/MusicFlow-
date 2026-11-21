@@ -644,8 +644,8 @@ private fun MusicScreen(
                 val isFavorite = favorites.any { it.id == track.id }
                 val isActive = currentMediaId == track.id
                 Row(
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                        .background(if (isActive) Color(0xFF3D2C52) else palette.surface).clickable {
+                    modifier = Modifier.fillMaxWidth()
+                        .musicFlowGlass(palette, 12.dp, active = isActive).clickable {
                             val albumQueue = if (albumGroup.albumTitle != null &&
                                 albumGroup.songs.size > 1) albumGroup.songs else visible
                             val index = albumQueue.indexOfFirst { it.id == track.id }
