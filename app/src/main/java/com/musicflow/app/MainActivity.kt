@@ -44,7 +44,6 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -83,8 +82,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppDiagnostics.initialize(this)
-        VkAudioSource.initialize(this)
-        AppDiagnostics.info("App", "MusicFlow 0.7.28 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
+        // Erase credentials used by the retired provider; this release does
+        // not retain account tokens or related Android Keystore entries.
+        runCatching { deleteSharedPreferences("musicflow_vk_private") }
+        runCatching {
+            java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+                .deleteEntry("com.musicflow.app.vk.audio.credentials.v1")
+        }
+        AppDiagnostics.info("App", "MusicFlow 0.7.29 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener({
@@ -195,13 +200,23 @@ class MainActivity : ComponentActivity() {
                 !(stream.startsWith("https://") ||
                     (id.startsWith("zaycev:") &&
                         Regex("zaycev://track/[0-9]{1,16}").matches(stream)))) null
-            else Track(
-                id, obj.optString("title"), obj.optString("artist"),
-                obj.optString("artwork").takeIf { it.startsWith("https://") },
-                stream, obj.optLong("durationSec"),
-                obj.optString("collectionTitle").takeIf { it.isNotBlank() },
-                decodeStreams(obj.optString("alternatives"))
-            )
+            else {
+                // Keep a favorite only when a usable non-retired stream exists.
+                val alternatives = decodeStreams(obj.optString("alternatives"))
+                val retired = id.startsWith("vk:")
+                val fallback = if (retired) alternatives.firstOrNull() else null
+                if (retired && fallback == null) null
+                else Track(
+                    fallback?.id ?: id,
+                    obj.optString("title"),
+                    obj.optString("artist"),
+                    obj.optString("artwork").takeIf { it.startsWith("https://") },
+                    fallback?.uri ?: stream,
+                    obj.optLong("durationSec"),
+                    obj.optString("collectionTitle").takeIf { it.isNotBlank() },
+                    if (retired) alternatives.drop(1) else alternatives
+                )
+            }
         }
     }.getOrDefault(emptyList())
 
@@ -246,13 +261,6 @@ private fun MusicScreen(
     var search by remember { mutableStateOf("") }
     var appliedSearch by remember { mutableStateOf("") }
     var searchMode by remember { mutableStateOf(SearchMode.ALL) }
-    // VK is a native source in the common search, never a separate WebView tab.
-    var showVkConfiguration by remember { mutableStateOf(false) }
-    var vkPortalMessage by remember { mutableStateOf<String?>(null) }
-    var vkTokenInput by remember { mutableStateOf("") }
-    var vkConfigured by remember { mutableStateOf(VkAudioSource.isConfigured()) }
-    var vkStatus by remember { mutableStateOf<String?>(null) }
-    var vkSourceError by remember { mutableStateOf<String?>(null) }
     var sortMode by remember { mutableStateOf(SortMode.RELEVANCE) }
     var tab by remember { mutableIntStateOf(0) }
     var sectionMenu by remember { mutableStateOf(false) }
@@ -278,7 +286,6 @@ private fun MusicScreen(
         tracks = emptyList()
         appliedSearch = requested
         problem = null
-        vkSourceError = null
         busy = requested.isNotEmpty()
         if (!busy) return
         searchJob = scope.launch {
@@ -288,9 +295,6 @@ private fun MusicScreen(
             searchMusic(requested) { source, found, error ->
                 if (error != null) {
                     failures++
-                    if (source == "vk") {
-                        vkSourceError = error.message ?: "VK не предоставил доступ к Audio API"
-                    }
                     AppDiagnostics.failure("Search", "source=$source", error)
                 } else {
                     tracks = combineMusicTracks(tracks, found.orEmpty())
@@ -526,22 +530,6 @@ private fun MusicScreen(
                         showAppearanceMenu = false
                         showThemePicker = true
                     })
-                    DropdownMenuItem(
-                        text = { Text("VK Музыка · войти и слушать") },
-                        onClick = {
-                            showAppearanceMenu = false
-                            VkMusicPortal.openMyMusic(context).onFailure { failure ->
-                                vkPortalMessage = failure.message ?: "Не удалось открыть VK Музыку"
-                            }
-                        })
-                    DropdownMenuItem(
-                        text = { Text(if (vkConfigured) "VK Audio API · настроен" else "VK Audio API · подключить") },
-                        onClick = {
-                            showAppearanceMenu = false
-                            vkTokenInput = ""
-                            vkStatus = null
-                            showVkConfiguration = true
-                        })
                     DropdownMenuItem(text = { Text("Диагностика") }, onClick = {
                         showAppearanceMenu = false
                         tab = 4
@@ -673,44 +661,6 @@ private fun MusicScreen(
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(bottom = 8.dp)
         )
-        if (tab == 1 && appliedSearch.isNotBlank()) {
-            Text(
-                if (vkConfigured) "VK включён в поиск · проверьте права и аудиопоток через настройки"
-                else "VK Audio API не подключён. Другие источники работают без изменений.",
-                color = palette.muted,
-                style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(bottom = 6.dp)
-            )
-            vkSourceError?.let { message ->
-                Text("VK: " + message, color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall)
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                OutlinedButton(onClick = {
-                    VkMusicPortal.openSearch(context, appliedSearch).onFailure { failure ->
-                        vkPortalMessage = failure.message ?: "VK недоступен"
-                    }
-                }, modifier = Modifier.weight(1f)) {
-                    Text("Найти во VK", maxLines = 1)
-                }
-                OutlinedButton(onClick = {
-                    VkMusicPortal.openMyMusic(context).onFailure { failure ->
-                        vkPortalMessage = failure.message ?: "VK недоступен"
-                    }
-                }, modifier = Modifier.weight(1f)) {
-                    Text("Моя музыка VK", maxLines = 1)
-                }
-            }
-            Text(
-                "Вход и прослушивание выполняются через официальный сайт VK. " +
-                    "Для воспроизведения именно в плеере MusicFlow нужен разрешённый VK Audio API.",
-                color = palette.muted,
-                style = MaterialTheme.typography.labelSmall
-            )
-        }
         val albumGroups = groupTracksByAlbum(visible)
         LazyColumn(
             modifier = Modifier.weight(1f),
@@ -891,104 +841,6 @@ private fun MusicScreen(
         )
     }
     }
-    if (showVkConfiguration) {
-        AlertDialog(
-            onDismissRequest = { showVkConfiguration = false },
-            title = { Text("VK Музыка · нативный источник") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        "Войти в свой VK и слушать музыку можно через официальный сайт — " +
-                            "пароль вводится только на стороне VK. Нативный плеер MusicFlow " +
-                            "получит доступ к VK Audio API только для разрешённого VK токена.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Button(
-                        onClick = {
-                            VkMusicPortal.openMyMusic(context).onFailure { failure ->
-                                vkStatus = failure.message ?: "Не удалось открыть VK"
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("Войти в VK · моя музыка") }
-                    TextButton(
-                        onClick = {
-                            VkMusicPortal.openExternal(context).onFailure { failure ->
-                                vkStatus = failure.message ?: "Не удалось открыть приложение VK"
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("Открыть через приложение VK или браузер") }
-                    OutlinedTextField(
-                        value = vkTokenInput,
-                        onValueChange = { vkTokenInput = it.trim() },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        label = { Text("Разрешённый VK Audio API токен") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        if (vkConfigured) "Токен зашифрован. Работа аудиопотоков требует отдельной проверки."
-                        else "VK пока не участвует в поиске. Настройки других источников не изменены.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    vkStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        TextButton(
-                            enabled = vkConfigured,
-                            onClick = {
-                                scope.launch {
-                                    vkStatus = "Проверка доступа…"
-                                    vkStatus = try {
-                                        VkAudioSource.testAccess()
-                                    } catch (e: Exception) {
-                                        e.message ?: "Не удалось проверить VK API"
-                                    }
-                                }
-                            }
-                        ) { Text("Проверить") }
-                        TextButton(
-                            enabled = vkConfigured,
-                            onClick = {
-                                VkAudioSource.disconnect()
-                                vkConfigured = false
-                                vkStatus = "VK отключён"
-                                vkSourceError = null
-                            }
-                        ) { Text("Отключить") }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    try {
-                        VkAudioSource.saveToken(vkTokenInput)
-                        vkConfigured = true
-                        vkStatus = null
-                        vkSourceError = null
-                        showVkConfiguration = false
-                        vkTokenInput = ""
-                        if (appliedSearch.isNotBlank()) fetch(appliedSearch)
-                    } catch (e: Exception) {
-                        vkStatus = e.message ?: "Не удалось сохранить токен VK"
-                    }
-                }, enabled = vkTokenInput.isNotBlank()) { Text("Сохранить") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showVkConfiguration = false }) { Text("Закрыть") }
-            }
-        )
-    }
-    vkPortalMessage?.let { message ->
-        AlertDialog(
-            onDismissRequest = { vkPortalMessage = null },
-            title = { Text("VK Музыка") },
-            text = { Text(message) },
-            confirmButton = {
-                TextButton(onClick = { vkPortalMessage = null }) { Text("Закрыть") }
-            }
-        )
-    }
     if (showAboutDialog) {
         MusicFlowAboutDialog(onDismiss = { showAboutDialog = false })
     }
@@ -1066,12 +918,9 @@ internal fun combineMusicTracks(existing: List<Track>, incoming: List<Track>): L
             continue
         }
         val original = combined[index]
-        // Prefer an authorized VK stream when present, but preserve every other
-        // source as a native Media3 fallback. Refresh VK URLs on repeated searches.
-        val preferIncoming = track.id.startsWith("vk:") &&
-            (!original.id.startsWith("vk:") || original.id == track.id)
-        val primary = if (preferIncoming) track else original
-        val secondary = if (preferIncoming) original else track
+        // Retain the original playable source; other results stay as alternatives.
+        val primary = original
+        val secondary = track
         combined[index] = primary.copy(
             artwork = primary.artwork?.takeIf { it.isNotBlank() } ?: secondary.artwork,
             collectionTitle = primary.collectionTitle?.takeIf { it.isNotBlank() }

@@ -74,12 +74,10 @@ jobs:
       - name: Verify v0.7.22 stable signing and in-app updates
         run: python3 scripts/verify_v0722.py
       # v0.7.24/25 used a WebView, which was intentionally removed.
-      - name: Verify v0.7.26 native authorized VK provider
-        run: python3 scripts/verify_v0726.py
       - name: Verify reliable in-app updates and official release contract
         run: python3 scripts/verify_v0727.py
-      - name: Verify VK official login and Play Protect guidance
-        run: python3 scripts/verify_v0728.py
+      - name: Verify retired-provider removal and security audit
+        run: python3 scripts/verify_v0729.py
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Upload APK

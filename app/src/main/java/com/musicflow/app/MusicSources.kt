@@ -39,7 +39,6 @@ internal fun decodeStreams(encoded: String?): List<MusicStream> = runCatching {
                     (host == "muzofond.fm" || host.endsWith(".muzofond.fm"))
                 "mailru" -> uri.scheme == "https" &&
                     (host == "my.mail.ru" || host.endsWith(".my.mail.ru"))
-                "vk" -> VkAudioSource.isPlayableUrl(it.uri)
                 else -> false
             }
         }
@@ -73,8 +72,7 @@ internal fun relevantMusic(track: Track, query: String): Boolean {
 private val providers = mapOf<String, suspend (String) -> List<Track>>(
     "zaycev" to ::zaycevTracks,
     "muzofond" to ::muzofondTracks,
-    "mailru" to ::mailRuTracks,
-    "vk" to ::vkTracks
+    "mailru" to ::mailRuTracks
 )
 
 internal suspend fun searchMusic(
