@@ -2,7 +2,7 @@
 
 Project: MusicFlow Android / Kotlin Compose / Media3
 Permanent skill: **ub-mode** from https://github.com/unclebob/ub-mode
-Installed copy: `.claude/skills/ub-mode/SKILL.md` (MIT, attribution retained).
+Installed copies for Codex and other agents: `.agents/skills/ub-mode/SKILL.md` and `.claude/skills/ub-mode/SKILL.md` (MIT, attribution retained).
 
 ## Required process for EVERY future MusicFlow code modification
 1. **Tell the user, before any Android build, that ub-mode is being applied** and which quality checks will run. Never call a build "passing" until verified.

@@ -14,7 +14,7 @@
 ## Улучшения, которые тестируются в 0.7.31
 - **Таймер сна** с пресетами 10, 15, 20, 30, 45 и 60 минут, обратным отсчётом и остановкой звука без сброса очереди.
 - **Коррекция времени текстов** на ±5 секунд с шагом 250 мс; настройка сохраняется.
-- Реальные Kotlin/JUnit unit-тесты, правило дисциплины разработки **ub-mode** в [AGENTS.md](AGENTS.md) и [.claude/skills/ub-mode/SKILL.md](.claude/skills/ub-mode/SKILL.md).
+- Реальные Kotlin/JUnit unit-тесты, правило дисциплины разработки **ub-mode** в [AGENTS.md](AGENTS.md) и [.agents/skills/ub-mode/SKILL.md](.agents/skills/ub-mode/SKILL.md).
 
 ## Проекты, лицензии и источники
 - [SimpMusic](https://github.com/maxrave-dev/SimpMusic) — GPL-3.0, идейный пример UI/UX и функций. **Исходный код SimpMusic и его YouTube Music scraper не включены в MusicFlow.**

@@ -16,5 +16,6 @@ assert 'LyricsTiming.activeIndex(' in lyrics and 'changeOffset(' in lyrics
 assert 'musicflow_lyrics_timing_v1' in lyrics
 assert 'testDebugUnitTest' in ci
 assert Path("AGENTS.md").is_file() and Path(".claude/skills/ub-mode/SKILL.md").is_file()
+assert Path(".agents/skills/ub-mode/SKILL.md").is_file()
 assert (src/"MusicPlaybackRecovery.kt").is_file()
 print("0.7.31 source wiring PASS (Kotlin/JUnit checks behavior)")
