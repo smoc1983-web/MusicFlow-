@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -12,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -38,6 +40,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -271,7 +275,33 @@ internal fun FullPlayerDialog(
                 }
             }
         }
-        Surface(Modifier.fillMaxSize(), color = palette.background) {
+        val currentClose by rememberUpdatedState(onClose)
+        val density = LocalDensity.current
+        Surface(
+            Modifier.fillMaxSize().then(
+                if (page == PlayerPage.NOW_PLAYING) {
+                    Modifier.pointerInput(page, density) {
+                        val thresholdPx = with(density) { 96.dp.toPx() }
+                        var dragDownPx = 0f
+                        detectVerticalDragGestures(
+                            onDragStart = { dragDownPx = 0f },
+                            onVerticalDrag = { change, amount ->
+                                dragDownPx += amount
+                                // Swipe down is a navigation gesture; preserve horizontal seeking.
+                                if (dragDownPx > 0f) change.consume()
+                            },
+                            onDragEnd = {
+                                if (PlayerMinimizePolicy.shouldMinimize(dragDownPx, thresholdPx))
+                                    currentClose()
+                                dragDownPx = 0f
+                            },
+                            onDragCancel = { dragDownPx = 0f }
+                        )
+                    }
+                } else Modifier
+            ),
+            color = palette.background
+        ) {
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
                 listOf(palette.gradientTop, palette.background, palette.gradientBottom)
             ))) {
@@ -303,7 +333,13 @@ internal fun FullPlayerDialog(
                                     page = PlayerPage.NOW_PLAYING else onClose()
                             }
                         ) {
-                            Icon(Icons.Filled.ArrowBack, "Назад", tint = palette.foreground)
+                            Icon(
+                                if (page == PlayerPage.NOW_PLAYING) Icons.Filled.KeyboardArrowDown
+                                else Icons.Filled.ArrowBack,
+                                if (page == PlayerPage.NOW_PLAYING) "Свернуть плеер"
+                                else "Назад",
+                                tint = palette.foreground
+                            )
                         }
                         Text(
                             when (page) {
