@@ -415,8 +415,7 @@ internal fun RuVideoHubTvScreen(
             items(filtered, key = { it.id }) { channel ->
                 Row(
                     modifier = Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(palette.surface)
+                        .musicFlowGlass(palette, 12.dp)
                         .clickable { playChannel(channel) }
                         .padding(10.dp),
                     verticalAlignment = Alignment.CenterVertically
