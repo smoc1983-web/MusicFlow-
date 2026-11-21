@@ -1,6 +1,7 @@
 package com.musicflow.app
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
@@ -21,7 +22,7 @@ internal object CoverLookup {
     private val cache = ConcurrentHashMap<String, String>()
     private val semaphore = Semaphore(2)
     // Versioned cache: older builds may have stored small or incorrect images.
-    private const val CACHE_VERSION = "hq3_"
+    private const val CACHE_VERSION = "hq4_"
     private const val POSITIVE_TTL = 14L * 86400_000L
     private const val NEGATIVE_TTL = 12L * 3600_000L
 
@@ -54,7 +55,7 @@ internal object CoverLookup {
         )
     }
 
-    private fun normalized(s: String): String = s.lowercase(Locale.ROOT)
+    private fun normalized(s: String): String = s.lowercase(Locale.ROOT).replace('ё', 'е')
         .replace(Regex("""[^\p{L}\p{N}]+"""), " ").trim()
         .replace(Regex("""\s+"""), " ")
 
@@ -92,9 +93,13 @@ internal object CoverLookup {
                 val found = coroutineScope {
                     val apple = async { runCatching { iTunes(artist, title) }.getOrNull() }
                     val deezer = async { runCatching { deezer(artist, title) }.getOrNull() }
-                    // Deezer and Apple can resolve independently of Zaycev artwork.
-                    apple.await() ?: deezer.await()
+                    // Verify real picture dimensions, not just "1200" in a URL:
+                    // CDN thumbnails sometimes get upscaled without extra detail.
+                    sequenceOf(apple.await(), deezer.await())
+                        .filterNotNull().distinct()
+                        .firstOrNull { validHighResolution(it) }
                 } ?: runCatching { musicBrainz(artist, title) }.getOrNull()
+                    ?.takeIf { validHighResolution(it) }
                 cache[key] = found ?: MISSING
                 prefs.edit().putString(id, found ?: MISSING)
                     .putLong("exp_" + id, System.currentTimeMillis() +
@@ -130,19 +135,22 @@ internal object CoverLookup {
 
     private fun iTunes(artist: String, title: String): String? {
         val q = URLEncoder.encode("$artist $title", "UTF-8")
-        val raw = fetch(
-            "https://itunes.apple.com/search?term=$q&media=music&entity=song&limit=25"
-        )
-        if (raw.isBlank()) return null
-        val items = JSONObject(raw).optJSONArray("results") ?: return null
         val wantedTitle = normalized(title)
-        for (i in 0 until minOf(items.length(), 25)) {
-            val item = items.optJSONObject(i) ?: continue
-            if (normalized(item.optString("trackName")) != wantedTitle) continue
-            if (!artistMatches(artist, item.optString("artistName"))) continue
-            val url = item.optString("artworkUrl100")
-            if (url.startsWith("https://")) {
-                return preferredProvided(url)
+        // RU first for domestic repertoire; retry the global catalog for
+        // international recordings. Metadata endpoints do not provide audio.
+        for (region in listOf("RU", "US")) {
+            val raw = fetch(
+                "https://itunes.apple.com/search?term=$q&media=music&entity=song" +
+                    "&country=$region&limit=40"
+            )
+            if (raw.isBlank()) continue
+            val items = JSONObject(raw).optJSONArray("results") ?: continue
+            for (i in 0 until minOf(items.length(), 40)) {
+                val item = items.optJSONObject(i) ?: continue
+                if (normalized(item.optString("trackName")) != wantedTitle) continue
+                if (!artistMatches(artist, item.optString("artistName"))) continue
+                val url = item.optString("artworkUrl100")
+                if (url.startsWith("https://")) return preferredProvided(url)
             }
         }
         return null
@@ -169,6 +177,36 @@ internal object CoverLookup {
             return preferredProvided(candidate)
         }
         return null
+    }
+
+    /**
+     * Decode just the HTTP image header, not the whole bitmap. This avoids
+     * caching a low-resolution thumbnail as a supposedly HD cover.
+     */
+    private fun validHighResolution(url: String): Boolean {
+        val address = URL(url)
+        if (address.protocol != "https") return false
+        val connection = (address.openConnection() as HttpURLConnection).apply {
+            connectTimeout = 4_000
+            readTimeout = 5_000
+            instanceFollowRedirects = true
+            setRequestProperty("User-Agent", "MusicFlow/0.7.16")
+            setRequestProperty("Accept", "image/jpeg,image/webp,image/png,image/*")
+        }
+        return try {
+            if (connection.responseCode !in 200..299) return false
+            val type = connection.contentType.orEmpty().lowercase(Locale.ROOT)
+            if (!type.startsWith("image/")) return false
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            connection.inputStream.buffered().use {
+                BitmapFactory.decodeStream(it, null, bounds)
+            }
+            bounds.outWidth >= 500 && bounds.outHeight >= 500
+        } catch (_: Exception) {
+            false
+        } finally {
+            connection.disconnect()
+        }
     }
 
     private fun musicBrainz(artist: String, title: String): String? {
