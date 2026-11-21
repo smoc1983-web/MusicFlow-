@@ -7,6 +7,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -98,6 +99,7 @@ private fun parseCollections(document: Document): List<HomeCollection> =
 internal fun MusicHomeScreen(
     onSearch: (String) -> Unit,
     onPlay: (HomeSong, List<HomeSong>) -> Unit,
+    onPlayChart: (TopSong) -> Unit,
     pendingSongId: String?,
     playbackMessage: String?,
     modifier: Modifier = Modifier
@@ -112,8 +114,14 @@ internal fun MusicHomeScreen(
     var homeQuery by remember { mutableStateOf("") }
     var collectionsExpanded by remember { mutableStateOf(false) }
     var genresExpanded by remember { mutableStateOf(false) }
-    var feedExpanded by remember { mutableStateOf(false) }
     var feedSection by remember { mutableStateOf("Популярное") }
+    var chartRegion by remember { mutableStateOf(TopSongsRegion.RUSSIA) }
+    var chartPeriod by remember { mutableStateOf(TopSongsPeriod.WEEK) }
+    var chartRefresh by remember { mutableIntStateOf(0) }
+    var chartSongs by remember { mutableStateOf<List<TopSong>>(emptyList()) }
+    var chartLoading by remember { mutableStateOf(false) }
+    var chartError by remember { mutableStateOf<String?>(null) }
+    val chartCache = remember { mutableStateMapOf<String, Pair<Long, List<TopSong>>>() }
     var message by remember { mutableStateOf<String?>(null) }
     val genres = remember {
         listOf(
@@ -147,6 +155,32 @@ internal fun MusicHomeScreen(
     }
 
     LaunchedEffect(Unit) { refreshHome() }
+    // Chart sources are refreshed on selection; each period is cached for 30 minutes.
+    LaunchedEffect(feedSection, chartPeriod, chartRegion, chartRefresh) {
+        if (feedSection != "ТОП песен") return@LaunchedEffect
+        val key = chartRegion.name + ":" + chartPeriod.name
+        val cached = chartCache[key]
+        chartError = null
+        if (cached != null && System.currentTimeMillis() - cached.first < 30 * 60 * 1000L) {
+            chartSongs = cached.second
+            chartLoading = false
+            return@LaunchedEffect
+        }
+        chartSongs = emptyList()
+        chartLoading = true
+        try {
+            val loaded = TopSongsDirectory.fetch(chartPeriod, chartRegion)
+            chartSongs = loaded
+            chartCache[key] = System.currentTimeMillis() to loaded
+        } catch (cancel: kotlinx.coroutines.CancellationException) {
+            throw cancel
+        } catch (failure: Exception) {
+            AppDiagnostics.failure("Charts", "home chart " + key, failure)
+            chartError = "Чарт временно недоступен. Повторите загрузку."
+        } finally {
+            chartLoading = false
+        }
+    }
     // Each visible Zaycev section is a separate listening queue.
     // Selecting a row preserves its position within that section.
     val popularQueue = popular.take(20)
@@ -259,48 +293,94 @@ internal fun MusicHomeScreen(
         if (chosenCollection.isBlank()) {
             item {
                 Row(
-                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                        .padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Музыкальная лента",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f))
-                    Box {
-                        OutlinedButton(
-                            onClick = { feedExpanded = true },
-                            modifier = Modifier.height(42.dp),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text(feedSection)
-                            Spacer(Modifier.width(4.dp))
-                            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null,
-                                modifier = Modifier.size(18.dp))
-                        }
-                        DropdownMenu(
-                            expanded = feedExpanded,
-                            onDismissRequest = { feedExpanded = false },
-                            modifier = Modifier.musicFlowMenuSurface(palette),
-                            containerColor = palette.surface,
-                            shadowElevation = 14.dp
-                        ) {
-                            listOf("Популярное", "Новинки").forEach { section ->
-                                DropdownMenuItem(text = { Text(section) }, onClick = {
-                                    feedSection = section
-                                    feedExpanded = false
-                                })
-                            }
-                        }
+                    listOf("Популярное", "ТОП песен", "Новинки").forEach { section ->
+                        FilterChip(
+                            selected = feedSection == section,
+                            onClick = { feedSection = section },
+                            label = { Text(section) }
+                        )
                     }
                 }
             }
-            if (feedSection == "Популярное") {
-                items(popularQueue, key = { "top_" + it.id }) { song ->
+            when (feedSection) {
+                "Популярное" -> items(popularQueue, key = { "top_" + it.id }) { song ->
                     HomeSongRow(song, { selected -> onPlay(selected, popularQueue) }, pendingSongId)
                 }
-            } else {
-                items(freshQueue, key = { "fresh_" + it.id }) { song ->
+                "Новинки" -> items(freshQueue, key = { "fresh_" + it.id }) { song ->
                     HomeSongRow(song, { selected -> onPlay(selected, freshQueue) }, pendingSongId)
+                }
+                "ТОП песен" -> {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Row(
+                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(7.dp)
+                            ) {
+                                TopSongsRegion.entries.forEach { choice ->
+                                    FilterChip(
+                                        selected = choice == chartRegion,
+                                        onClick = { chartRegion = choice },
+                                        label = { Text(choice.label) }
+                                    )
+                                }
+                            }
+                            Row(
+                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                TopSongsPeriod.entries.forEach { choice ->
+                                    FilterChip(
+                                        selected = choice == chartPeriod,
+                                        onClick = { chartPeriod = choice },
+                                        label = { Text(choice.label) }
+                                    )
+                                }
+                                TextButton(
+                                    onClick = {
+                                        chartCache.remove(chartRegion.name + ":" + chartPeriod.name)
+                                        chartRefresh++
+                                    },
+                                    enabled = !chartLoading
+                                ) { Text("Обновить") }
+                            }
+                            Text(
+                                if (chartRegion == TopSongsRegion.RUSSIA)
+                                    "Россия · чарт Яндекс Музыки, анализ UpSound AI. " +
+                                    "Сумма дневных слушателей за доступные дни; годовой архив неполный."
+                                else "Мир · ListenBrainz. Прослушивания участников сервиса, " +
+                                    "не всех стриминговых платформ.",
+                                color = palette.muted,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                            if (chartLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                            chartError?.let {
+                                Text(it, color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (!chartLoading && chartSongs.isEmpty() && chartError == null) {
+                                Text("За выбранный период нет данных", color = palette.muted)
+                            }
+                        }
+                    }
+                    itemsIndexed(chartSongs, key = { index, _ ->
+                        "chart:" + chartRegion.name + ":" + chartPeriod.name + ":" + index
+                    }) { index, song ->
+                        val playbackKey = "chart:" + musicKey(song.artist) + ":" + musicKey(song.title)
+                        TopSongHomeRow(
+                            song = song,
+                            index = index,
+                            isPending = pendingSongId == playbackKey,
+                            enabled = pendingSongId == null,
+                            isRussia = chartRegion == TopSongsRegion.RUSSIA,
+                            onPlay = { onPlayChart(song) }
+                        )
+                    }
                 }
             }
         } else if (collected.isEmpty() && !loading && message == null) {
