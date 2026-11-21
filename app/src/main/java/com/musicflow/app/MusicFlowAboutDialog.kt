@@ -107,7 +107,6 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
                             if (!MusicFlowUpdates.canInstall(context)) {
                                 message = "Разрешите установку APK для MusicFlow в настройках Android, " +
                                     "затем нажмите «Установить» повторно."
-                                openLink("package:" + context.packageName)
                                 runCatching {
                                     context.startActivity(MusicFlowUpdates.allowInstallIntent(context))
                                 }
