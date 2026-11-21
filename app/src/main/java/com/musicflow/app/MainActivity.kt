@@ -84,7 +84,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AppDiagnostics.initialize(this)
         VkAudioSource.initialize(this)
-        AppDiagnostics.info("App", "MusicFlow 0.7.26 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
+        AppDiagnostics.info("App", "MusicFlow 0.7.28 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener({
@@ -248,6 +248,7 @@ private fun MusicScreen(
     var searchMode by remember { mutableStateOf(SearchMode.ALL) }
     // VK is a native source in the common search, never a separate WebView tab.
     var showVkConfiguration by remember { mutableStateOf(false) }
+    var vkPortalMessage by remember { mutableStateOf<String?>(null) }
     var vkTokenInput by remember { mutableStateOf("") }
     var vkConfigured by remember { mutableStateOf(VkAudioSource.isConfigured()) }
     var vkStatus by remember { mutableStateOf<String?>(null) }
@@ -526,6 +527,14 @@ private fun MusicScreen(
                         showThemePicker = true
                     })
                     DropdownMenuItem(
+                        text = { Text("VK Музыка · войти и слушать") },
+                        onClick = {
+                            showAppearanceMenu = false
+                            VkMusicPortal.openMyMusic(context).onFailure { failure ->
+                                vkPortalMessage = failure.message ?: "Не удалось открыть VK Музыку"
+                            }
+                        })
+                    DropdownMenuItem(
                         text = { Text(if (vkConfigured) "VK Audio API · настроен" else "VK Audio API · подключить") },
                         onClick = {
                             showAppearanceMenu = false
@@ -676,6 +685,31 @@ private fun MusicScreen(
                 Text("VK: " + message, color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall)
             }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                OutlinedButton(onClick = {
+                    VkMusicPortal.openSearch(context, appliedSearch).onFailure { failure ->
+                        vkPortalMessage = failure.message ?: "VK недоступен"
+                    }
+                }, modifier = Modifier.weight(1f)) {
+                    Text("Найти во VK", maxLines = 1)
+                }
+                OutlinedButton(onClick = {
+                    VkMusicPortal.openMyMusic(context).onFailure { failure ->
+                        vkPortalMessage = failure.message ?: "VK недоступен"
+                    }
+                }, modifier = Modifier.weight(1f)) {
+                    Text("Моя музыка VK", maxLines = 1)
+                }
+            }
+            Text(
+                "Вход и прослушивание выполняются через официальный сайт VK. " +
+                    "Для воспроизведения именно в плеере MusicFlow нужен разрешённый VK Audio API.",
+                color = palette.muted,
+                style = MaterialTheme.typography.labelSmall
+            )
         }
         val albumGroups = groupTracksByAlbum(visible)
         LazyColumn(
@@ -864,11 +898,27 @@ private fun MusicScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        "VK ограничивает доступ к audio.search. Нужен токен приложения, " +
-                            "которому VK разрешил Audio API. Обычный вход через VK ID " +
-                            "не даёт такого разрешения. Пароль аккаунта здесь не вводится.",
+                        "Войти в свой VK и слушать музыку можно через официальный сайт — " +
+                            "пароль вводится только на стороне VK. Нативный плеер MusicFlow " +
+                            "получит доступ к VK Audio API только для разрешённого VK токена.",
                         style = MaterialTheme.typography.bodySmall
                     )
+                    Button(
+                        onClick = {
+                            VkMusicPortal.openMyMusic(context).onFailure { failure ->
+                                vkStatus = failure.message ?: "Не удалось открыть VK"
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Войти в VK · моя музыка") }
+                    TextButton(
+                        onClick = {
+                            VkMusicPortal.openExternal(context).onFailure { failure ->
+                                vkStatus = failure.message ?: "Не удалось открыть приложение VK"
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Открыть через приложение VK или браузер") }
                     OutlinedTextField(
                         value = vkTokenInput,
                         onValueChange = { vkTokenInput = it.trim() },
@@ -926,6 +976,16 @@ private fun MusicScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showVkConfiguration = false }) { Text("Закрыть") }
+            }
+        )
+    }
+    vkPortalMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = { vkPortalMessage = null },
+            title = { Text("VK Музыка") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { vkPortalMessage = null }) { Text("Закрыть") }
             }
         )
     }
