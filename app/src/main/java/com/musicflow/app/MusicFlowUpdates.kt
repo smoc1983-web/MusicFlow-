@@ -165,7 +165,8 @@ internal object MusicFlowUpdates {
             throw IOException("Несовместимый идентификатор приложения")
         }
         val newCode = PackageInfoCompat.getLongVersionCode(incoming)
-        if (newCode != expectedCode || newCode <= PackageInfoCompat.getLongVersionCode(current)) {
+        if ((expectedCode > 0 && newCode != expectedCode) ||
+            newCode <= PackageInfoCompat.getLongVersionCode(current)) {
             throw IOException("Загружена неподходящая версия APK")
         }
         fun signatures(info: PackageInfo): Set<String> {
@@ -189,6 +190,43 @@ internal object MusicFlowUpdates {
         }
     }
 
+    /**
+     * Allow selecting an already downloaded signed APK in MusicFlow.
+     * This is useful before the first GitHub Release exists and never bypasses
+     * package-name/version/signature verification.
+     */
+    suspend fun importVerified(context: Context, source: Uri): Uri =
+        withContext(Dispatchers.IO) {
+            val directory = File(context.cacheDir, "updates").apply { mkdirs() }
+            val tmp = File(directory, "musicflow-import.partial")
+            val target = File(directory, "musicflow-import.apk")
+            tmp.delete()
+            try {
+                context.contentResolver.openInputStream(source)?.use { input ->
+                    tmp.outputStream().buffered().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var length = 0L
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            length += read
+                            if (length > MAX_SIZE) throw IOException("APK слишком большой")
+                            output.write(buffer, 0, read)
+                        }
+                        if (length < 1_000_000L) throw IOException("Файл APK неполный")
+                    }
+                } ?: throw IOException("Не удаётся открыть выбранный файл")
+                checkArchive(context, tmp, 0)
+                target.delete()
+                if (!tmp.renameTo(target)) throw IOException("Не удалось сохранить APK")
+                FileProvider.getUriForFile(
+                    context, context.packageName + ".diagnostics", target
+                )
+            } finally {
+                tmp.delete()
+            }
+        }
+
     fun canInstall(context: Context): Boolean =
         context.packageManager.canRequestPackageInstalls()
 
@@ -197,7 +235,7 @@ internal object MusicFlowUpdates {
             Uri.parse("package:" + context.packageName))
 
     fun installerIntent(uri: Uri): Intent =
-        Intent(Intent.ACTION_VIEW)
-            .setDataAndType(uri, "application/vnd.android.package-archive")
+        Intent(Intent.ACTION_INSTALL_PACKAGE)
+            .setData(uri)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
 }
