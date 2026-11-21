@@ -30,14 +30,13 @@ internal fun MusicFlowAutoUpdate() {
     var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
+        if (!MusicFlowUpdates.supportsOfficialUpdates(context)) return@LaunchedEffect
         val preferences = context.getSharedPreferences("musicflow_updates", Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
-        // Avoid repetitive API requests while reopening the UI or rotating.
-        val lastCheck = preferences.getLong("last_check", 0L)
-        if (lastCheck > 0 && now - lastCheck in 0L until 6L * 60L * 60L * 1000L) return@LaunchedEffect
+        // Check every new app session. Older builds delayed newly published
+        // updates for six hours even when the user reopened MusicFlow.
         try {
             val latest = MusicFlowUpdates.latestRelease()
-            preferences.edit().putLong("last_check", now).apply()
             if (latest != null && latest.versionCode > MusicFlowUpdates.currentCode(context)) {
                 val snoozedVersion = preferences.getLong("snoozed_version", 0L)
                 val snoozedUntil = preferences.getLong("snoozed_until", 0L)
@@ -45,8 +44,10 @@ internal fun MusicFlowAutoUpdate() {
                     available = latest
                 }
             }
-        } catch (_: Exception) {
-            // The app works normally when offline or GitHub is unreachable.
+        } catch (failure: Exception) {
+            AppDiagnostics.failure("Updates", "automatic update check", failure)
+            // The app works normally when offline or GitHub is unreachable;
+            // the About screen always provides an explicit retry.
         }
     }
 
