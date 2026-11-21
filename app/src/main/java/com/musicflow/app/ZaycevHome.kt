@@ -186,7 +186,8 @@ internal fun MusicHomeScreen(
                             modifier = Modifier.size(18.dp))
                     }
                     DropdownMenu(expanded = collectionsExpanded,
-                        onDismissRequest = { collectionsExpanded = false }) {
+                        onDismissRequest = { collectionsExpanded = false },
+                        containerColor = palette.surface) {
                         DropdownMenuItem(text = { Text("Все подборки") }, onClick = {
                             collectionsExpanded = false
                             chosenCollection = ""
@@ -216,7 +217,8 @@ internal fun MusicHomeScreen(
                             modifier = Modifier.size(18.dp))
                     }
                     DropdownMenu(expanded = genresExpanded,
-                        onDismissRequest = { genresExpanded = false }) {
+                        onDismissRequest = { genresExpanded = false },
+                        containerColor = palette.surface) {
                         genres.forEach { (name, _) ->
                             DropdownMenuItem(text = { Text(name) }, onClick = {
                                 genresExpanded = false
@@ -273,7 +275,8 @@ internal fun MusicHomeScreen(
                         }
                         DropdownMenu(
                             expanded = feedExpanded,
-                            onDismissRequest = { feedExpanded = false }
+                            onDismissRequest = { feedExpanded = false },
+                            containerColor = palette.surface
                         ) {
                             listOf("Популярное", "Новинки").forEach { section ->
                                 DropdownMenuItem(text = { Text(section) }, onClick = {
