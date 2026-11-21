@@ -1,4 +1,4 @@
-"""MusicFlow 0.7.33: Russian radio, lyrics, queue, history and privacy regression."""
+"""MusicFlow 0.7.34: Russian radio, lyrics, queue, history and privacy regression."""
 from pathlib import Path
 import re
 
@@ -14,12 +14,12 @@ sources = (root / "MusicSources.kt").read_text(encoding="utf-8")
 gradle = Path("app/build.gradle.kts").read_text(encoding="utf-8")
 workflow = Path(".github/workflows/android-apk.yml").read_text(encoding="utf-8")
 
-assert 'versionCode = 733' in gradle and 'versionName = "0.7.33"' in gradle
+assert 'versionCode = 734' in gradle and 'versionName = "0.7.34"' in gradle
 assert 'applicationId = "com.musicflow.preview"' in gradle
 assert 'applicationIdSuffix = ".dev"' in gradle
 assert '"vk" to ::' not in sources
 assert '"audius" to ::' not in sources and '"jamendo" to ::' not in sources
-assert '6 -> "Русское радио"' in main and '5 -> "История"' in main
+assert '6 -> "Радио"' in main and '5 -> "История"' in main
 assert 'RussianRadioScreen(' in main and 'MusicPlaybackHistoryScreen(' in main
 assert 'onPlay = { station -> queueAndPlay(listOf(station.toTrack()), 0) }' in main
 assert 'https://de1.api.radio-browser.info' in radio
