@@ -25,7 +25,7 @@ assert "MusicFlowUpdates.latestRelease()" in about
 assert "LaunchedEffect(Unit)" in about
 assert "ActivityResultContracts.OpenDocument()" in about
 assert "MusicFlowUpdates.importVerified(context, uri)" in about
-assert "MusicFlowUpdates.downloadVerified(context, release)" in about
+assert "MusicFlowBackgroundUpdates.enqueue(context, release)" in about
 assert "MusicFlowUpdates.installerIntent(imported)" in about
 assert "checkArchive(context, tmp, 0)" in update
 assert "incoming.packageName != context.packageName" in update

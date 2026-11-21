@@ -20,7 +20,7 @@ assert 'MusicFlowAutoUpdate()' in main
 assert 'Доступно обновление MusicFlow' in auto
 assert 'MusicFlowUpdates.latestRelease()' in auto
 assert 'latest.versionCode > MusicFlowUpdates.currentCode(context)' in auto
-assert 'MusicFlowUpdates.downloadVerified(context, update)' in auto
+assert 'MusicFlowBackgroundUpdates.enqueue(context, update)' in auto
 assert 'MusicFlowUpdates.installerIntent(uri)' in auto
 assert 'MusicFlowUpdates.allowInstallIntent(context)' in auto
 # The old six-hour check cache delayed releases; every launch now checks the feed.

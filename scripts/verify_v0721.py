@@ -27,7 +27,7 @@ assert 'applicationId = "com.musicflow.preview"' in gradle
 assert 'incoming.packageName != context.packageName' in updater
 assert "signatures(incoming)" in updater
 assert "MusicFlowUpdates.latestRelease()" in autoupdate
-assert "MusicFlowUpdates.downloadVerified(context, update)" in autoupdate
+assert "MusicFlowBackgroundUpdates.enqueue(context, update)" in autoupdate
 assert "MusicFlowUpdates.installerIntent(uri)" in autoupdate
 assert "scripts/verify_v0722.py" in workflow
 assert "gradle --no-daemon :app:assembleDebug" in workflow

@@ -7,7 +7,7 @@ about = (root / "MusicFlowAboutDialog.kt").read_text(encoding="utf-8")
 gradle = Path("app/build.gradle.kts").read_text(encoding="utf-8")
 workflow = Path(".github/workflows/publish-v0727-inapp.yml").read_text(encoding="utf-8")
 assert 'applicationId = "com.musicflow.preview"' in gradle
-assert 'versionCode = 737' in gradle and 'versionName = "0.7.37"' in gradle
+assert 'versionCode = 738' in gradle and 'versionName = "0.7.38"' in gradle
 assert 'MUSICFLOW_SIGNING_KEYSTORE' in gradle
 assert 'getByName("release")' in gradle
 assert 'private const val OFFICIAL_PACKAGE = "com.musicflow.preview"' in updates
@@ -19,7 +19,7 @@ assert 'signatures(incoming)' in updates
 assert 'incoming.packageName != context.packageName' in updates
 assert 'MusicFlowUpdates.latestRelease()' in auto
 assert 'last_check' not in auto
-assert 'MusicFlowUpdates.downloadVerified(context, update)' in auto
+assert 'MusicFlowBackgroundUpdates.enqueue(context, update)' in auto
 assert 'MusicFlowUpdates.installerIntent(uri)' in auto
 assert 'officialUpdateChannel && !checking && !downloading' in about
 assert 'apksigner' in workflow and 'gh release create' in workflow

@@ -18,7 +18,7 @@ assert "github.com/smoc1983-web/MusicFlow-/releases" in updater
 assert "api.github.com/repos/smoc1983-web/MusicFlow-/releases" in updater
 assert "actions/artifacts" not in updater
 assert "+79128580680" in updater
-assert "https://t.me/c/3702128532/1" in updater
+assert "https://t.me/+IryIQ5fkmOszZWRi" in updater
 assert "PackageInfoCompat.getLongVersionCode" in updater
 assert 'incoming.packageName != context.packageName' in updater
 assert "signatures(incoming)" in updater
@@ -27,7 +27,7 @@ assert "FileProvider.getUriForFile(" in updater
 assert "Intent.FLAG_GRANT_READ_URI_PERMISSION" in updater
 assert "allowInstallIntent(context)" in about
 assert "MusicFlowUpdates.latestRelease()" in about
-assert "MusicFlowUpdates.downloadVerified(context, release)" in about
+assert "MusicFlowBackgroundUpdates.enqueue(context, release)" in about
 assert "MusicFlowUpdates.SUPPORT_NUMBER" in about
 assert "MusicFlowUpdates.TELEGRAM_URL" in about
 assert "MusicFlowAboutDialog(onDismiss" in main

@@ -18,7 +18,7 @@ for key in ("MUSICFLOW_SIGNING_KEYSTORE", "MUSICFLOW_SIGNING_STORE_PASSWORD",
 assert "incoming.packageName != context.packageName" in update
 assert "signatures(incoming)" in update
 assert "MusicFlowUpdates.latestRelease()" in auto
-assert "MusicFlowUpdates.downloadVerified(context, update)" in auto
+assert "MusicFlowBackgroundUpdates.enqueue(context, update)" in auto
 assert "MusicFlowUpdates.installerIntent(uri)" in auto
 assert "MusicFlowUpdates.importVerified(context, uri)" in about
 assert "openssl cms -encrypt" in workflow
