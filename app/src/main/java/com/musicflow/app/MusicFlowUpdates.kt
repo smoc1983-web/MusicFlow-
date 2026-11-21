@@ -93,7 +93,7 @@ internal object MusicFlowUpdates {
         onProgress: suspend (Int) -> Unit
     ): Uri = withContext(Dispatchers.IO) {
         val folder = File(context.cacheDir, "updates").apply { mkdirs() }
-        val temp = File(folder, "musicflow-update.partial")
+        val temp = File(folder, "musicflow-download-tmp.apk")
         val file = File(folder, "musicflow-update.apk")
         temp.delete()
         try {
@@ -198,7 +198,7 @@ internal object MusicFlowUpdates {
     suspend fun importVerified(context: Context, source: Uri): Uri =
         withContext(Dispatchers.IO) {
             val directory = File(context.cacheDir, "updates").apply { mkdirs() }
-            val tmp = File(directory, "musicflow-import.partial")
+            val tmp = File(directory, "musicflow-import-tmp.apk")
             val target = File(directory, "musicflow-import.apk")
             tmp.delete()
             try {
