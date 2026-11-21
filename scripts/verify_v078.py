@@ -8,7 +8,7 @@ player=(root/"FullPlayerDialog.kt").read_text(encoding="utf-8")
 assert 'AlbumCatalog.enrichTracks(context, batch, requested)' in main
 assert 'AlbumCatalog.enrichTracks(context, items, artist)' in main
 assert 'groupTracksByAlbum(visible)' in main
-assert 'collectionTitle = original.collectionTitle' in main
+assert 'collectionTitle = primary.collectionTitle' in main
 assert 'collectionTitle = candidate.album' in album
 assert 'itunes.apple.com/search' in album
 assert 'itunes.apple.com/lookup' in album
