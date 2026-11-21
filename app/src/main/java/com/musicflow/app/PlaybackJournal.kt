@@ -58,6 +58,7 @@ internal class PlaybackJournal(context: Context, private val player: ExoPlayer) 
 
     private fun playable(uri: String, id: String): Boolean =
         (uri.startsWith("https://") || uri.startsWith("http://") ||
+            (id.startsWith("chart:") && ChartPlaylistQueue.parse(uri) != null) ||
             (id.startsWith("zaycev:") && Regex("""zaycev://track/\d{1,16}""").matches(uri))) &&
             !id.startsWith("vk:")
 
@@ -76,7 +77,7 @@ internal class PlaybackJournal(context: Context, private val player: ExoPlayer) 
     fun restore() {
         runCatching {
             val array = JSONArray(preferences.getString("queue", "[]"))
-            val queue = (0 until minOf(array.length(), 80)).mapNotNull { index ->
+            val queue = (0 until minOf(array.length(), 120)).mapNotNull { index ->
                 val obj = array.optJSONObject(index) ?: return@mapNotNull null
                 val id = obj.optString("id")
                 val uri = obj.optString("uri")
@@ -86,6 +87,7 @@ internal class PlaybackJournal(context: Context, private val player: ExoPlayer) 
                     putString(MUSIC_SOURCE, obj.optString("source", id.substringBefore(':')))
                     putLong(MUSIC_DURATION_SECONDS, obj.optLong("duration"))
                     putBoolean(MUSIC_HOME_PLAYLIST, obj.optBoolean("home"))
+                    putBoolean(MUSIC_CHART_PLAYLIST, obj.optBoolean("chart"))
                 }
                 MediaItem.Builder()
                     .setMediaId(id)
@@ -148,7 +150,7 @@ internal class PlaybackJournal(context: Context, private val player: ExoPlayer) 
             val editor = preferences.edit()
             if (queueDirty) {
                 val queue = JSONArray()
-                for (index in 0 until minOf(player.mediaItemCount, 80)) {
+                for (index in 0 until minOf(player.mediaItemCount, 120)) {
                     val item = player.getMediaItemAt(index)
                     val id = item.mediaId
                     val uri = item.localConfiguration?.uri?.toString().orEmpty()
@@ -165,6 +167,7 @@ internal class PlaybackJournal(context: Context, private val player: ExoPlayer) 
                         put("alternatives", extras?.getString(MUSIC_STREAMS).orEmpty())
                         put("source", extras?.getString(MUSIC_SOURCE).orEmpty())
                         put("home", extras?.getBoolean(MUSIC_HOME_PLAYLIST, false) ?: false)
+                        put("chart", extras?.getBoolean(MUSIC_CHART_PLAYLIST, false) ?: false)
                     })
                 }
                 editor.putString("queue", queue.toString())

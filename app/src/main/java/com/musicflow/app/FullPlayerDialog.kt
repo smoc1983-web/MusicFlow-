@@ -184,6 +184,14 @@ internal fun FullPlayerDialog(
             player.play()
             return
         }
+        // The chart itself is a playlist. At its boundaries, never look up a
+        // different album and accidentally jump outside the chart.
+        if (player.currentMediaItem?.mediaMetadata?.extras
+                ?.getBoolean(MUSIC_CHART_PLAYLIST, false) == true) {
+            albumMessage = if (direction > 0) "Это последняя песня ТОПа."
+            else "Это первая песня ТОПа."
+            return
+        }
         // Single-track queues, including recommendations and album selections,
         // navigate the verified album tracklist directly inside this player.
         pendingNavigation = true

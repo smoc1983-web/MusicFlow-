@@ -80,8 +80,8 @@ internal class MusicPlaybackRecovery(
             player.playerError != null) return
         val item = player.currentMediaItem ?: return
         // IPTV has different buffering semantics and must never be restarted here.
-        if (item.mediaId.startsWith("ruvideo:")) return
         val uri = item.localConfiguration?.uri ?: return
+        if (item.mediaId.startsWith("ruvideo:") || uri.scheme == "chart") return
         val generation = playlistGeneration
         startupJob = scope.launch {
             delay(12_000L)
@@ -166,7 +166,8 @@ internal class MusicPlaybackRecovery(
                 // An unavailable item must not stop the entire Zaycev collection.
                 // Keep this limited to an actual next item: never wrap endlessly.
                 val nextIndex = player.currentMediaItemIndex + 1
-                if (extras.getBoolean(MUSIC_HOME_PLAYLIST, false) &&
+                if ((extras.getBoolean(MUSIC_HOME_PLAYLIST, false) ||
+                        extras.getBoolean(MUSIC_CHART_PLAYLIST, false)) &&
                     nextIndex in 1 until player.mediaItemCount) {
                     AppDiagnostics.warning("Recovery", "skipping unavailable collection entry")
                     player.seekTo(nextIndex, 0L)
