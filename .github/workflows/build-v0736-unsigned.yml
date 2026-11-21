@@ -1,7 +1,7 @@
 name: Build MusicFlow 0.7.36 unsigned release for original-key signing
 on:
   push:
-    branches: ["feature/musicflow-v0.7.36-top-tracks"]
+    branches: ["feature/musicflow-v0.7.36-home-charts-ru"]
     paths: [".github/workflows/build-v0736-unsigned.yml"]
   workflow_dispatch:
 permissions:
