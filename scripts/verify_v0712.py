@@ -31,5 +31,5 @@ assert "onExpand: () -> Unit" in mini
 assert "1200x1200bb" in cover and "front-1200" in cover
 assert "needsUpgrade(provided)" in cover
 assert "Brush.verticalGradient" in player
-assert 'versionName = "0.7.36"' in gradle
+assert 'versionName = "0.7.37"' in gradle
 print("MusicFlow v0.7.12 UI and TV mini-player integration PASS")
