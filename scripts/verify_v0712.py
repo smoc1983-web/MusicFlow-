@@ -9,7 +9,8 @@ tv = (base / "RuVideoHubTv.kt").read_text(encoding="utf-8")
 full = (base / "TvFullscreenActivity.kt").read_text(encoding="utf-8")
 mini = (base / "TvMiniPlayer.kt").read_text(encoding="utf-8")
 gradle = Path("app/build.gradle.kts").read_text(encoding="utf-8")
-assert 'listOf(0 to "Музыка", 2 to "Избранное", 3 to "ТВ")' in main
+assert 'listOf(0 to "Музыка", 2 to "Избранное", 6 to "Русское радио",' in main
+assert '5 to "История", 3 to "ТВ")' in main
 assert 'contentDescription = "Поиск"' in main
 assert 'Text("Что послушаем?' not in home
 assert 'Text("Подборки"' in home and 'Text("Жанры")' in home
