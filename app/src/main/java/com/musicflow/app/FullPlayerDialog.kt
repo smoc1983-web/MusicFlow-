@@ -152,31 +152,6 @@ internal fun FullPlayerDialog(
         }
     }
 
-    fun switchToAlternateSource() {
-        val item = player.currentMediaItem ?: return
-        val extras = item.mediaMetadata.extras ?: return
-        val streams = decodeStreams(extras.getString(MUSIC_STREAMS))
-        if (streams.size < 2 || player.currentMediaItemIndex < 0) return
-        val activeUri = item.localConfiguration?.uri?.toString().orEmpty()
-        val position = player.currentPosition.coerceAtLeast(0L)
-        val active = streams.indexOfFirst { it.uri == activeUri }.coerceAtLeast(0)
-        val next = streams[(active + 1) % streams.size]
-        val updated = item.buildUpon().setUri(next.uri)
-            .setMediaMetadata(item.mediaMetadata.buildUpon().setExtras(
-                Bundle(extras).apply { putString(MUSIC_SOURCE, next.source) }
-            ).build()).build()
-        try {
-            val selected = player.currentMediaItemIndex
-            player.replaceMediaItem(selected, updated)
-            player.seekTo(selected, position)
-            player.prepare()
-            player.play()
-            AppDiagnostics.info("Player", "manual alternate source=" + next.source)
-        } catch (failure: Exception) {
-            AppDiagnostics.failure("Player", "manual alternate source", failure)
-        }
-    }
-
     fun playAlbumSong(song: AlbumSong, album: AlbumListing) {
         if (pendingTrack != null) return
         pendingTrack = song.title
@@ -680,17 +655,6 @@ internal fun FullPlayerDialog(
                                     tint = if (repeat == Player.REPEAT_MODE_OFF)
                                         palette.muted else palette.accent
                                 )
-                            }
-                        }
-                        val playableSources = decodeStreams(
-                            player.currentMediaItem?.mediaMetadata?.extras?.getString(MUSIC_STREAMS)
-                        )
-                        if (playableSources.distinctBy { it.uri }.size > 1) {
-                            TextButton(
-                                onClick = { switchToAlternateSource() },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Другой источник · " + playableSources.size.toString() + " варианта")
                             }
                         }
                         if (pendingNavigation) {

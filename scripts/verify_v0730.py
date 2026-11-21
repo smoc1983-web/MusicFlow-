@@ -33,8 +33,8 @@ assert 'musicKey(actualArtist) != musicKey(performer)' in lyrics
 assert 'abs(length * 1000L - durationMs) > 5_000L' in lyrics
 assert 'LaunchedEffect(active, lines.size)' in lyrics
 assert 'PlayerPage.LYRICS' in full and 'SyncedLyricsScreen(' in full
-assert 'switchToAlternateSource()' in full and 'Другой источник' in full
-assert 'player.replaceMediaItem(selected, updated)' in full
+assert 'switchToAlternateSource' not in full and 'Другой источник' not in full
+assert 'PlayerPage.LYRICS' in full
 assert 'player.addListener(playbackJournal)' in service
 assert 'playbackJournal.restore()' in service and 'playbackJournal.persist()' in service
 assert 'delay(5_000L)' in service
