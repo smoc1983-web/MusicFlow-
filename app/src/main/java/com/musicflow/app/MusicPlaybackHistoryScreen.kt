@@ -43,7 +43,8 @@ internal fun MusicPlaybackHistoryScreen(
                 modifier = Modifier.weight(1f))
             IconButton(onClick = { confirmErase = true },
                 enabled = if (showStats) stats.isNotEmpty() else entries.isNotEmpty()) {
-                Icon(Icons.Filled.DeleteOutline, contentDescription = "Очистить историю",
+                Icon(Icons.Filled.DeleteOutline,
+                    contentDescription = if (showStats) "Очистить статистику" else "Очистить историю",
                     tint = palette.muted)
             }
         }

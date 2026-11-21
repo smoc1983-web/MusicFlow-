@@ -8,7 +8,6 @@ stats=(root/"ListeningStatisticsStore.kt").read_text()
 tracker=(root/"ListeningProgressTracker.kt").read_text()
 assert 'versionCode = 732' in gradle and 'versionName = "0.7.32"' in gradle
 assert 'applicationId = "com.musicflow.preview"' in gradle
-assert 'app/src/test/java' in str(Path("app/src/test/java")) # Kotlin tests are checked below
 assert Path("app/src/test/java/com/musicflow/app/ListeningProgressTrackerTest.kt").is_file()
 assert Path("app/src/test/java/com/musicflow/app/ListeningStatisticsReducerTest.kt").is_file()
 assert 'ListeningStatisticsStore.record(application, current, tick)' in journal
