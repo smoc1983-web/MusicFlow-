@@ -14,7 +14,7 @@ album = (source / "AlbumStreamResolver.kt").read_text(encoding="utf-8")
 assert "val alternatives: List<MusicStream> = emptyList()" in main
 assert 'put("alternatives", encodeStreams(t.alternatives))' in main
 assert 'decodeStreams(obj.optString("alternatives"))' in main
-assert '(original.streams() + track.streams()).distinctBy { it.uri }' in main
+assert '(primary.streams() + secondary.streams()).distinctBy { it.uri }' in main
 assert "putString(MUSIC_STREAMS, encodeStreams(t.streams()))" in main
 assert 'putString(MUSIC_SOURCE, t.id.substringBefore(\':\'))' in main
 assert 'player.addListener(MusicPlaybackRecovery(player, recoveryScope))' in service
