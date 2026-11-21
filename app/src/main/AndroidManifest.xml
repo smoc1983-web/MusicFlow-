@@ -12,7 +12,7 @@
         <package android:name="ru.ozon.fintech.finance" />
     </queries>
     <application
-        android:label="MusicFlow 0.7.19 Preview"
+        android:label="MusicFlow"
         android:icon="@mipmap/ic_launcher_graphite_v19"
         android:roundIcon="@mipmap/ic_launcher_graphite_v19"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
