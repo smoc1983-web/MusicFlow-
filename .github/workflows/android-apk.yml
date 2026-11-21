@@ -73,10 +73,9 @@ jobs:
         run: python3 scripts/verify_v0721.py
       - name: Verify v0.7.22 stable signing and in-app updates
         run: python3 scripts/verify_v0722.py
-      - name: Verify v0.7.24 official VK Music and in-app update
-        run: python3 scripts/verify_v0724.py
-      - name: Verify v0.7.25 VK integrated common search
-        run: python3 scripts/verify_v0725.py
+      # v0.7.24/25 used a WebView, which was intentionally removed.
+      - name: Verify v0.7.26 native authorized VK provider
+        run: python3 scripts/verify_v0726.py
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Upload APK
