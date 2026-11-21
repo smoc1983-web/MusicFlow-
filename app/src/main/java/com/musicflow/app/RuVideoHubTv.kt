@@ -363,19 +363,6 @@ internal fun RuVideoHubTvScreen(
                 )
             }
         }
-        if (activeSourceId == "ruvideohub") {
-            Text(
-                "CUB IPTV — плагин Lampa, не плейлист. Свои ссылки M3U и M3U8 добавляй кнопкой выше.",
-                color = palette.muted, style = MaterialTheme.typography.labelSmall
-            )
-            TextButton(onClick = {
-                runCatching {
-                    context.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse("https://cub.red/iptv"))
-                    )
-                }
-            }) { Text("Настройка плейлистов в CUB") }
-        }
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
