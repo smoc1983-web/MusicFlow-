@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <!-- Keep CPU and Wi-Fi available while audio plays with screen off. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.WAKE_WIFI_LOCK"/>
     <!-- Allow resolving the three verified banking apps on Android 11+. -->
     <queries>
         <package android:name="com.idamob.tinkoff.android" />
