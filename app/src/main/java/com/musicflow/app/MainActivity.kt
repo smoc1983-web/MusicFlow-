@@ -857,6 +857,78 @@ private fun MusicScreen(
         )
     }
     }
+    if (showVkConfiguration) {
+        AlertDialog(
+            onDismissRequest = { showVkConfiguration = false },
+            title = { Text("VK Музыка · нативный источник") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "VK ограничивает доступ к audio.search. Нужен токен приложения, " +
+                            "которому VK разрешил Audio API. Обычный вход через VK ID " +
+                            "не даёт такого разрешения. Пароль аккаунта здесь не вводится.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedTextField(
+                        value = vkTokenInput,
+                        onValueChange = { vkTokenInput = it.trim() },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        label = { Text("Разрешённый VK Audio API токен") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        if (vkConfigured) "Токен сохранён на устройстве в зашифрованном виде."
+                        else "VK пока не участвует в поиске. Настройки других источников не изменены.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    vkStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        TextButton(
+                            enabled = vkConfigured,
+                            onClick = {
+                                scope.launch {
+                                    vkStatus = "Проверка доступа…"
+                                    vkStatus = try {
+                                        VkAudioSource.testAccess()
+                                    } catch (e: Exception) {
+                                        e.message ?: "Не удалось проверить VK API"
+                                    }
+                                }
+                            }
+                        ) { Text("Проверить") }
+                        TextButton(
+                            enabled = vkConfigured,
+                            onClick = {
+                                VkAudioSource.disconnect()
+                                vkConfigured = false
+                                vkStatus = "VK отключён"
+                                vkSourceError = null
+                            }
+                        ) { Text("Отключить") }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    try {
+                        VkAudioSource.saveToken(vkTokenInput)
+                        vkConfigured = true
+                        vkStatus = null
+                        vkSourceError = null
+                        showVkConfiguration = false
+                        vkTokenInput = ""
+                        if (appliedSearch.isNotBlank()) fetch(appliedSearch)
+                    } catch (e: Exception) {
+                        vkStatus = e.message ?: "Не удалось сохранить токен VK"
+                    }
+                }, enabled = vkTokenInput.isNotBlank()) { Text("Сохранить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showVkConfiguration = false }) { Text("Закрыть") }
+            }
+        )
+    }
     if (showAboutDialog) {
         MusicFlowAboutDialog(onDismiss = { showAboutDialog = false })
     }
