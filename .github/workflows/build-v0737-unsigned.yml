@@ -30,6 +30,7 @@ jobs:
           python3 scripts/verify_v0737.py
           python3 scripts/verify_v0735.py
           python3 scripts/verify_v0736.py
+          # Chart queue and existing player regression checks run before release compilation.
           python3 scripts/verify_v0734.py
           python3 scripts/verify_v0730.py
           grep -F 'applicationId = "com.musicflow.preview"' app/build.gradle.kts
