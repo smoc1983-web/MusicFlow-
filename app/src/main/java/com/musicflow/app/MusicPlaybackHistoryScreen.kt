@@ -27,9 +27,12 @@ internal fun MusicPlaybackHistoryScreen(
     val context = LocalContext.current
     val palette = LocalMusicFlowPalette.current
     var entries by remember { mutableStateOf(PlaybackJournal.history(context)) }
+    var stats by remember { mutableStateOf(ListeningStatisticsStore.entries(context)) }
+    var showStats by remember { mutableStateOf(false) }
     var confirmErase by remember { mutableStateOf(false) }
-    LaunchedEffect(activeId) {
+    LaunchedEffect(activeId, showStats) {
         entries = PlaybackJournal.history(context)
+        stats = ListeningStatisticsStore.entries(context)
     }
     Column(modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -38,32 +41,43 @@ internal fun MusicPlaybackHistoryScreen(
             Text("История прослушивания", fontWeight = FontWeight.Bold,
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.weight(1f))
-            IconButton(onClick = { confirmErase = true }, enabled = entries.isNotEmpty()) {
+            IconButton(onClick = { confirmErase = true },
+                enabled = if (showStats) stats.isNotEmpty() else entries.isNotEmpty()) {
                 Icon(Icons.Filled.DeleteOutline, contentDescription = "Очистить историю",
                     tint = palette.muted)
             }
         }
-        Text("Хранится только на устройстве. Нажмите на запись, чтобы прослушать её.",
-            color = palette.muted, style = MaterialTheme.typography.bodySmall)
-        Spacer(Modifier.height(10.dp))
-        if (entries.isEmpty()) {
-            Text("Пока нет прослушанных композиций", color = palette.muted)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = !showStats, onClick = { showStats = false },
+                label = { Text("История") })
+            FilterChip(selected = showStats, onClick = { showStats = true },
+                label = { Text("Статистика") })
         }
-        LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(entries, key = { it.id }) { track ->
-                Surface(color = palette.surface, shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().clickable { onPlay(track) }) {
-                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.PlayArrow, contentDescription = "Воспроизвести",
-                            tint = palette.accent)
-                        Spacer(Modifier.width(9.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(track.title, maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                fontWeight = if (track.id == activeId) FontWeight.Bold else FontWeight.Normal)
-                            Text(track.artist, maxLines = 1,
-                                overflow = TextOverflow.Ellipsis, color = palette.muted,
-                                style = MaterialTheme.typography.bodySmall)
+        if (showStats) {
+            ListeningInsightsPanel(stats, Modifier.weight(1f).fillMaxWidth())
+        } else {
+            Text("Хранится только на устройстве. Нажмите на запись, чтобы прослушать её.",
+                color = palette.muted, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(10.dp))
+            if (entries.isEmpty()) {
+                Text("Пока нет прослушанных композиций", color = palette.muted)
+            }
+            LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(entries, key = { it.id }) { track ->
+                    Surface(color = palette.surface, shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().clickable { onPlay(track) }) {
+                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.PlayArrow, contentDescription = "Воспроизвести",
+                                tint = palette.accent)
+                            Spacer(Modifier.width(9.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(track.title, maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    fontWeight = if (track.id == activeId) FontWeight.Bold else FontWeight.Normal)
+                                Text(track.artist, maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis, color = palette.muted,
+                                    style = MaterialTheme.typography.bodySmall)
+                            }
                         }
                     }
                 }
@@ -72,12 +86,19 @@ internal fun MusicPlaybackHistoryScreen(
     }
     if (confirmErase) AlertDialog(
         onDismissRequest = { confirmErase = false },
-        title = { Text("Очистить историю?") },
-        text = { Text("Это удалит только историю, но не избранное и очередь.") },
+        title = { Text(if (showStats) "Очистить статистику?" else "Очистить историю?") },
+        text = { Text(if (showStats)
+            "Удаляются только счётчики прослушивания. Избранное и очередь сохранятся."
+            else "Это удалит только историю, но не избранное и очередь.") },
         confirmButton = {
             TextButton(onClick = {
-                PlaybackJournal.clearHistory(context)
-                entries = emptyList()
+                if (showStats) {
+                    ListeningStatisticsStore.clear(context)
+                    stats = emptyList()
+                } else {
+                    PlaybackJournal.clearHistory(context)
+                    entries = emptyList()
+                }
                 confirmErase = false
             }) { Text("Очистить") }
         },
