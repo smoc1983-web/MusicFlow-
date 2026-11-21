@@ -258,8 +258,9 @@ internal object MusicFlowUpdates {
             Uri.parse("package:" + context.packageName))
 
     fun installerIntent(uri: Uri): Intent =
-        Intent(Intent.ACTION_INSTALL_PACKAGE)
-            .setData(uri)
-            .setClipData(ClipData.newRawUri("MusicFlow update", uri))
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+            data = uri
+            clipData = ClipData.newRawUri("MusicFlow update", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
 }
