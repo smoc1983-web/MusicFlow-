@@ -29,7 +29,7 @@ jobs:
       - name: Retrieve exactly validated unsigned APK
         shell: bash
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/unsigned" out
@@ -65,7 +65,7 @@ jobs:
       - name: Publish GitHub release for in-app updater
         shell: bash
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if gh release view v0.7.34 -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
