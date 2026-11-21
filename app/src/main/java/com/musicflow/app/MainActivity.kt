@@ -266,6 +266,7 @@ private fun MusicScreen(
     var sectionMenu by remember { mutableStateOf(false) }
     var showAppearanceMenu by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
+    var showEqualizerDialog by remember { mutableStateOf(false) }
     var showThemePicker by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
@@ -529,6 +530,10 @@ private fun MusicScreen(
                     DropdownMenuItem(text = { Text("Оформление") }, onClick = {
                         showAppearanceMenu = false
                         showThemePicker = true
+                    })
+                    DropdownMenuItem(text = { Text("Звук · эквалайзер") }, onClick = {
+                        showAppearanceMenu = false
+                        showEqualizerDialog = true
                     })
                     DropdownMenuItem(text = { Text("Диагностика") }, onClick = {
                         showAppearanceMenu = false
@@ -843,6 +848,9 @@ private fun MusicScreen(
     }
     if (showAboutDialog) {
         MusicFlowAboutDialog(onDismiss = { showAboutDialog = false })
+    }
+    if (showEqualizerDialog) {
+        MusicFlowEqualizerDialog(onDismiss = { showEqualizerDialog = false })
     }
     if (showThemePicker) {
         AlertDialog(
