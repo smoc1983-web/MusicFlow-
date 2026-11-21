@@ -1006,12 +1006,18 @@ internal fun combineMusicTracks(existing: List<Track>, incoming: List<Track>): L
             continue
         }
         val original = combined[index]
-        combined[index] = original.copy(
-            artwork = original.artwork?.takeIf { it.isNotBlank() } ?: track.artwork,
-            collectionTitle = original.collectionTitle?.takeIf { it.isNotBlank() }
-                ?: track.collectionTitle,
-            durationSec = original.durationSec.takeIf { it > 0 } ?: track.durationSec,
-            alternatives = (original.streams() + track.streams()).distinctBy { it.uri }
+        // Prefer an authorized VK stream when present, but preserve every other
+        // source as a native Media3 fallback. Refresh VK URLs on repeated searches.
+        val preferIncoming = track.id.startsWith("vk:") &&
+            (!original.id.startsWith("vk:") || original.id == track.id)
+        val primary = if (preferIncoming) track else original
+        val secondary = if (preferIncoming) original else track
+        combined[index] = primary.copy(
+            artwork = primary.artwork?.takeIf { it.isNotBlank() } ?: secondary.artwork,
+            collectionTitle = primary.collectionTitle?.takeIf { it.isNotBlank() }
+                ?: secondary.collectionTitle,
+            durationSec = primary.durationSec.takeIf { it > 0 } ?: secondary.durationSec,
+            alternatives = (primary.streams() + secondary.streams()).distinctBy { it.uri }
                 .drop(1).take(11)
         )
     }
