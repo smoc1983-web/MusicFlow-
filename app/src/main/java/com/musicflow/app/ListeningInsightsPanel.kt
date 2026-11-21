@@ -28,8 +28,8 @@ internal fun ListeningInsightsPanel(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MetricCard("${totalMinutes / 60} ч ${totalMinutes % 60} мин",
                 "Прослушано", Modifier.weight(1f))
-            MetricCard("$"+"totalPlays", "Запусков", Modifier.weight(1f))
-            MetricCard("$"+"{records.size}", "Записей", Modifier.weight(1f))
+            MetricCard(totalPlays.toString(), "Запусков", Modifier.weight(1f))
+            MetricCard(records.size.toString(), "Записей", Modifier.weight(1f))
         }
         Text("Время учитывается при реальном воспроизведении. Паузы и перемотка " +
             "не добавляют минуты. Данные сохраняются только на телефоне.",
