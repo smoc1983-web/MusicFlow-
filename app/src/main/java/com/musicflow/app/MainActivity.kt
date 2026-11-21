@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppDiagnostics.initialize(this)
-        AppDiagnostics.info("App", "MusicFlow 0.7.21 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
+        AppDiagnostics.info("App", "MusicFlow 0.7.24 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener({
@@ -532,6 +532,7 @@ private fun MusicScreen(
                     Text(when (tab) {
                         2 -> "Избранное"
                         3 -> "ТВ"
+                        5 -> "VK Музыка"
                         else -> "Музыка"
                     })
                     Spacer(Modifier.width(6.dp))
@@ -543,10 +544,11 @@ private fun MusicScreen(
                     modifier = Modifier.musicFlowMenuSurface(palette),
                     containerColor = palette.surface,
                     shadowElevation = 14.dp) {
-                    listOf(0 to "Музыка", 2 to "Избранное", 3 to "ТВ")
+                    listOf(0 to "Музыка", 2 to "Избранное", 3 to "ТВ", 5 to "VK Музыка")
                         .forEach { (index, label) ->
                             DropdownMenuItem(text = { Text(label) },
                                 onClick = {
+                                    if (index == 5) player?.pause()
                                     tab = index
                                     sectionMenu = false
                                 })
@@ -576,6 +578,8 @@ private fun MusicScreen(
             RuVideoHubTvScreen(player = player, modifier = Modifier.weight(1f))
         } else if (tab == 4) {
             DiagnosticsScreen(modifier = Modifier.weight(1f))
+        } else if (tab == 5) {
+            VkMusicScreen(modifier = Modifier.weight(1f))
         } else {
         if (tab == 1) {
             Spacer(Modifier.height(6.dp))
@@ -738,7 +742,7 @@ private fun MusicScreen(
 
 
         }
-        if (trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
+        if (tab != 5 && trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
             val miniCover by rememberCoverArt(trackArtist, trackTitle, currentArtwork)
             Column(
                 modifier = Modifier.fillMaxWidth()
@@ -812,7 +816,7 @@ private fun MusicScreen(
         }
     }
     // Floating TV controls do not occupy list height. Channel rows scroll below.
-    if (currentMediaId.startsWith("ruvideo:") && player != null) {
+    if (tab != 5 && currentMediaId.startsWith("ruvideo:") && player != null) {
         TvMiniPlayer(
             player = player,
             channelTitle = trackTitle,
