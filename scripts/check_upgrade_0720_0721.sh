@@ -11,11 +11,14 @@ signer="${ANDROID_HOME}/build-tools/36.0.0/apksigner"
 
 old_badging="$("$aapt" dump badging "$old" | sed -n '1p')"
 new_badging="$("$aapt" dump badging "$new" | sed -n '1p')"
-extract() { sed -n "s/.*$2='\([^']*\)'.*/\1/p" <<< "$1"; }
-old_package="$(extract "$old_badging" name)"
-new_package="$(extract "$new_badging" name)"
-old_code="$(extract "$old_badging" versionCode)"
-new_code="$(extract "$new_badging" versionCode)"
+# Parse package name separately: greedy "name" would also match
+# "compileSdkVersionCodename" in aapt output.
+extract_package() { sed -n "s/^package: name='\([^']*\)'.*/\1/p" <<< "$1"; }
+extract_code() { sed -n "s/^package: .*versionCode='\([^']*\)'.*/\1/p" <<< "$1"; }
+old_package="$(extract_package "$old_badging")"
+new_package="$(extract_package "$new_badging")"
+old_code="$(extract_code "$old_badging")"
+new_code="$(extract_code "$new_badging")"
 old_cert="$("$signer" verify --print-certs "$old" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | sed -n '1p')"
 new_cert="$("$signer" verify --print-certs "$new" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | sed -n '1p')"
 
