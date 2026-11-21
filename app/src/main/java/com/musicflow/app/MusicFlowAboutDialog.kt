@@ -200,14 +200,6 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
                 }
                 Text("Для обновления поверх текущей версии нужен тот же идентификатор приложения и ключ подписи.",
                     color = palette.muted, style = MaterialTheme.typography.labelSmall)
-                OutlinedButton(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { openLink(MusicFlowUpdates.RELEASES_PAGE) }
-                ) {
-                    Icon(Icons.Filled.OpenInNew, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("История выпусков")
-                }
                 HorizontalDivider(color = palette.accent.copy(alpha = 0.18f))
                 Text("Поддержать разработчика", fontWeight = FontWeight.SemiBold,
                     color = palette.foreground)
