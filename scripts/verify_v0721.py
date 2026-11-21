@@ -1,4 +1,4 @@
-"""MusicFlow 0.7.21: rounded menus and audited in-app upgrade tests."""
+"""MusicFlow 0.7.22: rounded menus and audited in-app upgrade tests."""
 from pathlib import Path
 
 root = Path("app/src/main")
@@ -21,20 +21,20 @@ assert "shadowElevation = 14.dp" in main and "shadowElevation = 14.dp" in home
 assert "shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)" in about
 assert "shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)" in autoupdate
 
-assert 'versionName = "0.7.21"' in gradle
-assert "versionCode = 721" in gradle
+assert 'versionName = "0.7.22"' in gradle
+assert "versionCode = 722" in gradle
 assert 'applicationId = "com.musicflow.preview"' in gradle
 assert 'incoming.packageName != context.packageName' in updater
 assert "signatures(incoming)" in updater
 assert "MusicFlowUpdates.latestRelease()" in autoupdate
 assert "MusicFlowUpdates.downloadVerified(context, update)" in autoupdate
 assert "MusicFlowUpdates.installerIntent(uri)" in autoupdate
-assert "scripts/check_upgrade_0720_0721.sh" in workflow
-assert "reactivecircus/android-emulator-runner@v2" in workflow
-assert "gh run download 44873126289" in workflow
+assert "scripts/verify_v0722.py" in workflow
+assert "gradle --no-daemon :app:assembleDebug" in workflow
+assert "MusicFlow-apk" in workflow
 assert 'apksigner' in check
 assert "old_cert" in check and "new_cert" in check
 assert "compatible=false" in check
 assert "Do NOT uninstall v0.7.20" in check
 
-print("MusicFlow v0.7.21 rounded UI and Android upgrade checks PASS")
+print("MusicFlow v0.7.22 rounded UI and Android upgrade checks PASS")

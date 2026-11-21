@@ -31,5 +31,5 @@ assert "fullscreenRequested = true" in bridge
 assert "mainIsResumed" in bridge
 assert "mini?.get()?.player = null" in bridge
 assert "if (!mainIsResumed || fullscreenRequested" in bridge
-assert 'versionName = "0.7.21"' in gradle
+assert 'versionName = "0.7.22"' in gradle
 print("MusicFlow 0.7.14 TV surface handoff static checks PASS")

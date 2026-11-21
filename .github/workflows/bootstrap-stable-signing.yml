@@ -1,0 +1,127 @@
+name: Bootstrap MusicFlow stable signing and update test
+on:
+  push:
+    branches: ["feature/musicflow-v0.7.22-stable-signing-bootstrap"]
+    paths: [".github/workflows/bootstrap-stable-signing.yml"]
+concurrency:
+  group: musicflow-bootstrap-0.7.22
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout release sources
+        uses: actions/checkout@v4
+      - name: Prepare JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android SDK
+        run: yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Guard against accidental signing-key replacement
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: |
+          if gh release view v0.7.22 >/dev/null 2>&1; then
+            echo "::error::MusicFlow 0.7.22 already published. Never generate a replacement signing key."
+            exit 1
+          fi
+      - name: Create permanent Android signing key (one time)
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          PASSWORD="$(openssl rand -hex 32)"
+          echo "::add-mask::$PASSWORD"
+          KEYSTORE="$RUNNER_TEMP/musicflow-release.jks"
+          keytool -genkeypair -noprompt \
+            -keystore "$KEYSTORE" -storetype PKCS12 \
+            -alias musicflow -keyalg RSA -keysize 3072 \
+            -validity 12000 -storepass "$PASSWORD" -keypass "$PASSWORD" \
+            -dname "CN=MusicFlow Official, OU=Android, O=MusicFlow, C=US"
+          printf '%s\n' "$PASSWORD" > "$RUNNER_TEMP/musicflow-signing-password.txt"
+          echo "MUSICFLOW_SIGNING_KEYSTORE=$KEYSTORE" >> "$GITHUB_ENV"
+          echo "MUSICFLOW_SIGNING_STORE_PASSWORD=$PASSWORD" >> "$GITHUB_ENV"
+          echo "MUSICFLOW_SIGNING_KEY_ALIAS=musicflow" >> "$GITHUB_ENV"
+          echo "MUSICFLOW_SIGNING_KEY_PASSWORD=$PASSWORD" >> "$GITHUB_ENV"
+      - name: Build permanently signed MusicFlow 0.7.22 baseline
+        run: |
+          set -euo pipefail
+          gradle --no-daemon :app:assembleRelease
+          APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          cp "$APK" MusicFlow_0.7.22.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" |
+            grep "name='com.musicflow.preview' versionCode='722'"
+      - name: Build test update 0.7.23 with THE SAME signing key
+        run: |
+          set -euo pipefail
+          sed -i 's/versionCode = 722/versionCode = 723/' app/build.gradle.kts
+          sed -i 's/versionName = "0.7.22"/versionName = "0.7.23"/' app/build.gradle.kts
+          gradle --no-daemon :app:assembleRelease
+          APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          cp "$APK" MusicFlow_0.7.23.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" |
+            grep "name='com.musicflow.preview' versionCode='723'"
+      - name: Verify the two installable APKs share signing identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          SIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          A="$("$SIGNER" verify --print-certs MusicFlow_0.7.22.apk |
+            sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          B="$("$SIGNER" verify --print-certs MusicFlow_0.7.23.apk |
+            sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          test -n "$A"
+          test "$A" = "$B"
+          printf 'Package: com.musicflow.preview\nVersions: 722 -> 723\nSigner SHA-256: %s\n' "$A" > signing-public-fingerprint.txt
+          echo "Validated both MusicFlow APKs share one long-lived signing certificate."
+      - name: Encrypt signing key backup (never upload plaintext)
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/signing-backup"
+          cp "$RUNNER_TEMP/musicflow-release.jks" "$RUNNER_TEMP/signing-backup/musicflow-release.jks"
+          cp "$RUNNER_TEMP/musicflow-signing-password.txt" "$RUNNER_TEMP/signing-backup/signing-password.txt"
+          cp signing-public-fingerprint.txt "$RUNNER_TEMP/signing-backup/signing-public-fingerprint.txt"
+          tar -czf "$RUNNER_TEMP/musicflow-signing-plaintext.tar.gz" -C "$RUNNER_TEMP/signing-backup" .
+          openssl cms -encrypt -binary -aes-256-cbc \
+            -in "$RUNNER_TEMP/musicflow-signing-plaintext.tar.gz" \
+            -out musicflow-signing-backup.cms -outform DER \
+            .github/signing/backup_receiver_certificate.pem
+          test -s musicflow-signing-backup.cms
+      - name: Retain baseline, update test APK and encrypted backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-stable-signing-0.7.22
+          path: |
+            MusicFlow_0.7.22.apk
+            MusicFlow_0.7.23.apk
+            musicflow-signing-backup.cms
+            signing-public-fingerprint.txt
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish both signed APKs to in-app update channel
+        env:
+          GH_TOKEN: \${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "v0.7.22" MusicFlow_0.7.22.apk \
+            --target "$GITHUB_SHA" --title "MusicFlow 0.7.22" \
+            --notes "Постоянная подпись MusicFlow. Начальная установка после резервного копирования и удаления ранее подписанной другим ключом версии."
+          gh release create "v0.7.23" MusicFlow_0.7.23.apk \
+            --target "$GITHUB_SHA" --title "MusicFlow 0.7.23 · проверка обновления" \
+            --notes "Тестовое обновление для проверки установки непосредственно внутри MusicFlow 0.7.22. Идентичный пакет и ключ подписи; обновлён только номер версии."
