@@ -1,8 +1,5 @@
 name: Publish MusicFlow 0.7.27 in-app update
 on:
-  push:
-    branches: ["feature/musicflow-v0.7.27-reliable-updates"]
-    paths: [".github/workflows/publish-v0727-inapp.yml"]
   workflow_dispatch:
 permissions:
   contents: write
@@ -26,20 +23,30 @@ jobs:
           gradle-version: "8.13"
       - name: Verify updater source contract
         run: python3 scripts/verify_v0727.py
-      - name: Require existing permanent signing key
+      - name: Restore original signing key from encrypted repository backup
         env:
-          KEYSTORE_BASE64: ${{ secrets.MUSICFLOW_SIGNING_KEYSTORE_BASE64 }}
+          BACKUP_PASSPHRASE: ${{ secrets.MUSICFLOW_SIGNING_BACKUP_PASSPHRASE }}
           STORE_PASSWORD: ${{ secrets.MUSICFLOW_SIGNING_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.MUSICFLOW_SIGNING_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.MUSICFLOW_SIGNING_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          if [[ -z "$KEYSTORE_BASE64" || -z "$STORE_PASSWORD" || -z "$KEY_ALIAS" || -z "$KEY_PASSWORD" ]]; then
-            echo "::error::Stable signing secrets are missing. Upload the ORIGINAL v0.7.22-v0.7.25 key to GitHub Actions secrets; never generate a replacement."
+          if [[ -z "$BACKUP_PASSPHRASE" || -z "$STORE_PASSWORD" || -z "$KEY_ALIAS" || -z "$KEY_PASSWORD" ]]; then
+            echo "::error::Set all four signing secrets before releasing. See SIGNING_RECOVERY_RU.md. Never commit passwords or the plaintext JKS."
             exit 1
           fi
           umask 077
-          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/musicflow-release.jks"
+          base64 -d .github/signing/MusicFlow_signing_release.jks.enc.b64 > "$RUNNER_TEMP/musicflow-release.jks.enc"
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 350000 \
+            -in "$RUNNER_TEMP/musicflow-release.jks.enc" \
+            -out "$RUNNER_TEMP/musicflow-release.jks" \
+            -pass env:BACKUP_PASSPHRASE
+          chmod 600 "$RUNNER_TEMP/musicflow-release.jks"
+          ACTUAL=$(keytool -list -v -keystore "$RUNNER_TEMP/musicflow-release.jks" \
+            -storepass:env STORE_PASSWORD | sed -n 's/^[[:space:]]*SHA256:[[:space:]]*//p' | head -1 | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          test "$ACTUAL" = "c461ee635d5b295ef6c765e1ae533d0079dc6e53cb2632a11a1b445773752410"
+          test "$KEY_ALIAS" = "musicflow"
+          echo "Original MusicFlow signing certificate verified."
           echo "MUSICFLOW_SIGNING_KEYSTORE=$RUNNER_TEMP/musicflow-release.jks" >> "$GITHUB_ENV"
           echo "MUSICFLOW_SIGNING_STORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
           echo "MUSICFLOW_SIGNING_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
