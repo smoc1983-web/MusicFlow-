@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.MoreVert
@@ -377,6 +378,62 @@ private fun MusicScreen(
             player?.currentMediaItem?.mediaId?.startsWith("ruvideo:") == true &&
             TvPlaybackHandoff.snapshot() != null) {
             openTvFullscreen()
+        }
+    }
+
+    fun updateActiveMedia(item: MediaItem?) {
+        // React to Media3 transitions immediately. The old polling-only path
+        // could display the previous title/cover for up to 650 ms.
+        currentMediaId = item?.mediaId.orEmpty()
+        currentArtwork = item?.mediaMetadata?.artworkUri?.toString()
+        trackTitle = item?.mediaMetadata?.title?.toString().orEmpty()
+        trackArtist = item?.mediaMetadata?.artist?.toString().orEmpty()
+    }
+
+    DisposableEffect(player) {
+        val active = player
+        if (active == null) {
+            onDispose { }
+        } else {
+            val listener = object : androidx.media3.common.Player.Listener {
+                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    updateActiveMedia(mediaItem)
+                }
+                override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
+                    updateActiveMedia(active.currentMediaItem)
+                }
+            }
+            active.addListener(listener)
+            updateActiveMedia(active.currentMediaItem)
+            onDispose { active.removeListener(listener) }
+        }
+    }
+
+    // Preload images for the next chart entries while this song is playing.
+    // CoverLookup uses a bounded IO semaphore and a persistent positive cache.
+    // No audio streams are requested here.
+    LaunchedEffect(player, currentMediaId) {
+        val active = player ?: return@LaunchedEffect
+        if (currentMediaId.isBlank() ||
+            active.currentMediaItem?.mediaMetadata?.extras
+                ?.getBoolean(MUSIC_CHART_PLAYLIST, false) != true) return@LaunchedEffect
+        val next = active.currentMediaItemIndex
+        for (index in (next + 1)..minOf(next + 2, active.mediaItemCount - 1)) {
+            val neighbor = active.getMediaItemAt(index).mediaMetadata
+            val nextArtist = neighbor.artist?.toString().orEmpty()
+            val nextTitle = neighbor.title?.toString().orEmpty()
+            val provided = neighbor.artworkUri?.toString()
+            if (nextArtist.isNotBlank() && nextTitle.isNotBlank()) {
+                launch {
+                    runCatching {
+                        CoverLookup.resolve(context, nextArtist, nextTitle, provided)
+                    }.onFailure {
+                        if (it !is CancellationException) {
+                            AppDiagnostics.failure("Cover", "prefetch next chart artwork", it)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -853,12 +910,23 @@ private fun MusicScreen(
                         modifier = Modifier.weight(1f).clickable { expandedPlayer = true },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Image(
-                            painter = rememberAsyncImagePainter(miniCover),
-                            contentDescription = "Обложка текущей композиции",
-                            contentScale = ContentScale.Crop,
+                        Box(
                             modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
-                        )
+                                .background(palette.surface),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.MusicNote, contentDescription = null,
+                                tint = palette.accent.copy(alpha = 0.6f),
+                                modifier = Modifier.size(26.dp))
+                            if (!miniCover.isNullOrBlank()) {
+                                Image(
+                                    painter = rememberAsyncImagePainter(miniCover),
+                                    contentDescription = "Обложка текущей композиции",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        }
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(trackTitle, fontWeight = FontWeight.SemiBold, maxLines = 1,
