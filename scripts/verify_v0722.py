@@ -1,4 +1,4 @@
-"""Stable MusicFlow 0.7.25 and 0.7.23 APK update baseline static checks."""
+"""Stable MusicFlow 0.7.26 and 0.7.23 APK update baseline static checks."""
 from pathlib import Path
 src = Path("app/src/main/java/com/musicflow/app")
 gradle = Path("app/build.gradle.kts").read_text(encoding="utf-8")
@@ -8,8 +8,8 @@ about = (src / "MusicFlowAboutDialog.kt").read_text(encoding="utf-8")
 workflow = Path(".github/workflows/bootstrap-stable-signing.yml").read_text(encoding="utf-8")
 publish = Path(".github/workflows/publish-signed-apk.yml").read_text(encoding="utf-8")
 assert 'applicationId = "com.musicflow.preview"' in gradle
-assert 'versionCode = 725' in gradle
-assert 'versionName = "0.7.25"' in gradle
+assert 'versionCode = 726' in gradle
+assert 'versionName = "0.7.26"' in gradle
 assert 'create("musicflowRelease")' in gradle
 assert 'signingConfig = signingConfigs.getByName("musicflowRelease")' in gradle
 for key in ("MUSICFLOW_SIGNING_KEYSTORE", "MUSICFLOW_SIGNING_STORE_PASSWORD",
@@ -26,4 +26,4 @@ assert "app:assembleRelease" in workflow
 assert "apksigner" in workflow
 assert "v0.7.23" in workflow
 assert "MUSICFLOW_SIGNING_KEYSTORE_BASE64" in publish
-print("MusicFlow v0.7.25 static signing and update prerequisites PASS")
+print("MusicFlow v0.7.26 static signing and update prerequisites PASS")
