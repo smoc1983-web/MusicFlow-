@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppDiagnostics.initialize(this)
-        AppDiagnostics.info("App", "MusicFlow 0.7.18 Preview launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
+        AppDiagnostics.info("App", "MusicFlow 0.7.20 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener({
@@ -144,6 +144,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(colorScheme = scheme) {
                 CompositionLocalProvider(LocalMusicFlowPalette provides palette) {
                     Surface(color = palette.background) {
+                        Box(Modifier.fillMaxSize()) {
                         MusicScreen(
                             player = playerState.value,
                             saved = { loadFavorites() },
@@ -155,6 +156,8 @@ class MainActivity : ComponentActivity() {
                                     .putString("ui_theme", selected.name).apply()
                             }
                         )
+                        MusicFlowAutoUpdate()
+                        }
                     }
                 }
             }
