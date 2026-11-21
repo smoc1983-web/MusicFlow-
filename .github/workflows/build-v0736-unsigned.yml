@@ -28,6 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/verify_v0736.py
+          python3 scripts/verify_v0735.py
           python3 scripts/verify_v0734.py
           python3 scripts/verify_v0730.py
           grep -F 'applicationId = "com.musicflow.preview"' app/build.gradle.kts
