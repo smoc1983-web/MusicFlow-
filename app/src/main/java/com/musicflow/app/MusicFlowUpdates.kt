@@ -86,7 +86,7 @@ internal object MusicFlowUpdates {
                 val tag = release.optString("tag_name")
                 // Keep in-app upgrades working after version 0.7.x.
                 // Our Android versionCode convention is major*10000 + minor*100 + patch.
-                val match = Regex("""^v?(\\d+)\\.(\\d+)\\.(\\d+)(?:[-+].*)?$""")
+                val match = Regex("""^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$""")
                     .matchEntire(tag) ?: continue
                 val major = match.groupValues[1].toLongOrNull() ?: continue
                 val minor = match.groupValues[2].toLongOrNull() ?: continue
