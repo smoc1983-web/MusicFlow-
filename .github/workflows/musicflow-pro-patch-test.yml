@@ -1,0 +1,67 @@
+name: Build isolated MusicFlow Pro micro-patch test
+
+on:
+  push:
+    branches: ["feature/musicflow-pro-test-app"]
+    paths:
+      - "pro-patch-test/**"
+      - ".github/workflows/musicflow-pro-patch-test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  demo-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout demo branch
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Ensure Android SDK
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      - name: Fetch demo patch and original WAV from separate branch
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/pro-fixture"
+          SOURCE="https://raw.githubusercontent.com/smoc1983-web/MusicFlow-/feature/musicflow-pro-demo-patch/pro-patch-test/patch"
+          curl --fail --location --silent --show-error --retry 3 "$SOURCE/activation.json" -o "$RUNNER_TEMP/pro-fixture/activation.json"
+          curl --fail --location --silent --show-error --retry 3 "$SOURCE/demo-track.wav.b64" -o "$RUNNER_TEMP/pro-fixture/demo-track.wav.b64"
+          python3 pro-patch-test/verify_fixture.py "$RUNNER_TEMP/pro-fixture/activation.json" "$RUNNER_TEMP/pro-fixture/demo-track.wav.b64"
+
+      - name: Build independent test APK
+        run: gradle --no-daemon -p pro-patch-test :app:assembleDebug
+
+      - name: Verify package ID and APK signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="pro-patch-test/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "name='com.musicflow.patchtest'"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          mkdir -p dist
+          cp "$APK" dist/MusicFlow-Pro-Patch-TEST.apk
+          sha256sum dist/*.apk > dist/SHA256SUMS.txt
+
+      - name: Upload test APK (not a production release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-Pro-Patch-DEMO-apk
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error
