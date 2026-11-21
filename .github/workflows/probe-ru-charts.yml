@@ -24,7 +24,7 @@ jobs:
               for needle in ['ДИНАСТИЯ','Земляк','chart-row','<table','<tbody','<ol','/charts/track/','Сумма слушателей','track-title','chart-track']:
                 at=s.find(needle)
                 print('NEEDLE',needle,at,'FRAG',re.sub(r'\s+',' ',s[max(0,at-250):at+350])[:540] if at>=0 else '')
-              for m in list(re.finditer(r'<(?:article|li|tr)\b',s,re.I))[:8]:
-                print('ELEMENT',re.sub(r'\s+',' ',s[m.start():m.start()+450])[:440])
+              for m in list(re.finditer(r'<li class="row"',s,re.I))[:2]:
+                print('ELEMENT',re.sub(r'\s+',' ',s[m.start():m.start()+2500])[:2480])
             except Exception as e: print('FAIL',url,type(e).__name__,str(e)[:200])
           PY
