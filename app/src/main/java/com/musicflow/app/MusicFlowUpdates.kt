@@ -84,10 +84,15 @@ internal object MusicFlowUpdates {
                 val release = releases.optJSONObject(i) ?: continue
                 if (release.optBoolean("draft", true)) continue
                 val tag = release.optString("tag_name")
-                val match = Regex("""^v?0\.7\.(\d+)(?:[-.].*)?$""").matchEntire(tag)
-                    ?: continue
-                val patch = match.groupValues[1].toIntOrNull() ?: continue
-                val code = 700L + patch
+                // Keep in-app upgrades working after version 0.7.x.
+                // Our Android versionCode convention is major*10000 + minor*100 + patch.
+                val match = Regex("""^v?(\\d+)\\.(\\d+)\\.(\\d+)(?:[-+].*)?$""")
+                    .matchEntire(tag) ?: continue
+                val major = match.groupValues[1].toLongOrNull() ?: continue
+                val minor = match.groupValues[2].toLongOrNull() ?: continue
+                val patch = match.groupValues[3].toLongOrNull() ?: continue
+                if (minor !in 0..99 || patch !in 0..99 || major > 100_000) continue
+                val code = major * 10_000L + minor * 100L + patch
                 val assets = release.optJSONArray("assets") ?: continue
                 for (j in 0 until assets.length()) {
                     val asset = assets.optJSONObject(j) ?: continue
