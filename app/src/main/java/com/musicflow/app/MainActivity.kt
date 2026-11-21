@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppDiagnostics.initialize(this)
-        AppDiagnostics.info("App", "MusicFlow 0.7.24 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
+        AppDiagnostics.info("App", "MusicFlow 0.7.25 launched; Android SDK=" + android.os.Build.VERSION.SDK_INT)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener({
@@ -244,6 +244,8 @@ private fun MusicScreen(
     var search by remember { mutableStateOf("") }
     var appliedSearch by remember { mutableStateOf("") }
     var searchMode by remember { mutableStateOf(SearchMode.ALL) }
+    // VK is an integrated search option, not a separate navigation tab.
+    var vkInlineSearch by remember { mutableStateOf(false) }
     var sortMode by remember { mutableStateOf(SortMode.RELEVANCE) }
     var tab by remember { mutableIntStateOf(0) }
     var sectionMenu by remember { mutableStateOf(false) }
@@ -532,7 +534,6 @@ private fun MusicScreen(
                     Text(when (tab) {
                         2 -> "Избранное"
                         3 -> "ТВ"
-                        5 -> "VK Музыка"
                         else -> "Музыка"
                     })
                     Spacer(Modifier.width(6.dp))
@@ -544,11 +545,10 @@ private fun MusicScreen(
                     modifier = Modifier.musicFlowMenuSurface(palette),
                     containerColor = palette.surface,
                     shadowElevation = 14.dp) {
-                    listOf(0 to "Музыка", 2 to "Избранное", 3 to "ТВ", 5 to "VK Музыка")
+                    listOf(0 to "Музыка", 2 to "Избранное", 3 to "ТВ")
                         .forEach { (index, label) ->
                             DropdownMenuItem(text = { Text(label) },
                                 onClick = {
-                                    if (index == 5) player?.pause()
                                     tab = index
                                     sectionMenu = false
                                 })
@@ -578,12 +578,10 @@ private fun MusicScreen(
             RuVideoHubTvScreen(player = player, modifier = Modifier.weight(1f))
         } else if (tab == 4) {
             DiagnosticsScreen(modifier = Modifier.weight(1f))
-        } else if (tab == 5) {
-            VkMusicScreen(modifier = Modifier.weight(1f))
         } else {
         if (tab == 1) {
             Spacer(Modifier.height(6.dp))
-            Row(
+            if (!vkInlineSearch) Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
@@ -617,6 +615,7 @@ private fun MusicScreen(
                 Text("Искать")
             }
             Spacer(Modifier.height(6.dp))
+            if (!vkInlineSearch) {
             Text("Сортировка", color = palette.muted, style = MaterialTheme.typography.labelMedium)
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -630,8 +629,34 @@ private fun MusicScreen(
                     )
                 }
             }
+            }
         }
         Spacer(Modifier.height(12.dp))
+
+        // The user's original query is reused by the official VK search.
+        // No private VK audio API, scraping or fabricated playable Track entries.
+        if (tab == 1 && vkInlineSearch) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Результаты VK Музыки",
+                    color = palette.accent,
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = { vkInlineSearch = false }) {
+                    Text("К общим результатам")
+                }
+            }
+            key(appliedSearch) {
+                VkMusicScreen(
+                    initialQuery = appliedSearch,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        } else {
 
         if (busy && tab != 2) LinearProgressIndicator(Modifier.fillMaxWidth())
         problem?.let {
@@ -648,6 +673,19 @@ private fun MusicScreen(
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(bottom = 8.dp)
         )
+        if (tab == 1 && appliedSearch.isNotBlank()) {
+            OutlinedButton(
+                onClick = {
+                    player?.pause()
+                    vkInlineSearch = true
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Text("VK Музыка · искать «" + appliedSearch.take(35) + "»")
+            }
+            Spacer(Modifier.height(6.dp))
+        }
         val albumGroups = groupTracksByAlbum(visible)
         LazyColumn(
             modifier = Modifier.weight(1f),
@@ -739,10 +777,10 @@ private fun MusicScreen(
                 )
             }
         }
-
+        } // Inline VK search / normal MusicFlow results
 
         }
-        if (tab != 5 && trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
+        if (trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
             val miniCover by rememberCoverArt(trackArtist, trackTitle, currentArtwork)
             Column(
                 modifier = Modifier.fillMaxWidth()
@@ -816,7 +854,7 @@ private fun MusicScreen(
         }
     }
     // Floating TV controls do not occupy list height. Channel rows scroll below.
-    if (tab != 5 && currentMediaId.startsWith("ruvideo:") && player != null) {
+    if (currentMediaId.startsWith("ruvideo:") && player != null) {
         TvMiniPlayer(
             player = player,
             channelTitle = trackTitle,
