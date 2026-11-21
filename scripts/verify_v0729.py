@@ -25,7 +25,7 @@ assert all(f'"{source}" to ::' in sources for source in ("zaycev", "muzofond", "
 assert 'deleteSharedPreferences("musicflow_vk_private")' in main
 assert "com.musicflow.app.vk.audio.credentials.v1" in main
 assert 'id.startsWith("vk:")' in main  # legacy favorites can use non-VK fallback
-assert 'versionCode = 737' in gradle and 'versionName = "0.7.37"' in gradle
+assert 'versionCode = 738' in gradle and 'versionName = "0.7.38"' in gradle
 assert 'applicationId = "com.musicflow.preview"' in gradle
 assert 'applicationIdSuffix = ".dev"' in gradle
 assert 'androidx.browser:browser:' not in gradle

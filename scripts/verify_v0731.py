@@ -7,7 +7,7 @@ service=(src/"PlaybackService.kt").read_text(encoding="utf-8")
 lyrics=(src/"SyncedLyrics.kt").read_text(encoding="utf-8")
 gradle=Path("app/build.gradle.kts").read_text(encoding="utf-8")
 ci=Path(".github/workflows/android-apk.yml").read_text(encoding="utf-8")
-assert 'versionCode = 737' in gradle and 'versionName = "0.7.37"' in gradle
+assert 'versionCode = 738' in gradle and 'versionName = "0.7.38"' in gradle
 assert 'applicationId = "com.musicflow.preview"' in gradle
 assert 'showSleepTimerDialog' in main and 'MusicFlowSleepTimerDialog(' in main
 assert 'MusicFlowSleepTimerStore.deadlineMs(this@PlaybackService)' in service

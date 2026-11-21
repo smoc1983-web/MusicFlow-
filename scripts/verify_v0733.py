@@ -10,7 +10,7 @@ service = (root / "PlaybackService.kt").read_text()
 manifest = Path("app/src/main/AndroidManifest.xml").read_text()
 workflow = Path(".github/workflows/android-background-soak.yml").read_text()
 
-assert 'versionCode = 737' in gradle and 'versionName = "0.7.37"' in gradle
+assert 'versionCode = 738' in gradle and 'versionName = "0.7.38"' in gradle
 assert 'applicationId = "com.musicflow.preview"' in gradle
 assert 'applicationIdSuffix = ".dev"' in gradle
 assert 'ResumePositionPolicy.resumePosition(' in journal
