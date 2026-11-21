@@ -56,10 +56,27 @@ internal class MusicPlaybackRecovery(
     }
 
     override fun onPlaybackStateChanged(playbackState: Int) {
-        startupJob?.cancel()
-        startupJob = null
-        if (playbackState != Player.STATE_BUFFERING || startupRetried ||
-            !player.playWhenReady || player.currentPosition > 1_000L ||
+        if (playbackState != Player.STATE_BUFFERING) {
+            startupJob?.cancel()
+            startupJob = null
+            return
+        }
+        armStartupWatchdog()
+    }
+
+    override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+        if (playWhenReady) armStartupWatchdog()
+        else {
+            startupJob?.cancel()
+            startupJob = null
+        }
+    }
+
+    private fun armStartupWatchdog() {
+        // play() is issued just after prepare(); listening only to BUFFERING
+        // can miss the moment when playWhenReady first becomes true.
+        if (startupJob?.isActive == true || player.playbackState != Player.STATE_BUFFERING ||
+            startupRetried || !player.playWhenReady || player.currentPosition > 1_000L ||
             player.playerError != null) return
         val item = player.currentMediaItem ?: return
         // IPTV has different buffering semantics and must never be restarted here.
