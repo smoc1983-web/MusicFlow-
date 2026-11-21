@@ -471,6 +471,29 @@ private fun MusicScreen(
         }
     }
 
+    fun playChartSong(song: TopSong) {
+        val request = homeSequence.incrementAndGet()
+        pendingHomeSong = "chart:" + musicKey(song.artist) + ":" + musicKey(song.title)
+        homePlaybackMessage = "Поиск записи: " + song.artist + " — " + song.title
+        scope.launch {
+            val candidate = try {
+                findRecording(song.artist, song.title).firstOrNull()
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (failure: Exception) {
+                AppDiagnostics.failure("Charts", "play selection", failure)
+                null
+            }
+            if (request != homeSequence.get()) return@launch
+            pendingHomeSong = null
+            if (candidate != null) {
+                queueAndPlay(listOf(candidate), 0)
+            } else {
+                homePlaybackMessage = "Запись не найдена: " + song.artist + " — " + song.title
+            }
+        }
+    }
+
     fun toggleCurrentFavorite() {
         val item = player?.currentMediaItem ?: return
         val id = item.mediaId
@@ -589,7 +612,6 @@ private fun MusicScreen(
                         2 -> "Избранное"
                         3 -> "ТВ"
                         6 -> "Радио"
-                        7 -> "ТОП песен"
                         5 -> "История"
                         else -> "Музыка"
                     })
@@ -602,7 +624,7 @@ private fun MusicScreen(
                     modifier = Modifier.musicFlowMenuSurface(palette),
                     containerColor = palette.surface,
                     shadowElevation = 14.dp) {
-                    listOf(0 to "Музыка", 2 to "Избранное", 6 to "Радио", 7 to "ТОП песен",
+                    listOf(0 to "Музыка", 2 to "Избранное", 6 to "Радио",
                         5 to "История", 3 to "ТВ")
                         .forEach { (index, label) ->
                             DropdownMenuItem(text = { Text(label) },
@@ -628,6 +650,7 @@ private fun MusicScreen(
                     if (suggested.isNotBlank()) fetch(suggested)
                 },
                 onPlay = { song, section -> playHomeSong(song, section) },
+                onPlayChart = { song -> playChartSong(song) },
                 pendingSongId = pendingHomeSong,
                 playbackMessage = homePlaybackMessage,
                 modifier = Modifier.weight(1f)
@@ -642,11 +665,6 @@ private fun MusicScreen(
                 playing = playing,
                 onPlay = { station -> queueAndPlay(listOf(station.toTrack()), 0) },
                 onStop = { stopMusic() },
-                modifier = Modifier.weight(1f)
-            )
-        } else if (tab == 7) {
-            TopSongsScreen(
-                onPlay = { track -> queueAndPlay(listOf(track), 0) },
                 modifier = Modifier.weight(1f)
             )
         } else if (tab == 5) {
