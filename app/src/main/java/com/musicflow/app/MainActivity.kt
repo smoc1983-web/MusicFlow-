@@ -579,7 +579,7 @@ private fun MusicScreen(
                     Text(when (tab) {
                         2 -> "Избранное"
                         3 -> "ТВ"
-                        6 -> "Русское радио"
+                        6 -> "Радио"
                         5 -> "История"
                         else -> "Музыка"
                     })
@@ -592,7 +592,7 @@ private fun MusicScreen(
                     modifier = Modifier.musicFlowMenuSurface(palette),
                     containerColor = palette.surface,
                     shadowElevation = 14.dp) {
-                    listOf(0 to "Музыка", 2 to "Избранное", 6 to "Русское радио",
+                    listOf(0 to "Музыка", 2 to "Избранное", 6 to "Радио",
                         5 to "История", 3 to "ТВ")
                         .forEach { (index, label) ->
                             DropdownMenuItem(text = { Text(label) },
