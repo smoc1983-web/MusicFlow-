@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -289,12 +290,14 @@ internal fun FullPlayerDialog(
                 listOf(palette.gradientTop, palette.background, palette.gradientBottom)
             ))) {
                 if (immersive && page == PlayerPage.NOW_PLAYING) {
-                    Image(
-                        painter = rememberAsyncImagePainter(resolvedArtwork),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    if (!resolvedArtwork.isNullOrBlank()) {
+                        Image(
+                            painter = rememberAsyncImagePainter(resolvedArtwork),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                     Box(Modifier.fillMaxSize().background(Color(0xA8000000)))
                 }
                 Column(
@@ -503,15 +506,28 @@ internal fun FullPlayerDialog(
                                     Box(Modifier.fillMaxWidth().weight(1f),
                                         contentAlignment = Alignment.Center) {
                                         if (!immersive) {
-                                            Image(
-                                                painter = rememberAsyncImagePainter(resolvedArtwork),
-                                                contentDescription = "Обложка композиции",
-                                                contentScale = ContentScale.Crop,
+                                            Box(
                                                 modifier = Modifier.size(coverSize)
                                                     .shadow(14.dp, RoundedCornerShape(22.dp))
                                                     .clip(RoundedCornerShape(22.dp))
-                                                    .background(palette.surface)
-                                            )
+                                                    .background(palette.surface),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    Icons.Filled.MusicNote,
+                                                    contentDescription = null,
+                                                    tint = palette.accent.copy(alpha = 0.55f),
+                                                    modifier = Modifier.size(72.dp)
+                                                )
+                                                if (!resolvedArtwork.isNullOrBlank()) {
+                                                    Image(
+                                                        painter = rememberAsyncImagePainter(resolvedArtwork),
+                                                        contentDescription = "Обложка композиции",
+                                                        contentScale = ContentScale.Crop,
+                                                        modifier = Modifier.fillMaxSize()
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                     Text(
