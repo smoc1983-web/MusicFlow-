@@ -6,7 +6,7 @@ main=(root/"MainActivity.kt").read_text(encoding="utf-8")
 player=(root/"FullPlayerDialog.kt").read_text(encoding="utf-8")
 top=(root/"TopSongs.kt").read_text(encoding="utf-8")
 gradle=Path("app/build.gradle.kts").read_text(encoding="utf-8")
-assert 'onPlayChart = { song -> playChartSong(song) }' in main
+assert 'onPlayChart = { song, section -> playChartSong(song, section) }' in main
 assert "TopSongsDirectory.fetch(chartPeriod, chartRegion)" in home
 assert "findRecording(song.artist, song.title)" in main
 assert "LaunchedEffect(tab, appliedSearch, searchMode, sortMode, tracks)" in main

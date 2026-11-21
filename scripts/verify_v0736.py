@@ -11,7 +11,7 @@ assert 'TopSongsDirectory.fetch(chartPeriod, chartRegion)' in home
 assert 'itemsIndexed(chartSongs,' in home
 assert 'TopSongsRegion.RUSSIA' in home and 'TopSongsRegion.entries' in home
 assert 'TopSongsRegion.WORLD' in charts
-assert 'onPlayChart = { song -> playChartSong(song) }' in main
+assert 'onPlayChart = { song, section -> playChartSong(song, section) }' in main
 assert '7 -> "ТОП песен"' not in main
 assert '7 to "ТОП песен"' not in main
 assert 'else if (tab == 7)' not in main

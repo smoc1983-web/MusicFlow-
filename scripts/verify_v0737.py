@@ -12,7 +12,7 @@ gradle=Path("app/build.gradle.kts").read_text(encoding="utf-8")
 assert "onPlayChart: (TopSong, List<TopSong>) -> Unit" in home
 assert "onPlayChart(song, chartSongs.toList())" in home
 assert "fun playChartSong(song: TopSong, chartSection: List<TopSong>)" in main
-assert "buildChartPlaylistQueue(song, chartSection, candidate)" in main
+assert "ChartPlaylistQueue.build(song, chartSection, candidate)" in main
 assert "chartPlaylist = true" in main
 assert "ChartPlaylistQueue.parse" in service
 assert "internal fun build(" in queue
