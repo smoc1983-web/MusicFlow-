@@ -163,17 +163,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(colorScheme = scheme) {
                 CompositionLocalProvider(LocalMusicFlowPalette provides palette) {
                     Surface(color = palette.background) {
-                        Box(
-                            Modifier.fillMaxSize().background(
-                                Brush.verticalGradient(
-                                    listOf(
-                                        palette.gradientTop,
-                                        palette.background,
-                                        palette.gradientBottom
-                                    )
-                                )
-                            )
-                        ) {
+                        Box(Modifier.fillMaxSize()) {
                         MusicScreen(
                             player = playerState.value,
                             saved = { loadFavorites() },
@@ -659,7 +649,9 @@ private fun MusicScreen(
     ) {
     Column(
         Modifier.fillMaxSize()
-            .background(palette.background.copy(alpha = 0.83f))
+            .background(palette.background.copy(
+                alpha = if (palette.isLight) 0.58f else 0.64f
+            ))
             .padding(horizontal = 12.dp)
     ) {
         Spacer(Modifier.height(10.dp))
