@@ -36,6 +36,8 @@ internal object CinemaSeriesSearch {
 
     fun family(raw: String): String =
         CinemaSeriesGrouping.titleFor(raw).trim().lowercase()
+            .replace(Regex("""(?iu)^сериал\\s*[:—-]?\\s+"""), "")
+            .trim()
 
     fun looksLikeEpisode(item: CinemaTitle): Boolean =
         item.kind == CinemaKind.SERIES ||
@@ -69,6 +71,67 @@ internal object CinemaSeriesSearch {
             .sortedWith(compareBy<CinemaTitle> { it.seasonNumber ?: 1 }
                 .thenBy { it.episodeNumber ?: Int.MAX_VALUE }
                 .thenBy { it.title.lowercase() }).toList()
+
+    /**
+     * Augment a canonical TV season with individually searchable public uploads.
+     * Exact normalized title and optional TV ID guards prevent joining spin-offs.
+     */
+    fun mergeSeasonCandidates(
+        showName: String,
+        showId: Int,
+        season: Int,
+        sourceId: String,
+        official: List<CinemaTitle>,
+        discovered: List<CinemaTitle>
+    ): List<CinemaTitle> {
+        val identity = family(showName)
+        val native = official.map(::enrich).filter {
+            it.sourceId == sourceId && (it.seasonNumber ?: season) == season
+        }
+        val extras = discovered.map(::enrich).filter {
+            it.sourceId == sourceId &&
+                it.seasonNumber == season &&
+                it.episodeNumber != null &&
+                identity.length >= 3 &&
+                family(it.title) == identity &&
+                (showId <= 0 || it.tvShowId == null || it.tvShowId == showId)
+        }
+        return organize(native + extras)
+    }
+
+    /** Public search results supplement — not replace — the show's official season API. */
+    suspend fun discoverSeason(
+        show: CinemaTvShow,
+        season: Int,
+        sourceId: String,
+        shelves: List<CinemaRutubeShelf>,
+        cached: List<CinemaTitle>
+    ): List<CinemaTitle> {
+        if (family(show.name).length < 3) return emptyList()
+        val queries = listOf(
+            show.name,
+            show.name + " " + season + " сезон"
+        ).distinct().map { it.take(90) }
+        val remote = withTimeoutOrNull(18_000) {
+            coroutineScope {
+                queries.map { request ->
+                    async(Dispatchers.IO) {
+                        try {
+                            CinemaRutubeCatalog.search(request, sourceId, shelves)
+                        } catch (cancel: CancellationException) {
+                            throw cancel
+                        } catch (_: Exception) {
+                            emptyList()
+                        }
+                    }
+                }.awaitAll().flatten()
+            }
+        }.orEmpty()
+        return mergeSeasonCandidates(
+            show.name, show.id, season, sourceId,
+            emptyList(), cached + remote
+        )
+    }
 
     /** Tries all declared seasons by TV show, or a bounded cross-catalogue search. */
     suspend fun lookup(
