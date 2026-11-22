@@ -23,6 +23,16 @@
 - CRAP / Dryer / Mutator repositories list Clojure, Java, Go, TypeScript, Rust and Python, but not Kotlin. These specialized quality gates are not run; no unsupported metric claims.
 - **Verified:** GitHub Actions run 45037932386, Kotlin/JUnit `testDebugUnitTest` and `assembleRelease` both successful. 28 test result suites emitted, including all four targeted regression classes. Unsigned production APK `com.musicflow.preview` versionCode 745 / 0.7.45 verified with `aapt`.
 - First CI run 45037657370 failed because a nullable latest-release object lost smart-cast information in the update dialog; fixed the real compilation issue and reran tests successfully.
-- No signed APK or GitHub Release published; permission gate is pending the user's theme selection and release request.
+- No signed APK or GitHub Release published; release signature verification and publication are a separate gate.
 
-**The ten existing themes and Pro branches remain untouched.**
+## Liquid Glass redesign — user selected theme 1
+1. Before changing code, inspected `MusicFlowAppearance.kt`, `MusicFlowGlass.kt`, `MusicFlowMenuStyle.kt`, the `MainActivity` picker and the persisted `ui_theme` key. The legacy enum exposed ten `AB_*` values; default was `AB_ICY_NIGHT`.
+2. Added `MusicFlowLiquidGlassThemesTest.kt` before implementation to define exactly five styles, Obsidian defaults, preference round-trips and safe migration of all ten old keys. A separate red CI test run was not performed.
+3. Replaced legacy palette options with Obsidian Glass, Arctic Crystal, Pearl Vision, Emerald Flow and Solar Glass; Obsidian is the default for fresh and migrated installs. Only the five new styles appear in the picker.
+4. Added lightweight layered glass gradients, translucent backgrounds, directional border highlights and shadow. Reused native Compose shapes without expensive content blur or bitmap assets.
+5. Preserved all other user data, MusicFlow package identity, playback functions and Pro branch. Stored `ui_theme` values are migrated to the selected Obsidian default, then future choices persist by new name.
+6. Removed a redundant duplicate backdrop gradient rather than drawing two overlapping copies.
+7. Verification: dedicated GitHub Actions `musicflow-v0745-verify.yml` runs Kotlin/JUnit theme migration tests and existing regressions, plus unsigned `assembleRelease`. Final CI run ID and result should be recorded only after completion.
+8. CRAP / Dryer / Mutator do not support Kotlin; not executed and no metric values claimed.
+
+**The ten old theme choices have been replaced in the working branch. No new signed official release has been published.**
