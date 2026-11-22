@@ -83,6 +83,7 @@ internal fun TvModernHub(
     var favorites by remember { mutableStateOf(TvHubLibrary.getKeys(context, "favorites")) }
     var later by remember { mutableStateOf(TvHubLibrary.getKeys(context, "later")) }
     var recently by remember { mutableStateOf(TvHubLibrary.recent(context)) }
+    var showFavoriteChannels by remember(sourceId) { mutableStateOf(false) }
 
     fun key(channel: TvChannel): String = TvHubLibrary.channelKey(sourceId, channel)
     fun play(channel: TvChannel) {
@@ -109,7 +110,7 @@ internal fun TvModernHub(
             (query.isBlank() || it.title.contains(query.trim(), true) ||
                 it.group.contains(query.trim(), true))
     }
-    val starred = channels.filter { key(it) in favorites }
+    val starred = TvHubLibrary.favoritesForSource(sourceId, channels, favorites)
     val saved = channels.filter { key(it) in later }
     val history = recently.mapNotNull { value ->
         channels.firstOrNull { key(it) == value }
@@ -186,11 +187,30 @@ internal fun TvModernHub(
                 }
                 item(key = "overview-summary") {
                     Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        TvCount("Каналы", channels.size, Modifier.weight(1f))
-                        TvCount("Избранное", starred.size, Modifier.weight(1f))
-                        TvCount("История", history.size, Modifier.weight(1f))
+                        TvCount("Каналы", channels.size, Modifier.weight(1f),
+                            onClick = { showFavoriteChannels = false })
+                        TvCount("Избранное", starred.size, Modifier.weight(1f),
+                            onClick = { showFavoriteChannels = true })
                     }
                 }
+                if (showFavoriteChannels) {
+                    item(key = "favorite-heading") {
+                        TvHeader("Избранное · " + starred.size + " каналов")
+                    }
+                    if (starred.isEmpty()) item(key = "favorite-empty") {
+                        Text("В этом источнике пока нет избранных каналов. " +
+                            "Добавьте их сердечком.",
+                            color = palette.muted, modifier = Modifier.padding(12.dp))
+                    }
+                    items(starred, key = { "favorite:" + it.id }) { channel ->
+                        TvRow(channel, programme(channel), current?.id == channel.id,
+                            onPlay = { play(channel) },
+                            onFavorite = { favorite(channel) },
+                            isFavorite = key(channel) in favorites,
+                            onBookmark = { bookmark(channel) },
+                            isSaved = key(channel) in later)
+                    }
+                } else {
                 if (history.isNotEmpty()) item(key = "overview-history") {
                     TvCarousel("Продолжить просмотр", history, ::play,
                         { key(it) in favorites }, ::favorite)
@@ -216,7 +236,7 @@ internal fun TvModernHub(
                         onPlay = { play(channel) }, onFavorite = { favorite(channel) },
                         isFavorite = key(channel) in favorites,
                         onBookmark = { bookmark(channel) }, isSaved = key(channel) in later)
-                }
+                }                }
             }
             TvHubMode.LIVE -> {
                 if (hero != null) item(key = "live-hero") {
@@ -285,8 +305,14 @@ private fun TvHeader(title: String) {
 }
 
 @Composable
-private fun TvCount(label: String, count: Int, modifier: Modifier) {
-    Surface(modifier, color = TvAccentPanel, shape = RoundedCornerShape(14.dp)) {
+private fun TvCount(
+    label: String, count: Int, modifier: Modifier, onClick: () -> Unit
+) {
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        color = TvAccentPanel,
+        shape = RoundedCornerShape(14.dp)
+    ) {
         Column(Modifier.padding(10.dp)) {
             Text(count.toString(), color = TvAccent,
                 style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -317,8 +343,6 @@ private fun TvHero(
                 TvLogo(channel, 72.dp)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("● ПРЯМОЙ ЭФИР", color = Color(0xFFFF9299),
-                        style = MaterialTheme.typography.labelSmall)
                     Text(channel.title, maxLines = 2,
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold)
