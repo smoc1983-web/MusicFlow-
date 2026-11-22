@@ -106,13 +106,16 @@ internal fun newIptvSource(
     )
 }
 
-internal suspend fun fetchIptvSource(source: IptvSource): List<TvChannel> = withContext(Dispatchers.IO) {
+internal suspend fun fetchIptvSource(
+    source: IptvSource,
+    fromPlugin: Boolean = false
+): List<TvChannel> = withContext(Dispatchers.IO) {
     if (source.kind == IptvSourceKind.PLUGIN) {
         val manifest = TvPluginManager.load(source.address)
         return@withContext fetchIptvSource(source.copy(
             address = manifest.playlistUrl,
             kind = IptvSourceKind.PLAYLIST
-        ))
+        ), fromPlugin = true)
     }
     if (source.kind == IptvSourceKind.FILE && IptvStorage.appDir == null) {
         error("Хранилище IPTV не инициализировано")
@@ -135,10 +138,15 @@ internal suspend fun fetchIptvSource(source: IptvSource): List<TvChannel> = with
         }
         return@withContext parseUserIptvPlaylist(file.readText(Charsets.UTF_8), source)
     }
+    if (fromPlugin) {
+        require(TvPluginManager.isSafePluginUrl(source.address)) {
+            "Ссылка плейлиста плагина не прошла проверку безопасности"
+        }
+    }
     val connection = (URL(source.address).openConnection() as HttpURLConnection).apply {
         connectTimeout = 12_000
         readTimeout = 20_000
-        instanceFollowRedirects = true
+        instanceFollowRedirects = !fromPlugin
         setRequestProperty("Accept", "*/*")
         setRequestProperty("User-Agent", "MusicFlowAndroid/0.6")
     }
