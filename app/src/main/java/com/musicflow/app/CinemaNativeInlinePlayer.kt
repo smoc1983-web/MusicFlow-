@@ -3,6 +3,9 @@ package com.musicflow.app
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.view.View
+import android.view.Window
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
@@ -24,10 +27,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -114,21 +119,27 @@ internal fun CinemaNativeInlinePlayer(
         }
     }
 
-    // Always return to portrait when fullscreen ends, including Back and closing.
+    // Immersive video: hide Android clock, signal, battery, and navigation bars.
+    // Both Activity and fullscreen Dialog own windows, so control both.
     DisposableEffect(fullScreen, activity) {
-        if (fullScreen && activity != null) {
+        val window = activity?.window
+        if (fullScreen && window != null) {
             enteredFullScreen = true
-            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            hideCinemaSystemBars(window)
+            activity.requestedOrientation =
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         }
         onDispose {
-            if (fullScreen) {
-                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            if (fullScreen && window != null) {
+                showCinemaSystemBars(window)
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             }
         }
     }
     DisposableEffect(activity) {
         onDispose {
             if (enteredFullScreen) {
+                activity?.window?.let(::showCinemaSystemBars)
                 activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             }
         }
@@ -136,6 +147,7 @@ internal fun CinemaNativeInlinePlayer(
     fun collapseVideo() {
         fullScreen = false
         qualityOpen = false
+        activity?.window?.let(::showCinemaSystemBars)
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
     }
     fun closeVideo() {
@@ -257,7 +269,15 @@ internal fun CinemaNativeInlinePlayer(
                 decorFitsSystemWindows = false
             )
         ) {
-            // Only video and compact icon controls, without title overlay.
+            // Dialog has its own Window: Activity-only immersive flags are insufficient.
+            val dialogView = LocalView.current
+            val dialogWindow = (dialogView.parent as? DialogWindowProvider)?.window
+            DisposableEffect(dialogWindow) {
+                dialogWindow?.let(::hideCinemaSystemBars)
+                onDispose {
+                    dialogWindow?.let(::showCinemaSystemBars)
+                }
+            }
             Box(Modifier.fillMaxSize().background(Color.Black)) {
                 CinemaPlayerView(player, Modifier.fillMaxSize()) {
                     controllerVisible = it
@@ -408,5 +428,20 @@ private fun CinemaPlayerView(
         update = { view -> view.player = player },
         onRelease = { view -> view.player = null },
         modifier = modifier.background(Color.Black)
+    )
+}
+
+/** An immersive video hides OS status and navigation bars, not merely app labels. */
+private fun hideCinemaSystemBars(window: Window) {
+    WindowInsetsControllerCompat(window, window.decorView).apply {
+        systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        hide(WindowInsetsCompat.Type.systemBars())
+    }
+}
+
+private fun showCinemaSystemBars(window: Window) {
+    WindowInsetsControllerCompat(window, window.decorView).show(
+        WindowInsetsCompat.Type.systemBars()
     )
 }
