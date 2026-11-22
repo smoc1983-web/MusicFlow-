@@ -48,6 +48,11 @@ internal data class CinemaPlugin(
 
 internal object CinemaLabSources {
     const val DEMO_SOURCE = "builtin"
+    const val LOCAL_TEST_VIDEO = "asset:///cinema_lab_test.mp4"
+
+    /** Local technical clip is permitted only for the built-in lab source. */
+    fun isPlayableUri(sourceId: String, url: String): Boolean =
+        isSafeHttps(url) || (sourceId == DEMO_SOURCE && url == LOCAL_TEST_VIDEO)
     const val DEMO_MANIFEST_URL =
         "https://raw.githubusercontent.com/smoc1983-web/MusicFlow-/feature/musicflow-cinema-lab-20261122/cinema-test/demo-plugin.json"
     private const val PREFS = "musicflow_cinema_lab_v1"
@@ -119,7 +124,9 @@ internal object CinemaLabSources {
             }
             if (id.isEmpty() || title.isEmpty()) continue
             val poster = o.optString("poster").takeIf(::isSafeHttps)
-            val direct = o.optString("stream_url").takeIf(::isSafeHttps)
+            val direct = o.optString("stream_url").takeIf {
+                isPlayableUri(sourceId, it)
+            }
             val episodes = mutableListOf<CinemaEpisode>()
             val parts = o.optJSONArray("episodes") ?: JSONArray()
             for (j in 0 until minOf(parts.length(), 60)) {
