@@ -47,6 +47,23 @@ class CinemaEpisodeAuditTest {
         assertEquals(listOf(3), coverage.missing)
     }
 
+    @Test fun rutubeCanQueryExactlyTheFifthEpisodeOfAShow() {
+        assertEquals(
+            "https://rutube.ru/api/metainfo/tv/123/video?season=1&episode=5",
+            CinemaRutubeSeries.episodeUrl(123, 1, 5)
+        )
+    }
+
+    @Test fun upcomingEpisodesAreNotMarkedAsMissingVideos() {
+        val guide = CinemaEpisodeAudit.parseEpisodes(12, "Example", """
+          [{"season":1,"number":1,"name":"One","airdate":"2024-01-01"},
+           {"season":1,"number":2,"name":"Later","airdate":"2099-01-01"}]
+        """.trimIndent())
+        val coverage = CinemaEpisodeAudit.coverage(guide, 1, listOf(video(1)))
+        assertEquals(listOf<Int>(), coverage.missing)
+        assertEquals(2, coverage.expectedCount)
+    }
+
     @Test fun spinOffCannotMatchOriginalSeriesName() {
         val response = """
           [{"show":{"id":41,"name":"American Horror Stories"}},
