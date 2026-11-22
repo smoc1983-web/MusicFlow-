@@ -66,7 +66,14 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
     var selected by remember { mutableStateOf<CinemaTitle?>(null) }
     var playing by remember { mutableStateOf<Triple<CinemaTitle, String, String>?>(null) }
     var showPlugins by remember { mutableStateOf(false) }
-    var showLampa by remember { mutableStateOf(false) }
+    // Native source adapters; no separate Lampa window or web-based playback.
+    var nativeSources by remember { mutableStateOf(CinemaNativeSources.sources(context)) }
+    var nativeTitles by remember {
+        mutableStateOf<Map<String, List<CinemaTitle>>>(emptyMap())
+    }
+    var nativeBusy by remember { mutableStateOf(false) }
+    var nativeError by remember { mutableStateOf<String?>(null) }
+    var showNativeSources by remember { mutableStateOf(false) }
     var favorites by remember { mutableStateOf(CinemaLabSources.favoriteKeys(context)) }
     var watchLater by remember { mutableStateOf(CinemaLabSources.laterKeys(context)) }
     var recent by remember { mutableStateOf(CinemaLabSources.recentKeys(context)) }
@@ -93,6 +100,27 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
         }
     }
 
+    LaunchedEffect(nativeSources) {
+        nativeBusy = nativeSources.any { it.playable }
+        nativeError = null
+        nativeTitles = nativeTitles.filterKeys { id -> nativeSources.any { it.id == id } }
+        try {
+            for (source in nativeSources.filter { it.playable }) {
+                try {
+                    val titles = CinemaNativeSources.load(source)
+                    nativeTitles = nativeTitles + (source.id to titles)
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (error: Exception) {
+                    nativeError = source.name + ": " +
+                        (error.message ?: "Источник недоступен")
+                }
+            }
+        } finally {
+            nativeBusy = false
+        }
+    }
+
     LaunchedEffect(search) {
         remoteShows = emptyList()
         if (search.trim().length < 2) return@LaunchedEffect
@@ -109,7 +137,8 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    val allCatalog = demo + fromPlugins.values.flatten()
+    val allCatalog = (demo + fromPlugins.values.flatten() +
+        nativeTitles.values.flatten()).distinctBy { it.key }
     val base = if (search.trim().length > 1) {
         allCatalog + remoteShows
     } else allCatalog
@@ -148,11 +177,6 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
         playing = Triple(title, stream, episodeKey)
     }
 
-    if (showLampa) {
-        CinemaLampaWebScreen(onExit = { showLampa = false }, modifier = modifier)
-        return
-    }
-
     Column(modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
@@ -165,12 +189,27 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                 Text("Каталог • сериалы • подключаемые источники",
                     style = MaterialTheme.typography.labelSmall, color = palette.muted)
             }
-            TextButton(onClick = { showLampa = true }) {
-                Text("Lampa · JS")
+            TextButton(onClick = { showNativeSources = true }) {
+                Icon(Icons.Filled.Add, contentDescription = null)
+                Text("Источник")
             }
             IconButton(onClick = { showPlugins = true }) {
-                Icon(Icons.Filled.Settings, "JSON-плагины", tint = CinemaViolet)
+                Icon(Icons.Filled.Settings, "Ранее добавленные JSON-плагины",
+                    tint = CinemaViolet)
             }
+        }
+        playing?.let { (title, url, episodeId) ->
+            key(title.key + ":" + episodeId + ":" + url) {
+                CinemaNativeInlinePlayer(
+                    title = title.title,
+                    sourceKey = title.key + ":" + episodeId,
+                    streamUrl = url,
+                    allowBuiltInFallback =
+                        title.sourceId == CinemaLabSources.DEMO_SOURCE,
+                    onClose = { playing = null }
+                )
+            }
+            Spacer(Modifier.height(9.dp))
         }
         OutlinedTextField(
             value = search, onValueChange = { search = it.take(75) },
@@ -205,12 +244,26 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                     onClick = { activeSource = plugin.id },
                     label = { Text(plugin.name, maxLines = 1) })
             }
-            TextButton(onClick = { showPlugins = true }) {
+            nativeSources.filter { it.playable }.forEach { source ->
+                FilterChip(
+                    selected = activeSource == source.id,
+                    onClick = { activeSource = source.id },
+                    label = { Text(source.name, maxLines = 1) }
+                )
+            }
+            TextButton(onClick = { showNativeSources = true }) {
                 Icon(Icons.Filled.Add, null)
-                Text("Плагин")
+                Text("Источник")
             }
         }
-        if (pluginsBusy || searchBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (pluginsBusy || searchBusy || nativeBusy) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
+        if (nativeError != null) {
+            Text("Нативный источник: " + nativeError.orEmpty(),
+                color = Color(0xFFFFABA9),
+                style = MaterialTheme.typography.labelSmall)
+        }
         if (pluginLoadError != null) {
             Text("Плагин: " + pluginLoadError.orEmpty(), color = Color(0xFFFFABA9),
                 style = MaterialTheme.typography.labelSmall)
@@ -263,13 +316,54 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                     onClick = { selected = title },
                     onFavorite = { toggleFavorite(title) })
             }
-            if (visible.isEmpty() && !pluginsBusy && !searchBusy) {
+            if (visible.isEmpty() && !pluginsBusy && !searchBusy && !nativeBusy) {
                 item(key = "empty") {
                     Text("Пока нет совпадений. Проверьте запрос или подключите источник через «Плагин».",
                         color = palette.muted, modifier = Modifier.padding(15.dp))
                 }
             }
         }
+    }
+
+    if (showNativeSources) {
+        CinemaNativeSourcesDialog(
+            sources = nativeSources,
+            busy = nativeBusy,
+            error = nativeError,
+            onClose = { showNativeSources = false },
+            onAdd = { name, link ->
+                scope.launch {
+                    nativeBusy = true
+                    nativeError = null
+                    try {
+                        require(nativeSources.size < 24) {
+                            "Максимальное количество источников: 24"
+                        }
+                        require(nativeSources.none { it.url.equals(link, ignoreCase = true) }) {
+                            "Этот источник уже добавлен"
+                        }
+                        val source = CinemaNativeSources.register(name, link)
+                        nativeSources = nativeSources + source
+                        CinemaNativeSources.save(context, nativeSources)
+                        if (source.playable) {
+                            activeSource = source.id
+                        } else {
+                            nativeError = "Ссылка Lampa сохранена, но этот JS-плагин " +
+                                "не предоставляет совместимый нативный Media3-адаптер."
+                        }
+                    } catch (error: Exception) {
+                        nativeError = error.message ?: "Ошибка подключения"
+                    } finally {
+                        nativeBusy = false
+                    }
+                }
+            },
+            onRemove = { source ->
+                nativeSources = nativeSources.filterNot { it.id == source.id }
+                CinemaNativeSources.save(context, nativeSources)
+                if (activeSource == source.id) activeSource = "all"
+            }
+        )
     }
 
     if (showPlugins) {
@@ -320,15 +414,6 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
         )
     }
 
-    playing?.let { (title, url, episodeId) ->
-        CinemaLabPlayer(
-            title = title.title,
-            sourceKey = title.key + ":" + episodeId,
-            streamUrl = url,
-            allowBuiltInFallback = title.sourceId == CinemaLabSources.DEMO_SOURCE,
-            onClose = { playing = null }
-        )
-    }
 }
 
 @Composable
