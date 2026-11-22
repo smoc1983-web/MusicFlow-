@@ -1,0 +1,72 @@
+name: Verify MusicFlow 0.7.43 release source and prepare for original signature
+on:
+  push:
+    branches: ["feature/musicflow-v0743-tv-playback-recovery"]
+    paths: [".github/workflows/musicflow-v0743-release-preflight.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  release-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" ||
+            test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Validate source and regression constraints
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('app/src/main/java/com/musicflow/app')
+          service=(src/'PlaybackService.kt').read_text()
+          live=(src/'TvStreamRecovery.kt').read_text()
+          bridge=(src/'TvVideoSurfaceBridge.kt').read_text()
+          main=(src/'MainActivity.kt').read_text()
+          mini=(src/'TvMiniPlayer.kt').read_text()
+          full=(src/'TvFullscreenActivity.kt').read_text()
+          gradle=Path('app/build.gradle.kts').read_text()
+          assert 'versionCode = 743' in gradle and 'versionName = "0.7.43"' in gradle
+          assert 'applicationId = "com.musicflow.preview"' in gradle
+          assert 'TvStreamRecovery(player, recoveryScope)' in service
+          assert 'MAX_RETRIES = 2' in live
+          assert 'retryHttpStatus' in live and 'BUFFERING_TIMEOUT_MS' in live
+          assert 'allowRotationLaunch' in bridge and 'if (fullscreenRequested' in bridge
+          assert 'if (!TvVideoSurfaceBridge.requestFullscreen()) return' in main
+          assert mini.count('contentDescription = "Полный экран"') == 1
+          assert 'onClick=onExit' in full and 'BackHandler { onExit() }' in full
+          print("MusicFlow production identity, TV reconnect and one-tap return verified")
+          PY
+      - name: Kotlin regression tests and release compilation
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
+      - name: Align unsigned release and validate package
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release-unsigned.apk
+          test -s "$APK"
+          TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          mkdir -p out
+          "$TOOLS/zipalign" -p -f 4 "$APK" out/MusicFlow_0.7.43-aligned-unsigned.apk
+          "$TOOLS/zipalign" -c -p 4 out/MusicFlow_0.7.43-aligned-unsigned.apk
+          "$TOOLS/aapt" dump badging out/MusicFlow_0.7.43-aligned-unsigned.apk |
+            grep -F "name='com.musicflow.preview' versionCode='743' versionName='0.7.43'"
+          sha256sum out/MusicFlow_0.7.43-aligned-unsigned.apk > out/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.43-aligned-unsigned-for-private-signing
+          path: out/
+          retention-days: 30
+          if-no-files-found: error
