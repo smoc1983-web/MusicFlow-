@@ -16,7 +16,7 @@ import java.util.UUID
 
 /** URLs entered by the user; no installable plug-ins or untrusted JavaScript execution. */
 internal enum class CinemaSourceFormat {
-    WEB_PAGE, DIRECT_MEDIA, M3U_PLAYLIST, CINEMA_JSON
+    WEB_PAGE, RUTUBE_FEED, DIRECT_MEDIA, M3U_PLAYLIST, CINEMA_JSON
 }
 
 internal data class CinemaNativeSource(
@@ -27,9 +27,9 @@ internal data class CinemaNativeSource(
 )
 
 internal object CinemaNativeSources {
-    const val FIRST_PAGE = "https://ff.sanfilm2.link/"
-    private const val FIRST_NAME = "Sanfilm · каталог"
-    private const val PREFS = "musicflow_cinema_urls_v5"
+    const val FIRST_PAGE = CinemaRutubeSource.FEED_URL
+    private const val FIRST_NAME = "RUTUBE · Кино и сериалы"
+    private const val PREFS = "musicflow_cinema_urls_v7"
     private const val MAX_SOURCES = 30
     private const val MAX_RESPONSE_BYTES = 1_500_000
 
@@ -41,7 +41,7 @@ internal object CinemaNativeSources {
         val preferences = prefs(context)
         if (!preferences.getBoolean("initialized", false)) {
             val first = CinemaNativeSource(
-                "starter-site", FIRST_NAME, FIRST_PAGE, CinemaSourceFormat.WEB_PAGE
+                "starter-rutube", FIRST_NAME, FIRST_PAGE, CinemaSourceFormat.RUTUBE_FEED
             )
             save(context, listOf(first))
             preferences.edit().putBoolean("initialized", true).apply()
@@ -90,6 +90,7 @@ internal object CinemaNativeSources {
     fun chooseFormat(url: String): CinemaSourceFormat {
         val path = runCatching { URI(url).path.lowercase() }.getOrDefault("")
         return when {
+            CinemaRutubeSource.isFeed(url) -> CinemaSourceFormat.RUTUBE_FEED
             isVideoUrl(url) -> CinemaSourceFormat.DIRECT_MEDIA
             path.endsWith(".m3u") -> CinemaSourceFormat.M3U_PLAYLIST
             path.endsWith(".json") -> CinemaSourceFormat.CINEMA_JSON
@@ -118,6 +119,11 @@ internal object CinemaNativeSources {
     suspend fun load(source: CinemaNativeSource): List<CinemaTitle> =
         withContext(Dispatchers.IO) {
             when (source.format) {
+                CinemaSourceFormat.RUTUBE_FEED -> {
+                    val cards = CinemaRutubeSource.parseFeed(fetch(source.url), source.id)
+                    require(cards.isNotEmpty()) { "RUTUBE не вернул карточки видео" }
+                    cards
+                }
                 CinemaSourceFormat.DIRECT_MEDIA -> listOf(
                     CinemaTitle(
                         source.id, source.id, source.name, CinemaKind.MOVIE,
@@ -216,6 +222,18 @@ internal object CinemaNativeSources {
         val address = item.pageUrl ?: return@withContext item
         require(CinemaLabSources.isSafeHttps(address)) {
             "Небезопасная ссылка страницы фильма."
+        }
+        val rutubeId = CinemaRutubeSource.videoId(address)
+        if (rutubeId != null) {
+            val api = CinemaRutubeSource.apiUrl(rutubeId)
+            return@withContext try {
+                val options = fetch(api)
+                CinemaRutubeSource.fromPlayOptions(item, options)
+            } catch (error: Exception) {
+                item.copy(playbackDiagnostic = "RUTUBE API: " +
+                    (error.message ?: "Ошибка загрузки").take(150) +
+                    ". Попробуйте позднее или откройте видео на RUTUBE.")
+            }
         }
         val html = fetch(address)
         val page = parseHtml(html, address, item.id, item.title)
@@ -332,7 +350,11 @@ internal object CinemaNativeSources {
             conn.instanceFollowRedirects = false
             conn.connectTimeout = 6_000
             conn.readTimeout = 10_000
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Android) MusicFlowCinema/4")
+            conn.setRequestProperty("User-Agent",
+                "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36")
+            if (URI(current).host.lowercase().endsWith("rutube.ru")) {
+                conn.setRequestProperty("Referer", "https://rutube.ru/")
+            }
             conn.setRequestProperty("Accept", "text/html,application/json,audio/x-mpegurl,*/*")
             try {
                 val status = conn.responseCode
