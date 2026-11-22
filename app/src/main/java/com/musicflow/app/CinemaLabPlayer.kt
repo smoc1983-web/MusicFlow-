@@ -31,10 +31,13 @@ internal fun CinemaLabPlayer(
     title: String,
     sourceKey: String,
     streamUrl: String,
+    allowBuiltInFallback: Boolean = false,
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
     var playbackError by remember(streamUrl) { mutableStateOf<String?>(null) }
+    var fallbackActive by remember(streamUrl) { mutableStateOf(false) }
+    var fallbackNotice by remember(streamUrl) { mutableStateOf<String?>(null) }
     var position by remember(streamUrl) { mutableLongStateOf(0L) }
     val player = remember(streamUrl) {
         ExoPlayer.Builder(context).build().apply {
@@ -49,8 +52,21 @@ internal fun CinemaLabPlayer(
     DisposableEffect(player, sourceKey) {
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                playbackError = error.errorCodeName + ": " +
-                    (error.cause?.message ?: error.message.orEmpty()).take(180)
+                val cause = error.cause?.message ?: error.message.orEmpty()
+                val badHttp = error.errorCodeName.contains("BAD_HTTP_STATUS") ||
+                    cause.contains("Response code: 403")
+                if (allowBuiltInFallback && !fallbackActive &&
+                    streamUrl != CinemaLabSources.LOCAL_TEST_VIDEO && badHttp) {
+                    fallbackActive = true
+                    fallbackNotice = "Внешний сервер отклонил запрос (HTTP 403). " +
+                        "Вместо фильма запущен встроенный технический ролик для проверки Media3."
+                    playbackError = null
+                    player.setMediaItem(MediaItem.fromUri(CinemaLabSources.LOCAL_TEST_VIDEO))
+                    player.prepare()
+                    player.play()
+                } else {
+                    playbackError = error.errorCodeName + ": " + cause.take(180)
+                }
             }
         }
         player.addListener(listener)
@@ -96,6 +112,15 @@ internal fun CinemaLabPlayer(
                     modifier = Modifier.fillMaxWidth().height(240.dp)
                         .background(Color.Black, RoundedCornerShape(12.dp))
                 )
+                if (streamUrl == CinemaLabSources.LOCAL_TEST_VIDEO) {
+                    Text("Встроенный диагностический ролик: работает без сети.",
+                        color = Color(0xFFBDA9D9),
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                fallbackNotice?.let { info ->
+                    Text(info, color = Color(0xFFFFCB8A),
+                        style = MaterialTheme.typography.bodySmall)
+                }
                 if (playbackError != null) {
                     Text("Ошибка видео: " + playbackError.orEmpty(),
                         color = Color(0xFFFFA9A9),
