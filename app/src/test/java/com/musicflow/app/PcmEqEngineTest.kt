@@ -32,7 +32,7 @@ class PcmEqEngineTest {
     @Test fun switchingEqWhileStreamingDoesNotClearOrMuteSamples() {
         val eq = PcmEqEngine()
         eq.configure(44_100, 2, AudioEqState())
-        val block = ShortArray(256) { if (it % 2 == 0) 1200 else -1200 }
+        val block = ShortArray(256) { if (it % 2 == 0) 1200.toShort() else (-1200).toShort() }
         eq.processPcm(block, 2)
         eq.configure(44_100, 2,
             AudioEqState(enabled = true, gainsDb = listOf(0f,0f,2f,0f,0f)))
@@ -47,7 +47,7 @@ class PcmEqEngineTest {
         val eq = PcmEqEngine()
         eq.configure(48_000, 1, AudioEqState(enabled = true,
             gainsDb = List(5) { 10f }, boostEnabled = true, boostDb = 3f))
-        val loud = ShortArray(512) { if(it % 2 == 0) 32767 else -32768 }
+        val loud = ShortArray(512) { if(it % 2 == 0) 32767.toShort() else (-32768).toShort() }
         val output = eq.processPcm(loud, 1)
         assertTrue(output.any { it != 0.toShort() })
         assertTrue(output.all { it.toInt() in -32768..32767 })
