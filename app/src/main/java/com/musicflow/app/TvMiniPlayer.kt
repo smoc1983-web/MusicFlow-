@@ -156,12 +156,6 @@ internal fun TvMiniPlayer(
                         modifier = Modifier.fillMaxSize()
                     )
                     Box(Modifier.matchParentSize().clickable(onClick = onExpand))
-                    FilledTonalIconButton(
-                        onClick = onExpand,
-                        modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(34.dp)
-                    ) {
-                        Icon(Icons.Filled.Fullscreen, contentDescription = "ТВ на весь экран")
-                    }
                 }
                 Row(
                     Modifier.fillMaxWidth().height(46.dp),
@@ -173,7 +167,10 @@ internal fun TvMiniPlayer(
                     IconButton(onClick = {
                         if (player.isPlaying) player.pause()
                         else {
-                            if (player.playerError != null) player.prepare()
+                            if (player.playerError != null ||
+                                player.playbackState == androidx.media3.common.Player.STATE_ENDED ||
+                                player.playbackState == androidx.media3.common.Player.STATE_IDLE)
+                                player.prepare()
                             player.play()
                         }
                     }, modifier = Modifier.size(42.dp)) {
