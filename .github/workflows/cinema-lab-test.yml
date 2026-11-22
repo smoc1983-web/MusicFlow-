@@ -1,0 +1,93 @@
+name: Build MusicFlow Cinema LAB TEST APK
+
+on:
+  push:
+    branches: ["feature/musicflow-cinema-lab-20261122"]
+    paths:
+      - "app/src/main/java/com/musicflow/app/CinemaLab*.kt"
+      - "app/src/main/java/com/musicflow/app/MainActivity.kt"
+      - "app/src/main/assets/cinema_lab_demo.json"
+      - "app/src/main/AndroidManifest.xml"
+      - "app/build.gradle.kts"
+      - "app/src/test/java/com/musicflow/app/CinemaLabSourcesTest.kt"
+      - "cinema-test/**"
+      - ".github/workflows/cinema-lab-test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Android build tools
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      - name: Assert isolated package, demo license and Cinema UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          gradle = Path("app/build.gradle.kts").read_text()
+          manifest = Path("app/src/main/AndroidManifest.xml").read_text()
+          app = Path("app/src/main/java/com/musicflow/app/MainActivity.kt").read_text()
+          sources = Path("app/src/main/java/com/musicflow/app/CinemaLabSources.kt").read_text()
+          demo = json.loads(Path("app/src/main/assets/cinema_lab_demo.json").read_text())
+          plugin = json.loads(Path("cinema-test/demo-plugin.json").read_text())
+          assert 'applicationId = "com.musicflow.preview"' in gradle
+          assert 'applicationIdSuffix = ".cinematest"' in gradle
+          assert 'android:label="MusicFlow Кино TEST"' in manifest
+          assert '7 to "Кино TEST"' in app
+          assert 'CinemaLabScreen(' in app
+          assert 'if (packageName == "com.musicflow.preview") MusicFlowAutoUpdate()' in app
+          assert 'instanceFollowRedirects = false' in sources
+          assert 'isSafeHttps(url)' in sources
+          assert len(demo["items"]) >= 5
+          assert all('Blender Foundation' in x.get('attribution', '') for x in demo["items"])
+          assert plugin["format"] == "musicflow.cinema.v1"
+          assert plugin["catalog_url"].startswith("https://raw.githubusercontent.com/")
+          print("PASS: separate TEST identity, real demo media, safe plugin gate, original app untouched")
+          PY
+
+      - name: Run Kotlin tests
+        run: gradle --no-daemon :app:testDebugUnitTest
+
+      - name: Build isolated debug APK
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Verify signing and installation package
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview.cinematest'"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          mkdir -p dist
+          cp "$APK" dist/MusicFlow-Cinema-TEST.apk
+          sha256sum dist/MusicFlow-Cinema-TEST.apk > dist/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-Cinema-LAB-TEST-apk
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error
