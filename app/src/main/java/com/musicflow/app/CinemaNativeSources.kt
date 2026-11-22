@@ -47,9 +47,9 @@ internal object CinemaNativeSources {
     }
 
     fun isLampaPluginUrl(url: String): Boolean =
-        url.startsWith("http://", true) || url.endsWith(".js", true) ||
+        url.substringBefore('?').endsWith(".js", true) ||
             url.contains("bwa.ad/rc", true) || url.contains("bwa.to/rc", true) ||
-            url.contains("/plugins/", true) && !url.endsWith(".json", true)
+            url.contains("app.bwa.ad/online.js", true)
 
     /** A legacy JavaScript URL is stored only as a reference, never executed. */
     fun isValidLampaReference(value: String): Boolean {
@@ -162,14 +162,15 @@ internal object CinemaNativeSources {
                 val response = fetch(url).trimStart('\uFEFF', '\n', '\r', ' ', '\t')
                 when {
                     response.startsWith("#EXTM3U") -> {
-                        require(!response.contains("#EXT-X-STREAM-INF") &&
-                            !response.contains("#EXT-X-TARGETDURATION")) {
-                            "Это HLS-поток, вставьте URL с расширением .m3u8 как видео."
+                        if (response.contains("#EXT-X-STREAM-INF") ||
+                            response.contains("#EXT-X-TARGETDURATION")) {
+                            CinemaSourceFormat.DIRECT_MEDIA
+                        } else {
+                            require(parseM3u(response, "validate").isNotEmpty()) {
+                                "M3U не содержит доступных HTTPS-видео."
+                            }
+                            CinemaSourceFormat.M3U_PLAYLIST
                         }
-                        require(parseM3u(response, "validate").isNotEmpty()) {
-                            "M3U не содержит доступных HTTPS-видео."
-                        }
-                        CinemaSourceFormat.M3U_PLAYLIST
                     }
                     response.startsWith("{") -> {
                         val json = JSONObject(response)
