@@ -84,8 +84,7 @@ internal object CinemaLabSources {
         val trimmed = value.lowercase().trim().trimEnd('/')
         return trimmed.endsWith(".js") ||
             trimmed.contains("bwa.ad/rc") || trimmed.contains("bwa.to/rc") ||
-            trimmed.contains("/plugin/") ||
-            trimmed.contains("/plugins/")
+            trimmed.endsWith("/plugin/iptv")
     }
 
     fun parseManifest(raw: String, requestedUrl: String): CinemaPlugin {
