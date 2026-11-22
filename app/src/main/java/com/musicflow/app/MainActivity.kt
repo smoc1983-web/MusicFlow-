@@ -364,7 +364,7 @@ private fun MusicScreen(
     }
     fun openTvFullscreen() {
         if (TvPlaybackHandoff.snapshot() == null) return
-        TvVideoSurfaceBridge.requestFullscreen()
+        if (!TvVideoSurfaceBridge.requestFullscreen()) return
         try {
             context.startActivity(Intent(context, TvFullscreenActivity::class.java))
         } catch (error: Exception) {
@@ -380,7 +380,10 @@ private fun MusicScreen(
         val rotatedToLandscape = previousOrientation != orientation &&
             orientation == Configuration.ORIENTATION_LANDSCAPE
         previousOrientation = orientation
-        if (rotatedToLandscape &&
+        if (TvVideoSurfaceBridge.allowRotationLaunch(
+                rotatedToLandscape,
+                portrait = orientation == Configuration.ORIENTATION_PORTRAIT
+            ) &&
             player?.currentMediaItem?.mediaId?.startsWith("ruvideo:") == true &&
             TvPlaybackHandoff.snapshot() != null) {
             openTvFullscreen()
