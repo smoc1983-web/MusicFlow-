@@ -25,7 +25,9 @@ internal object CinemaSeriesGrouping {
     )
 
     fun titleFor(raw: String): String {
-        var title = raw.trim()
+        var title = raw.trim().replace(
+            Regex("""(?iu)^сериал\s*[:—-]?\s+"""), ""
+        )
         for (pattern in patterns) {
             title = title.replace(pattern, "").trimEnd(' ', ',', ':', '.', '-', '—', '|')
         }
@@ -34,8 +36,18 @@ internal object CinemaSeriesGrouping {
 
     fun group(items: List<CinemaTitle>): List<CinemaSeriesGroup> {
         val candidates = items.filter { it.kind == CinemaKind.SERIES }
+        // Some public API cards omit tv_show_id even when other cards
+        // for the same named series provide it. A unique ID can be inherited
+        // only within the same source and exact normalized title.
+        val knownIdsByTitle = candidates.filter { it.tvShowId != null }
+            .groupBy { it.sourceId + "|" + titleFor(it.title).lowercase() }
+            .mapValues { (_, entries) ->
+                entries.mapNotNull { it.tvShowId }.distinct()
+            }
         return candidates.groupBy { item ->
-            val identity = item.tvShowId?.let { "show/$it" }
+            val titleKey = item.sourceId + "|" + titleFor(item.title).lowercase()
+            val id = item.tvShowId ?: knownIdsByTitle[titleKey]?.singleOrNull()
+            val identity = id?.let { "show/$it" }
                 ?: "title/" + titleFor(item.title).lowercase()
             item.sourceId + "|" + identity
         }.values.map { bucket ->
