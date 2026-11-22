@@ -137,7 +137,7 @@ internal fun CinemaNativeInlinePlayer(
             .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
             .apply {
                 if (option != null) {
-                    setOverrideForType(TrackSelectionOverride(
+                    addOverride(TrackSelectionOverride(
                         option.mediaGroup, listOf(option.trackIndex)
                     ))
                 }
