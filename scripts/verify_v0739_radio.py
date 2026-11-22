@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static regression gate for v0.7.39 Russian radio catalog recovery."""
+"""Static regression gate for v0.7.40 Russian radio catalog recovery."""
 from pathlib import Path
 
 root = Path("app/src/main/java/com/musicflow/app")
@@ -7,7 +7,7 @@ radio = (root / "RussianRadio.kt").read_text(encoding="utf-8")
 main = (root / "MainActivity.kt").read_text(encoding="utf-8")
 gradle = Path("app/build.gradle.kts").read_text(encoding="utf-8")
 
-assert 'versionCode = 739' in gradle and 'versionName = "0.7.39"' in gradle
+assert 'versionCode = 740' in gradle and 'versionName = "0.7.40"' in gradle
 assert 'applicationId = "com.musicflow.preview"' in gradle
 assert 'applicationIdSuffix = ".dev"' in gradle
 assert '6 to "Радио"' in main and 'RussianRadioScreen(' in main
@@ -38,4 +38,4 @@ assert snapshot.startswith("#EXTM3U") and snapshot.count("#EXTINF:") >= 250
 print("PASS: Russian radio no longer excludes stations flagged broken by external servers")
 print("PASS: mirror and catalog query fallback, persisted last-good list and favorites isolation")
 print("PASS: independent GitHub radio source + 300 bundled stations work without Radio Browser DNS")
-print("PASS: signed-update package and 0.7.39 version identity preserved")
+print("PASS: signed-update package and 0.7.40 version identity preserved")
