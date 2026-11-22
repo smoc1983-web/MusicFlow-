@@ -60,7 +60,8 @@ internal data class TvChannel(
     val title: String,
     val group: String,
     val logo: String?,
-    val streamUrl: String
+    val streamUrl: String,
+    val epgId: String? = null
 ) {
     val isMusic: Boolean
         get() = title.contains("муз", ignoreCase = true) ||
@@ -140,7 +141,8 @@ private fun parseRuVideoHubPlaylist(text: String): List<TvChannel> {
                     ?: "channel-" + result.size.toString()
                 val logo = m3uAttribute(info, "tvg-logo")
                     ?.takeIf { it.startsWith("https://") }
-                result.add(TvChannel(sourceId, title, pendingGroup, logo, line))
+                result.add(TvChannel(sourceId, title, pendingGroup, logo, line,
+                    m3uAttribute(info, "tvg-id")))
             }
         }
     }
@@ -162,6 +164,8 @@ internal fun RuVideoHubTvScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var channels by remember { mutableStateOf<List<TvChannel>>(emptyList()) }
+    var programmes by remember { mutableStateOf<List<TvProgramme>>(emptyList()) }
+    var tvMode by remember { mutableStateOf(TvHubLibrary.mode(context)) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var query by remember { mutableStateOf("") }
@@ -199,12 +203,33 @@ internal fun RuVideoHubTvScreen(
                     }
                 if (request == loadSequence.get()) {
                     channels = items
+                    programmes = emptyList()
                     group = "Все"
                     AppDiagnostics.info("IPTV", "loaded " + type + "; channels=" + items.size)
+                    val plugin = userSources.firstOrNull {
+                        it.id == sourceId && it.kind == IptvSourceKind.PLUGIN
+                    }
+                    if (plugin != null) {
+                        scope.launch {
+                            try {
+                                val manifest = TvPluginManager.load(plugin.address)
+                                val epg = manifest.epgUrl?.let { TvPluginManager.loadEpg(it) }
+                                    .orEmpty()
+                                if (request == loadSequence.get()) {
+                                    programmes = epg
+                                    AppDiagnostics.info("TV", "plugin XMLTV: " + epg.size +
+                                        " programmes")
+                                }
+                            } catch (failure: Exception) {
+                                AppDiagnostics.failure("TV", "plugin EPG", failure)
+                            }
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 if (request == loadSequence.get()) {
                     channels = emptyList()
+                    programmes = emptyList()
                     error = e.message ?: "Не удалось загрузить каналы"
                     AppDiagnostics.failure("IPTV", "source " + type, e)
                 }
@@ -318,6 +343,55 @@ internal fun RuVideoHubTvScreen(
     }
 
     Column(modifier = modifier) {
+        TvHubModeTabs(mode = tvMode, onSelect = { next ->
+            tvMode = next
+            TvHubLibrary.saveMode(context, next)
+        })
+        Spacer(Modifier.height(6.dp))
+        if (tvMode != TvHubMode.CLASSIC) {
+            TvModernHub(
+                mode = tvMode,
+                channels = channels,
+                selected = selected,
+                programmes = programmes,
+                sourceId = activeSourceId,
+                sourceName = if (activeSourceId == "ruvideohub") "RuVideoHub"
+                    else userSources.firstOrNull { it.id == activeSourceId }?.name
+                        ?: "Мой IPTV",
+                sources = userSources.toList(),
+                loading = loading,
+                error = error,
+                onPlay = { playChannel(it) },
+                onSource = { id ->
+                    selected = null
+                    activeSourceId = id
+                    refresh(id)
+                },
+                onAddPlaylist = {
+                    sourceInputError = null
+                    addName = ""
+                    addUrl = ""
+                    addKind = IptvSourceKind.PLAYLIST
+                    showAddSource = true
+                },
+                onAddPlugin = {
+                    sourceInputError = null
+                    addName = ""
+                    addUrl = ""
+                    addKind = IptvSourceKind.PLUGIN
+                    showAddSource = true
+                },
+                onImportFile = { importFile.launch(arrayOf("*/*")) },
+                onRemoveSource = { showDeleteSource = true },
+                onRefresh = { refresh() },
+                onExternal = { channel ->
+                    player?.pause()
+                    openTvExternal(context, channel)?.let { error = it }
+                },
+                modifier = Modifier.weight(1f)
+            )
+        } else {
+            Column(Modifier.weight(1f)) {
         Spacer(Modifier.height(8.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -466,6 +540,8 @@ internal fun RuVideoHubTvScreen(
             Text("Источник: ByteBudda / RuVideoHub")
         }
     }
+        }
+    }
 
     if (showAddSource) {
         AlertDialog(
@@ -479,7 +555,8 @@ internal fun RuVideoHubTvScreen(
                         Text("Выбрать файл M3U / M3U8")
                     }
                     Text("Тип ссылки:", style = MaterialTheme.typography.bodySmall)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
                             selected = addKind == IptvSourceKind.PLAYLIST,
                             onClick = { addKind = IptvSourceKind.PLAYLIST },
@@ -489,6 +566,11 @@ internal fun RuVideoHubTvScreen(
                             selected = addKind == IptvSourceKind.CHANNEL,
                             onClick = { addKind = IptvSourceKind.CHANNEL },
                             label = { Text("Один канал") }
+                        )
+                        FilterChip(
+                            selected = addKind == IptvSourceKind.PLUGIN,
+                            onClick = { addKind = IptvSourceKind.PLUGIN },
+                            label = { Text("Плагин JSON") }
                         )
                     }
                     OutlinedTextField(
@@ -501,13 +583,18 @@ internal fun RuVideoHubTvScreen(
                     OutlinedTextField(
                         value = addUrl,
                         onValueChange = { addUrl = it },
-                        label = { Text(if (addKind == IptvSourceKind.CHANNEL)
-                            "Ссылка на поток M3U8 / MP4 / TS" else "Прямая ссылка M3U") },
+                        label = { Text(when (addKind) {
+                            IptvSourceKind.CHANNEL -> "Ссылка на поток M3U8 / MP4 / TS"
+                            IptvSourceKind.PLUGIN -> "HTTPS URL манифеста musicflow.tv-plugin.v1"
+                            else -> "Прямая ссылка на M3U"
+                        }) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text(
-                        "HTTP не защищён шифрованием. Ссылки с токенами хранятся на устройстве.",
+                        if (addKind == IptvSourceKind.PLUGIN)
+                            "Безопасный формат: JSON с playlist_url и, при желании, epg_url. Чужой код не выполняется."
+                        else "HTTP не защищён шифрованием. Ссылки с токенами хранятся на устройстве.",
                         color = palette.muted,
                         style = MaterialTheme.typography.labelSmall
                     )
