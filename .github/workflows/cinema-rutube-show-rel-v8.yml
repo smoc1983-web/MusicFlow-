@@ -1,0 +1,46 @@
+name: Inspect Rutube show associations and search HTML v8
+on:
+  push:
+    branches: ["feature/musicflow-cinema-rutube-discovery-v8"]
+    paths: [".github/workflows/cinema-rutube-show-rel-v8.yml"]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Probe series relationship and search
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.parse,json,re
+          BASE="https://rutube.ru"
+          UA="Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36"
+          def req(path):
+              r=urllib.request.Request(BASE+path,headers={"User-Agent":UA,"Referer":BASE+"/"})
+              with urllib.request.urlopen(r,timeout=10) as u:
+                  body=u.read(500000)
+                  return u.status,body,u.headers.get("Content-Type")
+          for id in ["1dcc35d6575bc881dc2ece8c1efcdc35","31ef2d26dc679428b3a928b492c0e800"]:
+              for endpoint in ["/api/metainfo/contenttvs/"+id,"/api/video/"+id+"/"]:
+                  try:
+                      status,body,_=req(endpoint)
+                      j=json.loads(body)
+                      print("RELATION",endpoint,"HTTP",status,"TYPE",type(j).__name__)
+                      if isinstance(j,list):
+                          print(" LIST",len(j),str(j[:3])[:800])
+                      elif isinstance(j,dict):
+                          print(" KEYS",list(j)[:40])
+                          print(" DATA", {key:str(value)[:250] for key,value in j.items() if key in
+                              ["id","name","title","show","tv_show_id","content","season","episode","is_serial","absolute_url","seasons_count","results","tv","tv_id"]})
+                  except Exception as e:print("RELATION_ERR",endpoint,type(e).__name__,str(e)[:160])
+          for query in ["Интерны","Бывшие"]:
+              p="/search/?query="+urllib.parse.quote(query)
+              try:
+                  code,body,_=req(p)
+                  html=body.decode("utf-8","replace")
+                  print("SEARCH_PAGE",query,code,"SIZE",len(body),"VIDEO_LINK_COUNT",len(set(re.findall(r"/video/[a-f0-9]{32}",html))))
+                  print(" EMBED_SEARCH_HINTS", [x for x in ("__NEXT_DATA__",'"results":','"title":') if x in html])
+              except Exception as e:print("SEARCH_PAGE_FAIL",query,type(e).__name__,str(e)[:140])
+          PY
