@@ -47,7 +47,7 @@ internal object TvPluginManager {
             host == "::1" || host.contains(":") || host.all { it.isDigit() || it == '.' }) return false
         if (host.startsWith("172.")) {
             val octet = host.split('.').getOrNull(1)?.toIntOrNull()
-            if (octet in 16..31) return false
+            if (octet != null && octet in 16..31) return false
         }
         return uri.port == -1 || uri.port == 443
     }
