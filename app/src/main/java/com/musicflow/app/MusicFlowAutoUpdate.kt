@@ -1,6 +1,7 @@
 package com.musicflow.app
 
 import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,10 +29,20 @@ internal object MusicFlowUpdatePolicy {
 internal fun MusicFlowAutoUpdate() {
     val context = LocalContext.current
     val palette = LocalMusicFlowPalette.current
+    val announcementPreferences = remember(context) {
+        context.getSharedPreferences("musicflow_updates", Context.MODE_PRIVATE)
+    }
     val scope = rememberCoroutineScope()
     var available by remember { mutableStateOf<MusicFlowUpdate?>(null) }
     var working by remember { mutableStateOf(false) }
     var hidden by remember { mutableStateOf(false) }
+    fun candidateAllowed(candidate: MusicFlowUpdate?): Boolean =
+        UpdateDialogGate.visible(UpdateDialogGate.State(
+            installedCode = MusicFlowUpdates.currentCode(context),
+            candidateCode = candidate?.versionCode,
+            ignoredCode = announcementPreferences.getLong("ignored_code", 0L),
+            dismissed = hidden
+        ))
     var transfer by remember {
         mutableStateOf(MusicFlowBackgroundUpdates.Snapshot(
             MusicFlowBackgroundUpdates.Phase.IDLE))
@@ -43,13 +54,12 @@ internal fun MusicFlowAutoUpdate() {
         val installed = MusicFlowUpdates.currentCode(context)
         val saved = MusicFlowBackgroundUpdates.savedRelease(context)
             ?.takeIf { MusicFlowUpdatePolicy.isNewer(it.versionCode, installed) }
-        if (saved != null && !hidden) available = saved
+        if (candidateAllowed(saved)) available = saved
         val preferences = context.getSharedPreferences("musicflow_updates", Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
         try {
             val latest = MusicFlowUpdates.latestRelease()
-            if (latest != null &&
-                MusicFlowUpdatePolicy.isNewer(latest.versionCode, installed) && !hidden) {
+            if (candidateAllowed(latest)) {
                 val snoozedVersion = preferences.getLong("snoozed_version", 0L)
                 val snoozedUntil = preferences.getLong("snoozed_until", 0L)
                 if (saved != null || latest.versionCode != snoozedVersion || now >= snoozedUntil) {
@@ -68,9 +78,8 @@ internal fun MusicFlowAutoUpdate() {
                 transfer = MusicFlowBackgroundUpdates.snapshot(context)
                 val saved = MusicFlowBackgroundUpdates.savedRelease(context)
                 if (saved != null && available == null &&
-                    MusicFlowUpdatePolicy.shouldShow(
-                        saved.versionCode, MusicFlowUpdates.currentCode(context), hidden
-                    ) && transfer.phase != MusicFlowBackgroundUpdates.Phase.IDLE) {
+                    candidateAllowed(saved) &&
+                    transfer.phase != MusicFlowBackgroundUpdates.Phase.IDLE) {
                     available = saved
                 }
             } catch (failure: Exception) {
@@ -81,9 +90,7 @@ internal fun MusicFlowAutoUpdate() {
     }
 
     val update = available
-    if (update != null && MusicFlowUpdatePolicy.shouldShow(
-            update.versionCode, MusicFlowUpdates.currentCode(context), hidden
-        )) {
+    if (update != null && candidateAllowed(update)) {
         val sameVersion = update.versionCode ==
             MusicFlowBackgroundUpdates.savedRelease(context)?.versionCode
         val loading = sameVersion && transfer.phase in setOf(
@@ -137,6 +144,16 @@ internal fun MusicFlowAutoUpdate() {
                 Button(
                     enabled = !working && !loading,
                     onClick = {
+                        // Dismiss in this click handler, BEFORE suspension/network calls.
+                        // This guarantees the modal is gone even when DownloadManager stalls.
+                        val nextState = UpdateDialogGate.onConfirm(UpdateDialogGate.State(
+                            MusicFlowUpdates.currentCode(context), update.versionCode,
+                            announcementPreferences.getLong("ignored_code", 0L), hidden
+                        ))
+                        hidden = nextState.dismissed
+                        available = null
+                        announcementPreferences.edit()
+                            .putLong("ignored_code", nextState.ignoredCode).apply()
                         working = true
                         error = null
                         scope.launch {
@@ -149,20 +166,18 @@ internal fun MusicFlowAutoUpdate() {
                                         context.startActivity(MusicFlowUpdates.allowInstallIntent(context))
                                     } else {
                                         context.startActivity(MusicFlowUpdates.installerIntent(uri))
-                                        hidden = true
-                                        available = null
                                     }
                                 } else {
                                     MusicFlowBackgroundUpdates.enqueue(context, update)
                                     transfer = MusicFlowBackgroundUpdates.snapshot(context)
-                                    // DownloadManager continues in the background. The modal
-                                    // must not stay open and obscure the application.
-                                    hidden = true
-                                    available = null
+                                    // The announcement was dismissed synchronously on tap.
+                                    // DownloadManager continues even if this Activity exits.
                                 }
                             } catch (failure: Exception) {
-                                error = "Не удалось подготовить обновление: " +
+                                val message = "Не удалось подготовить обновление: " +
                                     (failure.message ?: "ошибка загрузки")
+                                AppDiagnostics.failure("Updates", "confirmation", failure)
+                                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
                             } finally {
                                 working = false
                             }
@@ -187,6 +202,8 @@ internal fun MusicFlowAutoUpdate() {
                                 System.currentTimeMillis() + 24L * 60L * 60L * 1000L)
                             .apply()
                     }
+                    announcementPreferences.edit()
+                        .putLong("ignored_code", update.versionCode).apply()
                     hidden = true
                     available = null
                 }) {
