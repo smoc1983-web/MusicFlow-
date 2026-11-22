@@ -28,8 +28,8 @@ internal data class CinemaNativeSource(
 
 internal object CinemaNativeSources {
     const val FIRST_PAGE = CinemaRutubeSource.FEED_URL
-    private const val FIRST_NAME = "RUTUBE · Кино и сериалы"
-    private const val PREFS = "musicflow_cinema_urls_v7"
+    private const val FIRST_NAME = "Кино и сериалы"
+    private const val PREFS = "musicflow_cinema_urls_v8"
     private const val MAX_SOURCES = 30
     private const val MAX_RESPONSE_BYTES = 1_500_000
 
@@ -120,9 +120,12 @@ internal object CinemaNativeSources {
         withContext(Dispatchers.IO) {
             when (source.format) {
                 CinemaSourceFormat.RUTUBE_FEED -> {
-                    val cards = CinemaRutubeSource.parseFeed(fetch(source.url), source.id)
-                    require(cards.isNotEmpty()) { "RUTUBE не вернул карточки видео" }
-                    cards
+                    val shelves = CinemaRutubeCatalog.shelves()
+                    val first = shelves.firstOrNull {
+                        it.section == "Главная" && it.title.contains("Рекомендуем")
+                    } ?: shelves.firstOrNull { it.section == "Главная" }
+                    require(first != null) { "Не удалось получить киноразделы" }
+                    CinemaRutubeCatalog.loadShelf(first, source.id).films
                 }
                 CinemaSourceFormat.DIRECT_MEDIA -> listOf(
                     CinemaTitle(
@@ -227,12 +230,16 @@ internal object CinemaNativeSources {
         if (rutubeId != null) {
             val api = CinemaRutubeSource.apiUrl(rutubeId)
             return@withContext try {
+                val meta = runCatching {
+                    CinemaRutubeSource.fromMeta(item,
+                        fetch("https://rutube.ru/api/video/$rutubeId/"))
+                }.getOrDefault(item)
                 val options = fetch(api)
-                CinemaRutubeSource.fromPlayOptions(item, options)
+                CinemaRutubeSource.fromPlayOptions(meta, options)
             } catch (error: Exception) {
-                item.copy(playbackDiagnostic = "RUTUBE API: " +
+                item.copy(playbackDiagnostic = "Не удалось проверить видео: " +
                     (error.message ?: "Ошибка загрузки").take(150) +
-                    ". Попробуйте позднее или откройте видео на RUTUBE.")
+                    ". Попробуйте позднее.")
             }
         }
         val html = fetch(address)
