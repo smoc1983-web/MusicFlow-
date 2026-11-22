@@ -150,9 +150,15 @@ class PlaybackService : MediaSessionService() {
         player.addListener(TvStreamRecovery(player, recoveryScope))
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                val kind = player.currentMediaItem?.mediaMetadata?.extras?.getString(MUSIC_SOURCE) ?: "other"
+                val kind = player.currentMediaItem?.mediaId?.substringBefore(':')
+                    ?: player.currentMediaItem?.mediaMetadata?.extras?.getString(MUSIC_SOURCE)
+                    ?: "other"
+                val http = generateSequence<Throwable>(error) { it.cause }
+                    .filterIsInstance<androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException>()
+                    .firstOrNull()?.responseCode
                 AppDiagnostics.failure(
-                    "Playback", "Media3 " + error.errorCodeName + " source=" + kind, error
+                    "Playback", "Media3 " + error.errorCodeName +
+                        " source=" + kind + (http?.let { " HTTP " + it } ?: ""), error
                 )
             }
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
