@@ -19,12 +19,11 @@ internal enum class MusicFlowStyle(val title: String, val subtitle: String) {
 
         /** Old names never appear in the picker, but user preferences still load. */
         fun fromSaved(value: String?): MusicFlowStyle = when (value) {
-            "AB_PEARL" -> PEARL_VISION
-            "AB_ICY_NIGHT", "AB_BLACK_ICE" -> ARCTIC_CRYSTAL
-            "AB_EMERALD" -> EMERALD_FLOW
-            "AB_AMBER", "AB_ONYX" -> SOLAR_GLASS
-            "AB_LILAC", "AB_OBSIDIAN", "AB_AMETHYST",
-            "AB_FLAT_GRAPHITE" -> OBSIDIAN_GLASS
+            // The user chose Obsidian as the initial replacement for all ten
+            // legacy choices. New Liquid Glass selections still round-trip.
+            "AB_PEARL", "AB_ICY_NIGHT", "AB_LILAC", "AB_AMBER",
+            "AB_EMERALD", "AB_OBSIDIAN", "AB_ONYX", "AB_BLACK_ICE",
+            "AB_AMETHYST", "AB_FLAT_GRAPHITE" -> DEFAULT
             else -> entries.firstOrNull { it.name == value } ?: DEFAULT
         }
     }
