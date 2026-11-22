@@ -279,7 +279,9 @@ private fun FullscreenTvContent(player: MediaController, initial: TvHandoff,
         }
     }
 
-    BackHandler { if (showList) showList = false else onExit() }
+    // A single system Back always returns to the mini-player; dialogs handle
+    // their own Back events while they are visible.
+    BackHandler { onExit() }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         FullscreenVideo(player, mode, size, Modifier.fillMaxSize())
         Box(Modifier.matchParentSize().clickable { showUi = !showUi })
