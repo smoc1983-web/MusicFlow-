@@ -3,6 +3,7 @@ package com.musicflow.app
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -144,6 +145,7 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                     title = film.title,
                     sourceKey = film.key,
                     streamUrl = media,
+                    pageUrl = film.pageUrl,
                     onClose = { playing = null }
                 )
             }
@@ -282,7 +284,10 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
             onDismissRequest = { selectedFilm = null },
             title = { Text(film.title) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(9.dp)
+                ) {
                     Text(film.description)
                     if (resolvingFilm) {
                         LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -300,10 +305,10 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                         }
                     }
                     Text(
-                        if (film.hasPlayback)
-                            "Найден прямой HTTPS-видеопоток."
-                        else "Подтверждённый MP4/HLS-поток не найден. Приложение " +
-                            "не запускает скрытые JS-плееры и не обходит ограничения сайта.",
+                        film.playbackDiagnostic ?:
+                            (if (film.hasPlayback) "Найден прямой видеопоток."
+                            else "Публичной MP4/HLS-ссылки нет. Сайт может использовать " +
+                                "встроенный JS-плеер или защищённое воспроизведение."),
                         style = MaterialTheme.typography.bodySmall
                     )
                     film.episodes.forEach { episode ->
@@ -317,7 +322,8 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                     }
                     val source = sources.firstOrNull { it.id == film.sourceId }
                     source?.let {
-                        Text(it.url, style = MaterialTheme.typography.labelSmall)
+                        Text(film.pageUrl ?: it.url,
+                            style = MaterialTheme.typography.labelSmall)
                     }
                 }
             },
