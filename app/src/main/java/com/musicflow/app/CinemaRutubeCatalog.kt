@@ -204,18 +204,24 @@ internal object CinemaRutubeCatalog {
         if (term.length < 3) return@withContext emptyList()
         val found = mutableListOf<CinemaTitle>()
         val encoded = URLEncoder.encode(term, "UTF-8")
+        val base = "https://rutube.ru/api/search/video/?query=" +
+            encoded + "&page="
+        var next: String? = base + "1&limit=50"
+        val visited = hashSetOf<String>()
         for (page in 1..maxPages.coerceIn(1, 4)) {
-            val url = "https://rutube.ru/api/search/video/?query=" +
-                encoded + "&page=" + page + "&limit=50"
+            val address = next ?: break
+            if (!visited.add(address)) break
             val loaded = try {
-                parseVideos(get(url), sourceId, "Поиск RUTUBE").films
+                parseVideos(get(address), sourceId, "Поиск RUTUBE")
             } catch (cancel: kotlinx.coroutines.CancellationException) {
                 throw cancel
             } catch (_: Exception) {
                 break
             }
-            found.addAll(loaded)
-            if (loaded.size < 50) break
+            found.addAll(loaded.films)
+            next = loaded.next ?: if (loaded.films.size >= 50) {
+                base + (page + 1) + "&limit=50"
+            } else null
         }
         found.distinctBy { it.key }
     }
