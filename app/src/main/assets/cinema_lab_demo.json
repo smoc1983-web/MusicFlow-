@@ -3,6 +3,16 @@
   "name": "Cinema LAB · открытые фильмы",
   "items": [
     {
+      "id": "cinema-local-check",
+      "title": "Проверка видео · офлайн",
+      "type": "movie",
+      "year": 2026,
+      "genre": "Техническое видео · Без интернета",
+      "description": "Короткий оригинальный 8-секундный тестовый ролик, встроенный в APK. Позволяет проверить Android Media3 без доступа к внешним серверам. Это не фильм Elephants Dream.",
+      "stream_url": "asset:///cinema_lab_test.mp4",
+      "attribution": "MusicFlow Cinema LAB · созданный тестовый ролик"
+    },
+    {
       "id": "bbb2008",
       "title": "Big Buck Bunny",
       "type": "movie",
@@ -41,7 +51,7 @@
       "type": "movie",
       "year": 2006,
       "genre": "Фантастика · Анимация",
-      "description": "Один из первых открытых анимационных фильмов Blender Foundation.",
+      "description": "Один из первых открытых анимационных фильмов Blender Foundation. Если внешний Google-сервер вернёт HTTP 403, приложение явно переключит плеер на встроенный технический ролик — не на фильм.",
       "poster": "https://storage.googleapis.com/gtv-videos-bucket/sample/images/ElephantsDream.jpg",
       "stream_url": "https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
       "attribution": "Blender Foundation · CC BY 2.5"
