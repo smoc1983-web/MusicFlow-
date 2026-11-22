@@ -1,9 +1,10 @@
 name: Publish official signed MusicFlow 0.7.45
 on:
   push:
-    branches: ["feature/musicflow-v0745-radio-update-bluetooth-eq"]
+    branches: ["feature/musicflow-v0745-update-eq-radio-artwork"]
     paths:
       - ".github/release-assets/v0745/signed-delta.doublezstd.b64"
+      - ".github/workflows/publish-v0745-original-signed.yml"
 permissions:
   contents: write
   actions: read
