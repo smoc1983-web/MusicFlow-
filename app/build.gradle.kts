@@ -30,7 +30,7 @@ android {
     buildTypes {
         getByName("debug") {
             // Debug builds must never replace a signed production package.
-            applicationIdSuffix = ".cinematest2"
+            applicationIdSuffix = ".cinematest3"
             versionNameSuffix = "-cinema-lampa-test-v2"
         }
         getByName("release") {
