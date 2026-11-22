@@ -19,6 +19,9 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 
@@ -29,14 +32,24 @@ internal fun CinemaNativeInlinePlayer(
     title: String,
     sourceKey: String,
     streamUrl: String,
+    pageUrl: String? = null,
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
     var errorText by remember(sourceKey, streamUrl) { mutableStateOf<String?>(null) }
     var position by remember(sourceKey, streamUrl) { mutableLongStateOf(0L) }
 
-    val player = remember(sourceKey, streamUrl) {
-        ExoPlayer.Builder(context).build().apply {
+    val player = remember(sourceKey, streamUrl, pageUrl) {
+        val origin = pageUrl?.takeIf(CinemaLabSources::isSafeHttps)
+        val http = DefaultHttpDataSource.Factory()
+        // The same page referrer a normal browser supplies; no authentication bypass.
+        if (origin != null) http.setDefaultRequestProperties(
+            mapOf("Referer" to origin)
+        )
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(DefaultDataSource.Factory(context, http))
+            ).build().apply {
             setMediaItem(MediaItem.fromUri(streamUrl))
             prepare()
             CinemaLabSources.progress(context, sourceKey).takeIf { it > 0 }?.let {
@@ -49,8 +62,14 @@ internal fun CinemaNativeInlinePlayer(
     DisposableEffect(player, sourceKey) {
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                errorText = error.errorCodeName + ": " +
-                    (error.cause?.message ?: error.message.orEmpty()).take(180)
+                val message = error.cause?.message ?: error.message.orEmpty()
+                errorText = if (message.contains("Response code: 403") ||
+                    message.contains("Response code: 401")) {
+                    "Сервер отказал в доступе (HTTP 401/403). " +
+                        "Ссылка найдена, но доступ к видеопотоку не разрешён."
+                } else {
+                    error.errorCodeName + ": " + message.take(180)
+                }
             }
         }
         player.addListener(listener)
