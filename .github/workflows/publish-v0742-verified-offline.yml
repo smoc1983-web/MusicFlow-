@@ -1,0 +1,101 @@
+name: Publish MusicFlow 0.7.42 with verified original signature
+on:
+  push:
+    branches: ["feature/musicflow-v0742-episode-audit-recovery"]
+    paths: [".github/release-assets/v0742/signed-delta.zst.b64"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: musicflow-0742-original-signed-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare APK verification tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v zstd || { sudo apt-get update -qq; sudo apt-get install -y zstd; }
+          yes | sdkmanager "build-tools;36.0.0" || test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+      - name: Download original exact aligned unsigned 0.7.42
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/unsigned" out
+          gh run download 45030690451 -R "$GITHUB_REPOSITORY" \
+            -n MusicFlow-0.7.42-aligned-unsigned-and-signing-tools --dir "$RUNNER_TEMP/unsigned"
+          UNSIGNED="$RUNNER_TEMP/unsigned/MusicFlow_0.7.42-aligned-unsigned.apk"
+          echo "94bf337d348d948cb2096d8685504ac8cbdc2f03433b88e0b0d979866c32bbe2  $UNSIGNED" | sha256sum -c -
+      - name: Restore privately signed APK from verified public binary delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          UNSIGNED="$RUNNER_TEMP/unsigned/MusicFlow_0.7.42-aligned-unsigned.apk"
+          PATCH="$RUNNER_TEMP/v0742-signed-delta.zst"
+          base64 -d .github/release-assets/v0742/signed-delta.zst.b64 > "$PATCH"
+          echo "418a189a2c7b729f3f95929e641d965f7fe0cf014308cdf67a688da3d81cfae2  $PATCH" | sha256sum -c -
+          zstd -q -d --patch-from="$UNSIGNED" "$PATCH" -o out/MusicFlow_0.7.42.apk
+          echo "6cc19ddc6da775b50c1249ddbb7b754c54bae3927608d7f255ea28ab28ff576c  out/MusicFlow_0.7.42.apk" | sha256sum -c -
+      - name: Verify official package, signer, zip alignment and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=out/MusicFlow_0.7.42.apk
+          TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          "$TOOLS/zipalign" -c -p 4 "$APK"
+          "$TOOLS/apksigner" verify --verbose --min-sdk-version 26 "$APK"
+          "$TOOLS/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview' versionCode='742' versionName='0.7.42'"
+          FINGERPRINT=$("$TOOLS/apksigner" verify --print-certs "$APK" |
+            sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
+          test "$FINGERPRINT" = "c461ee635d5b295ef6c765e1ae533d0079dc6e53cb2632a11a1b445773752410"
+          sha256sum "$APK" > out/SHA256SUMS.txt
+      - name: Publish verified MusicFlow 0.7.42 to GitHub Releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view v0.7.42 -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release v0.7.42 already exists, refusing to overwrite."
+            exit 1
+          fi
+          cat > out/RELEASE_NOTES.md <<'NOTES'
+          MusicFlow 0.7.42 — автоматическая сверка сезонов и серий.
+
+          - Сначала проверяется эталонный список сезонов и серий по открытым метаданным TVmaze, если удаётся однозначно сопоставить сериал.
+          - Автоматический поиск по страницам RUTUBE и отдельный поиск пропущенных номеров серий.
+          - Список показывает найденные и отсутствующие в подключённых источниках серии, статус проверки и доступное число эпизодов.
+          - Добавлен выбор реально имеющихся аудиодорожек в видеоплеере.
+          - В кинораздел включены улучшения Cinema TEST 12.
+          - Радио использует резервный список станций без сообщения о сбое основного каталога.
+          - В ТВ оставлены счётчики каналов текущего источника и избранного; по избранному открывается список сохранённых каналов.
+          - Pro-ветка не изменена.
+
+          Внешний каталог не гарантирует доступность потоков и право просмотра каждого эпизода.
+          Подпись оригинальным сертификатом MusicFlow, пакет com.musicflow.preview, versionCode 742.
+          Обновление можно установить поверх 0.7.40 через MusicFlow → О приложении → Проверить обновления.
+          NOTES
+          gh release create v0.7.42 out/MusicFlow_0.7.42.apk out/SHA256SUMS.txt \
+            -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest \
+            --title "MusicFlow 0.7.42 · Автоматическая сверка сериалов" \
+            --notes-file out/RELEASE_NOTES.md
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.7.42" \
+            --jq '.assets[].name' | grep -Fx 'MusicFlow_0.7.42.apk'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.42-official-signed
+          path: |
+            out/MusicFlow_0.7.42.apk
+            out/SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error
