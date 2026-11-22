@@ -3,6 +3,7 @@ on:
   push:
     branches: ["feature/musicflow-v0746-tv-hls-buffer-resilience"]
     paths:
+      - "app/**"
       - ".github/workflows/musicflow-v0746-tv-buffer-verify.yml"
   workflow_dispatch:
 permissions:
