@@ -1,0 +1,109 @@
+name: Publish MusicFlow 0.7.43 signed original-key update
+on:
+  push:
+    branches: ["feature/musicflow-v0743-tv-playback-recovery"]
+    paths:
+      - ".github/release-assets/v0743/signed-delta.doublezstd.b64"
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: musicflow-official-v0743-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Android verification tools and zstd
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v zstd >/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y zstd
+          fi
+          yes | sdkmanager "build-tools;36.0.0" >/dev/null ||
+            test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+      - name: Download the exact CI-verified aligned unsigned release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source .github/release-assets/v0743/checksums.env
+          mkdir -p "$RUNNER_TEMP/unsigned" out
+          gh run download 45033211446 -R "$GITHUB_REPOSITORY"             -n MusicFlow-0.7.43-aligned-unsigned-for-private-signing             --dir "$RUNNER_TEMP/unsigned"
+          UNSIGNED="$RUNNER_TEMP/unsigned/MusicFlow_0.7.43-aligned-unsigned.apk"
+          echo "$UNSIGNED_SHA  $UNSIGNED" | sha256sum -c -
+          ACTUAL_SOURCE=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/45033211446" --jq '.head_sha')
+          test "$ACTUAL_SOURCE" = "$SOURCE_SHA" || {
+            echo "::error::Unsigned APK came from an unexpected commit."
+            exit 1
+          }
+      - name: Restore independently signed APK from signed-byte delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .github/release-assets/v0743/checksums.env
+          UNSIGNED="$RUNNER_TEMP/unsigned/MusicFlow_0.7.43-aligned-unsigned.apk"
+          OUTER="$RUNNER_TEMP/signed-delta.doublezstd"
+          PATCH="$RUNNER_TEMP/unsigned-to-signed.patch.zst"
+          base64 -d .github/release-assets/v0743/signed-delta.doublezstd.b64 > "$OUTER"
+          echo "$OUTER_SHA  $OUTER" | sha256sum -c -
+          zstd -q -d "$OUTER" -o "$PATCH"
+          echo "$PATCH_SHA  $PATCH" | sha256sum -c -
+          zstd -q -d --patch-from="$UNSIGNED" "$PATCH"             -o out/MusicFlow_0.7.43.apk
+          echo "$SIGNED_SHA  out/MusicFlow_0.7.43.apk" | sha256sum -c -
+      - name: Verify original signing cert, APK install compatibility and integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=out/MusicFlow_0.7.43.apk
+          TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          "$TOOLS/zipalign" -c -p 4 "$APK"
+          "$TOOLS/apksigner" verify --verbose --min-sdk-version 26 "$APK"
+          "$TOOLS/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview' versionCode='743' versionName='0.7.43'"
+          FINGERPRINT=$("$TOOLS/apksigner" verify --print-certs "$APK" |
+            sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
+          test "$FINGERPRINT" = "c461ee635d5b295ef6c765e1ae533d0079dc6e53cb2632a11a1b445773752410" || {
+            echo "::error::APK does not match original MusicFlow signing certificate."
+            exit 1
+          }
+          sha256sum "$APK" > out/SHA256SUMS.txt
+      - name: Publish through official in-app GitHub Releases feed
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view v0.7.43 -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Version v0.7.43 already published; refusing overwrite."
+            exit 1
+          fi
+          cat > out/RELEASE_NOTES.md <<'NOTES'
+          MusicFlow 0.7.43 — восстановление IPTV-потоков и улучшенный мини-плеер.
+
+          - Автоматическое переподключение IPTV при длительной буферизации, остановке воспроизведения и временном сетевом сбое (до двух попыток без бесконечных циклов).
+          - Постоянные HTTP-ошибки 401/403/404 не запускают бесполезные повторные подключения. Каналы, заблокированные или удалённые на стороне источника, не гарантированно воспроизводятся.
+          - В мини-плеере оставлена одна кнопка полноэкранного режима; показываются индикатор загрузки и статус ошибки.
+          - Одна кнопка «Назад» возвращает из полноэкранного ТВ в мини-плеер. Предотвращено повторное открытие окна при смене ориентации.
+          - Улучшена диагностика потоков (показ HTTP-кода ошибки без публикации адреса).
+          - Сохранены кинораздел, автоматическая сверка серий, озвучка, радио и избранное ТВ из 0.7.42; Pro-ветка не изменена.
+
+          Официальный релиз: com.musicflow.preview, versionCode 743, версия 0.7.43.
+          Подпись оригинальным сертификатом MusicFlow, совместима с 0.7.42.
+          Обновление: MusicFlow → О приложении → Проверить обновления. Удалять приложение не нужно.
+          Работа конкретных IPTV-каналов зависит от доступности внешних потоков и сети.
+          NOTES
+          gh release create v0.7.43 out/MusicFlow_0.7.43.apk out/SHA256SUMS.txt             -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest             --title "MusicFlow 0.7.43 · Исправления IPTV и ТВ-плеера"             --notes-file out/RELEASE_NOTES.md
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.7.43"             --jq '.assets[].name' | grep -Fx 'MusicFlow_0.7.43.apk'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.43-official-signed
+          path: |
+            out/MusicFlow_0.7.43.apk
+            out/SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error
