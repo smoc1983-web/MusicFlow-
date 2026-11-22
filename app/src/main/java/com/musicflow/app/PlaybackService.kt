@@ -5,6 +5,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.C
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.datasource.DefaultDataSource
@@ -114,6 +115,17 @@ class PlaybackService : MediaSessionService() {
                     .build(),
                 true
             )
+            // External audio effects must work on the decoded PCM path.
+            // Hardware offload can bypass Equalizer/LoudnessEnhancer when routing
+            // audio to Bluetooth headphones and cause sound to disappear.
+            trackSelectionParameters = trackSelectionParameters.buildUpon()
+                .setAudioOffloadPreferences(
+                    TrackSelectionParameters.AudioOffloadPreferences.Builder()
+                        .setAudioOffloadMode(
+                            TrackSelectionParameters.AudioOffloadPreferences
+                                .AUDIO_OFFLOAD_MODE_DISABLED
+                        ).build()
+                ).build()
             // ExoPlayer retains wake and Wi-Fi locks while background audio is active.
             // Do not hold either lock after pause or playback stops.
             setWakeMode(C.WAKE_MODE_NETWORK)
