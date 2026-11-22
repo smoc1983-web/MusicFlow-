@@ -2,7 +2,7 @@ name: Publish MusicFlow 0.7.39 original-key signed radio catalog update
 on:
   push:
     branches: ["feature/musicflow-v0.7.39-radio-catalog-recovery"]
-    paths: [".github/release-assets/v0739/unsigned-to-signed.patch.zst.b64"]
+    paths: [".github/release-assets/v0739/signed-delta.doublezstd.b64"]
   workflow_dispatch:
 permissions:
   contents: write
@@ -43,7 +43,10 @@ jobs:
           set -euo pipefail
           UNSIGNED="$RUNNER_TEMP/unsigned/MusicFlow_0.7.39-aligned-unsigned.apk"
           PATCH="$RUNNER_TEMP/unsigned-to-signed.patch.zst"
-          base64 -d .github/release-assets/v0739/unsigned-to-signed.patch.zst.b64 > "$PATCH"
+          OUTER="$RUNNER_TEMP/signed-delta.doublezstd"
+          base64 -d .github/release-assets/v0739/signed-delta.doublezstd.b64 > "$OUTER"
+          echo "ff92908195b81ae6a10c68b0deef024d247db4acd6451a68a601f5bd984f7d29  $OUTER" | sha256sum -c -
+          zstd -q -d "$OUTER" -o "$PATCH"
           echo "01153d9512aafbcdbfc54c60d019b7bd415202155c378762625688f4a9b9621b  $PATCH" | sha256sum -c -
           zstd -q -d --patch-from="$UNSIGNED" "$PATCH" -o out/MusicFlow_0.7.39.apk
           echo "9d743a1f0b755aab95e3f61bde7f35a32cf04b9c58e183e895cf17e4bc05c5f4  out/MusicFlow_0.7.39.apk" | sha256sum -c -
