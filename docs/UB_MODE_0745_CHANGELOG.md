@@ -21,6 +21,8 @@
 - CI: `.github/workflows/musicflow-v0745-verify.yml`.
 - Hardware Bluetooth route and interactive Android installer behavior cannot be fully proven by JVM tests; device testing remains required.
 - CRAP / Dryer / Mutator repositories list Clojure, Java, Go, TypeScript, Rust and Python, but not Kotlin. These specialized quality gates are not run; no unsupported metric claims.
-- Latest result to be updated after the full CI compilation.
+- **Verified:** GitHub Actions run 45037932386, Kotlin/JUnit `testDebugUnitTest` and `assembleRelease` both successful. 28 test result suites emitted, including all four targeted regression classes. Unsigned production APK `com.musicflow.preview` versionCode 745 / 0.7.45 verified with `aapt`.
+- First CI run 45037657370 failed because a nullable latest-release object lost smart-cast information in the update dialog; fixed the real compilation issue and reran tests successfully.
+- No signed APK or GitHub Release published; permission gate is pending the user's theme selection and release request.
 
 **The ten existing themes and Pro branches remain untouched.**
