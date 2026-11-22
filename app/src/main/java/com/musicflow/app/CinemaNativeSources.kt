@@ -217,8 +217,15 @@ internal object CinemaNativeSources {
         require(CinemaLabSources.isSafeHttps(address)) {
             "Небезопасная ссылка страницы фильма."
         }
-        parseHtml(fetch(address), address, item.id, item.title)
-            .copy(sourceId = item.sourceId)
+        val html = fetch(address)
+        val page = parseHtml(html, address, item.id, item.title)
+        val resolution = CinemaPublicStreamResolver.resolve(html, address, ::fetch)
+        page.copy(
+            sourceId = item.sourceId,
+            streamUrl = resolution.mediaUrl ?: page.streamUrl,
+            pageUrl = address,
+            playbackDiagnostic = resolution.report()
+        )
     }
 
     fun placeholder(source: CinemaNativeSource, error: Throwable): CinemaTitle =
@@ -265,13 +272,16 @@ internal object CinemaNativeSources {
         options.add(meta("twitter:player:stream"))
         document.select("video[src],video source[src],source[type^=video/][src]").take(20)
             .forEach { options.add(it.attr("src")) }
-        val stream = options.asSequence().mapNotNull(::resolvePublic)
+        val publicScan = CinemaPublicStreamResolver.scan(raw, url)
+        val stream = publicScan.mediaUrl ?: options.asSequence().mapNotNull(::resolvePublic)
             .firstOrNull(::isVideoUrl)
         val year = Regex("(?:19|20)\\d{2}").find(name)?.value?.toIntOrNull()
         return CinemaTitle(
             id, id, name, CinemaKind.MOVIE, year,
             description, poster, "Страница фильма",
-            stream, emptyList(), "Добавлено по ссылке: " + URI(url).host
+            stream, emptyList(), "Добавлено по ссылке: " + URI(url).host,
+            pageUrl = url,
+            playbackDiagnostic = publicScan.report()
         )
     }
 
