@@ -694,7 +694,7 @@ private fun MusicScreen(
                     containerColor = palette.surface,
                     shadowElevation = 14.dp) {
                     listOf(0 to "Музыка", 2 to "Избранное", 6 to "Радио",
-                        5 to "История", 3 to "ТВ", 7 to "Кино TEST")
+                        5 to "История", 3 to "ТВ", 7 to "Кино")
                         .forEach { (index, label) ->
                             DropdownMenuItem(text = { Text(label) },
                                 onClick = {
