@@ -77,6 +77,15 @@ internal object RussianRadioFallback {
         emptyList()
     }
 
+    fun filterStations(
+        available: List<RussianRadioStation>, query: String
+    ): List<RussianRadioStation> {
+        val key = query.trim().lowercase(Locale.ROOT).replace('ё', 'е')
+        return if (key.isBlank()) available else available.filter {
+            it.name.lowercase(Locale.ROOT).replace('ё', 'е').contains(key)
+        }
+    }
+
     /**
      * Retrieve the updated independent playlist when possible; if it cannot be
      * fetched, return the APK-bundled snapshot without requiring DNS or internet.
@@ -119,11 +128,6 @@ internal object RussianRadioFallback {
                 AppDiagnostics.failure("Radio", "independent playlist unavailable", error)
                 emptyList()
             }
-            val available = refreshed.ifEmpty { bundledStations(context) }
-            val key = query.trim().lowercase(Locale.ROOT).replace('ё', 'е')
-            if (key.isBlank()) available
-            else available.filter {
-                it.name.lowercase(Locale.ROOT).replace('ё', 'е').contains(key)
-            }
+            filterStations(refreshed.ifEmpty { bundledStations(context) }, query)
         }
 }
