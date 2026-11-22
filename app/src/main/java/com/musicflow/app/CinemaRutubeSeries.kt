@@ -10,7 +10,8 @@ internal data class CinemaTvShow(
     val name: String,
     val description: String,
     val seasons: Int,
-    val cover: String?
+    val cover: String?,
+    val originalName: String? = null
 )
 
 /** Public series metadata and season/episode pagination; no private subscription APIs. */
@@ -27,7 +28,10 @@ internal object CinemaRutubeSeries {
             seasons = obj.optInt("seasons_count").coerceIn(1, 30),
             cover = obj.optString("vertical_poster_url")
                 .takeIf(CinemaLabSources::isSafeHttps)
-                ?: obj.optString("poster_url").takeIf(CinemaLabSources::isSafeHttps)
+                ?: obj.optString("poster_url").takeIf(CinemaLabSources::isSafeHttps),
+            originalName = obj.optString("original_title").trim()
+                .ifBlank { obj.optString("original_name").trim() }
+                .take(140).takeIf { it.isNotBlank() }
         )
     }
 
