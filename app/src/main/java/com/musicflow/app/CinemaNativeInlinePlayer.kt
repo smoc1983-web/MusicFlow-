@@ -1,6 +1,8 @@
 package com.musicflow.app
 
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import android.content.pm.ActivityInfo
 import android.view.View
 import android.view.Window
@@ -76,6 +78,9 @@ internal fun CinemaNativeInlinePlayer(
     seriesSeason: Int = 1,
     seriesEpisodes: List<CinemaTitle> = emptyList(),
     seriesLoading: Boolean = false,
+    seriesExpected: List<CinemaExpectedEpisode> = emptyList(),
+    seriesGuideUrl: String? = null,
+    seriesAuditMessage: String = "",
     onSeasonSelected: (Int) -> Unit = {},
     onEpisodeSelected: (CinemaTitle) -> Unit = {},
     onClose: () -> Unit
@@ -424,6 +429,9 @@ internal fun CinemaNativeInlinePlayer(
             season = seriesSeason,
             episodes = seriesEpisodes,
             loading = seriesLoading,
+            expected = seriesExpected,
+            guideUrl = seriesGuideUrl,
+            auditMessage = seriesAuditMessage,
             immersive = fullScreen,
             onSeason = onSeasonSelected,
             onEpisode = { episode ->
@@ -441,12 +449,24 @@ private fun CinemaPlayerSeasonsDialog(
     season: Int,
     episodes: List<CinemaTitle>,
     loading: Boolean,
+    expected: List<CinemaExpectedEpisode>,
+    guideUrl: String?,
+    auditMessage: String,
     immersive: Boolean,
     onSeason: (Int) -> Unit,
     onEpisode: (CinemaTitle) -> Unit,
     onDismiss: () -> Unit
 ) {
     val listState = rememberLazyListState()
+    val context = LocalContext.current
+    val known = episodes.mapNotNull { it.episodeNumber }.toSet()
+    val authoritative = expected.isNotEmpty()
+    val inferred = CinemaEpisodeAudit.coverage(null, season, episodes).expected
+    val expectedIndex = if (authoritative) expected else inferred
+    val missing = expectedIndex.map { it.number }.filterNot { it in known }
+    val displayed: List<Pair<Int, CinemaTitle?>> =
+        (episodes.map { (it.episodeNumber ?: Int.MAX_VALUE) to (it as CinemaTitle?) } +
+            missing.map { it to null }).sortedBy { it.first }
     LaunchedEffect(season) { listState.scrollToItem(0) }
     Dialog(onDismissRequest = onDismiss) {
         val dialogView = LocalView.current
@@ -483,7 +503,30 @@ private fun CinemaPlayerSeasonsDialog(
                     }
                 }
                 if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-                if (episodes.isEmpty() && !loading) {
+                Text(
+                    if (authoritative) {
+                        "По TVmaze: " + expected.size +
+                            " серий. Найдено: " + expected.count { it.number in known }
+                    } else {
+                        "Полное количество не подтверждено. Найдено записей: " +
+                            episodes.size
+                    },
+                    color = Color.LightGray,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                if (guideUrl != null) {
+                    TextButton(onClick = {
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW,
+                                Uri.parse(guideUrl)))
+                        }
+                    }) { Text("Источник сведений: TVmaze") }
+                }
+                if (auditMessage.isNotBlank()) {
+                    Text(auditMessage, color = Color.LightGray,
+                        style = MaterialTheme.typography.labelSmall)
+                }
+                if (displayed.isEmpty() && !loading) {
                     Text("Серии этого сезона не найдены.", color = Color.LightGray)
                 }
                 LazyColumn(
@@ -491,8 +534,22 @@ private fun CinemaPlayerSeasonsDialog(
                     modifier = Modifier.heightIn(max = 355.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    items(episodes, key = { it.key }) { item ->
-                        Surface(
+                    items(displayed) { (number, item) ->
+                        if (item == null) {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                color = Color(0xFF303648),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    "Серия " + number + " · " + if (loading)
+                                        "идёт поиск"
+                                    else "не найдена в подключённых источниках",
+                                    modifier = Modifier.padding(12.dp),
+                                    color = Color.LightGray
+                                )
+                            }
+                        } else Surface(
                             modifier = Modifier.fillMaxWidth()
                                 .clickable { onEpisode(item) },
                             color = Color(0xFF303648),
