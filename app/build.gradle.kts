@@ -31,7 +31,7 @@ android {
         getByName("debug") {
             // Debug builds must never replace a signed production package.
             applicationIdSuffix = ".cinematest10"
-            versionNameSuffix = "-cinema-redirect-fix-v9"
+            versionNameSuffix = "-cinema-seasons-fullscreen-v10"
         }
         getByName("release") {
             isMinifyEnabled = false
