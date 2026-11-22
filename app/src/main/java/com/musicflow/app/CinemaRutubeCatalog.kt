@@ -151,9 +151,11 @@ internal object CinemaRutubeCatalog {
             if (title.isBlank()) continue
             val category = item.optJSONObject("category")?.optString("name").orEmpty()
             val season = item.optInt("season", 0)
-            val episode = item.optInt("episode", 0)
+            val episode = item.optInt("episode", 0).takeIf { it > 0 }
+                ?: item.optInt("series", 0)
+            val showId = item.optInt("tv_show_id", 0)
             val isSeries = category.contains("сериал", true) ||
-                season > 0 || episode > 0 ||
+                season > 0 || episode > 0 || showId > 0 ||
                 Regex("\\d+\\s*сезон|\\d+\\s*сери", RegexOption.IGNORE_CASE)
                     .containsMatchIn(title)
             val originalDesc = item.optString("description")
@@ -174,7 +176,10 @@ internal object CinemaRutubeCatalog {
                 streamUrl = null,
                 episodes = emptyList(),
                 attribution = "Каталог",
-                pageUrl = "https://rutube.ru/video/$id/"
+                pageUrl = "https://rutube.ru/video/$id/",
+                seasonNumber = season.takeIf { it > 0 },
+                episodeNumber = episode.takeIf { it > 0 },
+                tvShowId = showId.takeIf { it > 0 }
             ))
         }
         val next = obj.optString("next").takeIf(::permittedApi)
