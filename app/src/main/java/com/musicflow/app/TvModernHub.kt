@@ -71,6 +71,7 @@ internal fun TvModernHub(
     onAddPlaylist: () -> Unit,
     onAddPlugin: () -> Unit,
     onImportFile: () -> Unit,
+    onRemoveSource: () -> Unit,
     onRefresh: () -> Unit,
     onExternal: (TvChannel) -> Unit,
     modifier: Modifier = Modifier
@@ -150,6 +151,9 @@ internal fun TvModernHub(
                     OutlinedButton(onClick = onAddPlaylist) { Text("+ IPTV") }
                     OutlinedButton(onClick = onAddPlugin) { Text("+ Плагин") }
                     OutlinedButton(onClick = onImportFile) { Text("+ M3U-файл") }
+                    if (sourceId != "ruvideohub") {
+                        OutlinedButton(onClick = onRemoveSource) { Text("Удалить источник") }
+                    }
                 }
                 if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
                 if (error != null) {
