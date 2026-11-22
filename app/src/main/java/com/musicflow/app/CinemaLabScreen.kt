@@ -850,3 +850,48 @@ private fun CinemaBrowseRow(
         }
     }
 }
+
+@Composable
+private fun CinemaSeriesGroupRow(
+    group: CinemaSeriesGroup,
+    onClick: () -> Unit
+) {
+    Surface(
+        color = CinemaTile,
+        shape = RoundedCornerShape(18.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(11.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CinemaPoster(
+                group.representative.poster,
+                Modifier.width(90.dp).height(123.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    group.title,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2
+                )
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    "Сезонов в каталоге: " + group.seasons.size +
+                        " · Серий найдено: " + group.episodesCount,
+                    color = CinemaPurple,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    "Сезоны и серии",
+                    color = CinemaTextMuted,
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+            Icon(Icons.Filled.PlayArrow, "Открыть сериал", tint = CinemaPurple)
+        }
+    }
+}
