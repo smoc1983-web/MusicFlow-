@@ -23,21 +23,16 @@ class MusicFlowLiquidGlassThemesTest {
         assertEquals(MusicFlowStyle.OBSIDIAN_GLASS, MusicFlowStyle.fromSaved("invalid-value"))
     }
 
-    @Test fun previousThemesMigrateToClosestOneOfTheFiveChoices() {
-        val old = mapOf(
-            "AB_PEARL" to "PEARL_VISION",
-            "AB_ICY_NIGHT" to "ARCTIC_CRYSTAL",
-            "AB_LILAC" to "OBSIDIAN_GLASS",
-            "AB_AMBER" to "SOLAR_GLASS",
-            "AB_EMERALD" to "EMERALD_FLOW",
-            "AB_OBSIDIAN" to "OBSIDIAN_GLASS",
-            "AB_ONYX" to "SOLAR_GLASS",
-            "AB_BLACK_ICE" to "ARCTIC_CRYSTAL",
-            "AB_AMETHYST" to "OBSIDIAN_GLASS",
-            "AB_FLAT_GRAPHITE" to "OBSIDIAN_GLASS"
+    @Test fun allTenLegacyChoicesMigrateToTheUserSelectedObsidianDefault() {
+        val old = listOf(
+            "AB_PEARL", "AB_ICY_NIGHT", "AB_LILAC", "AB_AMBER",
+            "AB_EMERALD", "AB_OBSIDIAN", "AB_ONYX", "AB_BLACK_ICE",
+            "AB_AMETHYST", "AB_FLAT_GRAPHITE"
         )
-        old.forEach { (saved, expected) ->
-            assertEquals(saved, expected, MusicFlowStyle.fromSaved(saved).name)
+        assertEquals(10, old.size)
+        old.forEach { saved ->
+            assertEquals(saved, MusicFlowStyle.OBSIDIAN_GLASS,
+                MusicFlowStyle.fromSaved(saved))
         }
     }
 
