@@ -1,5 +1,7 @@
 package com.musicflow.app
 
+import android.content.Context
+import android.content.SharedPreferences
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -7,6 +9,10 @@ import androidx.media3.common.Player
 import androidx.media3.common.C
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.ResolvingDataSource
@@ -28,7 +34,9 @@ import androidx.media3.session.MediaSessionService
 class PlaybackService : MediaSessionService() {
     private val recoveryScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var session: MediaSession? = null
-    private var audioEqualizer: NativeAudioEqualizer? = null
+    private var audioEqualizer: PcmEqAudioProcessor? = null
+    private var eqPreferences: SharedPreferences? = null
+    private var eqPreferenceListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
     private var journal: PlaybackJournal? = null
 
     override fun onCreate() {
@@ -105,7 +113,31 @@ class PlaybackService : MediaSessionService() {
             } else spec
         }
         val mediaSourceFactory = DefaultMediaSourceFactory(resolvedDataSource)
-        val player = ExoPlayer.Builder(this)
+        val pcmEq = PcmEqAudioProcessor(AudioEqSettings.load(this))
+        audioEqualizer = pcmEq
+        val renderers = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: Context, enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean
+            ): AudioSink = DefaultAudioSink.Builder(context)
+                .setAudioProcessors(arrayOf<AudioProcessor>(pcmEq))
+                .setEnableFloatOutput(false)
+                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                .build()
+        }
+        val eqPrefs = getSharedPreferences(AudioEqSettings.PREFS, MODE_PRIVATE)
+        val eqListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "enabled" || key == "preset" ||
+                key?.startsWith("gain_") == true ||
+                key == "boost_enabled" || key == "boost_db") {
+                // Atomic parameter update; never pause, seek or rebuild player.
+                pcmEq.update(AudioEqSettings.load(this))
+            }
+        }
+        eqPrefs.registerOnSharedPreferenceChangeListener(eqListener)
+        eqPreferences = eqPrefs
+        eqPreferenceListener = eqListener
+        val player = ExoPlayer.Builder(this, renderers)
             .setMediaSourceFactory(mediaSourceFactory)
             .build().apply {
             setAudioAttributes(
@@ -131,9 +163,6 @@ class PlaybackService : MediaSessionService() {
             setWakeMode(C.WAKE_MODE_NETWORK)
             setHandleAudioBecomingNoisy(true)
         }
-        val eq = NativeAudioEqualizer(this)
-        audioEqualizer = eq
-        player.addListener(eq)
         val playbackJournal = PlaybackJournal(this, player)
         journal = playbackJournal
         playbackJournal.restore()
@@ -198,7 +227,9 @@ class PlaybackService : MediaSessionService() {
         journal?.persist()
         journal = null
         recoveryScope.cancel()
-        audioEqualizer?.release()
+        eqPreferenceListener?.let { eqPreferences?.unregisterOnSharedPreferenceChangeListener(it) }
+        eqPreferenceListener = null
+        eqPreferences = null
         audioEqualizer = null
         session?.let {
             it.player.release()
