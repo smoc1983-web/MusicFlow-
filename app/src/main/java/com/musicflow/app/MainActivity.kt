@@ -168,7 +168,7 @@ class MainActivity : ComponentActivity() {
                                     .putString("ui_theme", selected.name).apply()
                             }
                         )
-                        MusicFlowAutoUpdate()
+                        // No automatic official APK updates inside a separate Cinema TEST package.
                         }
                     }
                 }
@@ -267,7 +267,8 @@ private fun MusicScreen(
     var appliedSearch by remember { mutableStateOf("") }
     var searchMode by remember { mutableStateOf(SearchMode.ALL) }
     var sortMode by remember { mutableStateOf(SortMode.RELEVANCE) }
-    var tab by remember { mutableIntStateOf(0) }
+    // Cinema lab branch opens on the isolated prototype; official releases are unaffected.
+    var tab by remember { mutableIntStateOf(7) }
     var sectionMenu by remember { mutableStateOf(false) }
     var showAppearanceMenu by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
@@ -677,6 +678,7 @@ private fun MusicScreen(
                     Text(when (tab) {
                         2 -> "Избранное"
                         3 -> "ТВ"
+                        7 -> "Кино TEST"
                         6 -> "Радио"
                         5 -> "История"
                         else -> "Музыка"
@@ -691,7 +693,7 @@ private fun MusicScreen(
                     containerColor = palette.surface,
                     shadowElevation = 14.dp) {
                     listOf(0 to "Музыка", 2 to "Избранное", 6 to "Радио",
-                        5 to "История", 3 to "ТВ")
+                        5 to "История", 3 to "ТВ", 7 to "Кино TEST")
                         .forEach { (index, label) ->
                             DropdownMenuItem(text = { Text(label) },
                                 onClick = {
@@ -723,6 +725,8 @@ private fun MusicScreen(
             )
         } else if (tab == 3) {
             RuVideoHubTvScreen(player = player, modifier = Modifier.weight(1f))
+        } else if (tab == 7) {
+            CinemaLabScreen(modifier = Modifier.weight(1f))
         } else if (tab == 4) {
             DiagnosticsScreen(modifier = Modifier.weight(1f))
         } else if (tab == 6) {
