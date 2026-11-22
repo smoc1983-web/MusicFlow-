@@ -193,6 +193,33 @@ internal object CinemaRutubeCatalog {
         parseVideos(get(address), sourceId, shelf.title)
     }
 
+    /**
+     * Page through public search results instead of stopping at the first 50.
+     * A non-empty first page is not evidence that all episodes were found.
+     */
+    suspend fun searchEpisodesPages(
+        query: String, sourceId: String, maxPages: Int = 3
+    ): List<CinemaTitle> = withContext(Dispatchers.IO) {
+        val term = query.trim().take(90)
+        if (term.length < 3) return@withContext emptyList()
+        val found = mutableListOf<CinemaTitle>()
+        val encoded = URLEncoder.encode(term, "UTF-8")
+        for (page in 1..maxPages.coerceIn(1, 4)) {
+            val url = "https://rutube.ru/api/search/video/?query=" +
+                encoded + "&page=" + page + "&limit=50"
+            val loaded = try {
+                parseVideos(get(url), sourceId, "Поиск RUTUBE").films
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                break
+            }
+            found.addAll(loaded)
+            if (loaded.size < 50) break
+        }
+        found.distinctBy { it.key }
+    }
+
     /** Search the connected RUTUBE source, not just currently visible cards. */
     suspend fun search(
         title: String, sourceId: String, shelves: List<CinemaRutubeShelf>
