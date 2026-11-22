@@ -1,0 +1,84 @@
+name: Diagnose public Sanfilm iframe metadata
+on:
+  push:
+    branches: ["feature/musicflow-cinema-public-stream-resolver-v6"]
+    paths: [".github/workflows/cinema-public-iframe-diagnostic.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-html-diagnostics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe publicly served page and linked player frames
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import urllib.request, urllib.parse, html.parser, re, ipaddress, socket
+          ROOT="https://ff.sanfilm2.link/69359-zavodchica-2026.html"
+          UA="Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36"
+          class Scan(html.parser.HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.frames=[]; self.scripts=[]; self.media=[]; self.player_attrs=[]
+              def handle_starttag(self,tag,attrs):
+                  attrs=dict(attrs)
+                  if tag=="iframe":
+                      value=attrs.get("src") or attrs.get("data-src") or attrs.get("data-lazy-src")
+                      if value: self.frames.append(value)
+                  if tag=="script" and attrs.get("src"): self.scripts.append(attrs["src"])
+                  if tag in ("video","source"): self.media.append((tag, list(attrs)))
+                  if any("player" in str(x).lower() or "embed" in str(x).lower()
+                         for x in (attrs.get("id",""),attrs.get("class",""))):
+                      self.player_attrs.append((tag,sorted(attrs.keys())))
+          def safe_link(value,base):
+              url=urllib.parse.urljoin(base,value)
+              u=urllib.parse.urlsplit(url)
+              if u.scheme!="https" or not u.hostname or u.username or u.password: return None
+              if u.hostname.endswith((".local",".internal")) or u.hostname=="localhost": return None
+              try:
+                  ip=ipaddress.ip_address(u.hostname)
+                  if not ip.is_global: return None
+              except ValueError: pass
+              return url
+          def label(url):
+              u=urllib.parse.urlsplit(url)
+              return u.scheme+"://"+str(u.hostname)+u.path[:160]  # never print signed query
+          def fetch(url):
+              req=urllib.request.Request(url,headers={"User-Agent":UA,"Accept":"text/html,*/*"})
+              with urllib.request.urlopen(req,timeout=12) as resp:
+                  data=resp.read(550000)
+                  return resp.status, data.decode("utf-8","replace")
+          try:
+              status,markup=fetch(ROOT)
+          except Exception as error:
+              print("PRIMARY_FETCH_FAILED:",type(error).__name__,str(error)[:130])
+              raise SystemExit(0)
+          parser=Scan();parser.feed(markup)
+          print("PRIMARY:",status,"bytes",len(markup.encode()),"iframes",len(parser.frames),
+                "script_sources",len(parser.scripts),"player_like_elements",len(parser.player_attrs),
+                "direct_media_suffix_count",len(re.findall(r"\.(?:mp4|m3u8|mpd|webm)",markup,re.I)))
+          print("PLAYER_ELEMENT_ATTRIBUTE_NAMES:",parser.player_attrs[:8])
+          for script in parser.scripts[:18]:
+              address=safe_link(script,ROOT)
+              if address: print("SCRIPT_HOST_PATH:",label(address))
+          for i,raw in enumerate(parser.frames[:5]):
+              address=safe_link(raw,ROOT)
+              if not address:
+                  print("IFRAME",i,"UNSAFE_OR_NONHTTPS")
+                  continue
+              print("IFRAME",i,"PUBLIC_HOST_PATH",label(address))
+              try:
+                  status,page=fetch(address)
+                  nested=Scan();nested.feed(page)
+                  print("  FRAME_HTTP",status,"bytes",len(page.encode()),
+                        "direct_suffix_count",
+                        len(re.findall(r"\.(?:mp4|m3u8|mpd|webm)",page,re.I)),
+                        "nested_frames",len(nested.frames),
+                        "script_sources",len(nested.scripts),
+                        "player_elements",len(nested.player_attrs))
+              except Exception as error:
+                  print("  FRAME_FAILED",type(error).__name__,str(error)[:120])
+          PY
