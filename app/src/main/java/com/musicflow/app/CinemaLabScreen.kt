@@ -204,8 +204,7 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                 season = resolved.seasonNumber ?: season
             }
             val id = CinemaRutubeSource.videoId(film.pageUrl)
-            if (id != null && (CinemaSeriesSearch.looksLikeEpisode(resolved) ||
-                activeSeriesGroup != null)) {
+            if (id != null) {
                 val lookup = CinemaSeriesSearch.lookup(
                     resolved, shelves,
                     (shelfCache.values.flatMap { it.films } +
@@ -319,7 +318,8 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
 
     LaunchedEffect(playing?.first?.key) {
         val item = playing?.first ?: return@LaunchedEffect
-        if (playerShow == null && CinemaSeriesSearch.looksLikeEpisode(item)) {
+        if (playerShow == null &&
+            CinemaRutubeSource.videoId(item.pageUrl.orEmpty()) != null) {
             try {
                 val lookup = CinemaSeriesSearch.lookup(
                     item, shelves,
