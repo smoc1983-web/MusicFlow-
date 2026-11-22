@@ -1,4 +1,5 @@
 name: Build MusicFlow Cinema RUTUBE TEST v7 APK
+# Rebuild after poster candidate parser regression fix
 
 on:
   push:
