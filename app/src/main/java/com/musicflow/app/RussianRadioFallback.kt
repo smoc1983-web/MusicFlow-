@@ -95,8 +95,19 @@ internal object RussianRadioFallback {
                     if (conn.responseCode != 200) {
                         throw IOException("Backup playlist HTTP " + conn.responseCode)
                     }
-                    val data = conn.inputStream.use { it.readNBytes(250_001) }
-                    if (data.size > 250_000) throw IOException("Backup playlist exceeds 250 KB")
+                    val data = conn.inputStream.use { input ->
+                        val output = java.io.ByteArrayOutputStream()
+                        val buffer = ByteArray(8_192)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            if (output.size() + count > 250_000) {
+                                throw IOException("Backup playlist exceeds 250 KB")
+                            }
+                            if (count > 0) output.write(buffer, 0, count)
+                        }
+                        output.toByteArray()
+                    }
                     parseM3u(String(data, Charsets.UTF_8), RussianRadioDirectory::isPublicStream)
                         .takeIf { it.isNotEmpty() }
                         ?: throw IOException("Backup playlist has no valid stations")
