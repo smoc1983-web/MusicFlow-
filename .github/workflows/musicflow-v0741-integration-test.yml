@@ -1,0 +1,68 @@
+name: MusicFlow 0.7.41 TV Radio Cinema Integration TEST
+on:
+  push:
+    branches: ["feature/musicflow-v0741-radio-tv-cinema-integration"]
+    paths:
+      - "app/**"
+      - ".github/workflows/musicflow-v0741-integration-test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Unit tests and APK compilation
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Check integrated UI and isolated APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path("app/src/main/java/com/musicflow/app")
+          main=(root/"MainActivity.kt").read_text()
+          radio=(root/"RussianRadio.kt").read_text()
+          tv=(root/"TvModernHub.kt").read_text()
+          player=(root/"CinemaNativeInlinePlayer.kt").read_text()
+          assert 'var tab by remember { mutableIntStateOf(0) }' in main
+          assert '7 to "Кино"' in main
+          assert 'CinemaLabScreen(modifier' in main
+          assert 'RussianRadioFallback.stations(context, applied)' in radio
+          assert 'RussianRadioDirectory.stations(applied)' not in radio
+          assert 'Основной каталог недоступен' not in radio
+          assert 'showFavoriteChannels' in tv
+          assert 'TvHubLibrary.favoritesForSource' in tv
+          assert '● ПРЯМОЙ ЭФИР' not in tv
+          assert 'AudioPicker()' in player
+          print("PASS: reserve-only radio, favorite filtering, original cinema v12 player")
+          PY
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview.integrationtest41'"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          mkdir -p dist
+          cp "$APK" dist/MusicFlow-0.7.41-Radio-TV-Cinema-TEST.apk
+          sha256sum dist/MusicFlow-0.7.41-Radio-TV-Cinema-TEST.apk > dist/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.41-Radio-TV-Cinema-TEST-apk
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error
