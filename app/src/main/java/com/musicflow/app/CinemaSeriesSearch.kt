@@ -36,7 +36,7 @@ internal object CinemaSeriesSearch {
 
     fun family(raw: String): String =
         CinemaSeriesGrouping.titleFor(raw).trim().lowercase()
-            .replace(Regex("""(?iu)^сериал\\s*[:—-]?\\s+"""), "")
+            .replace(Regex("""(?iu)^сериал\s*[:—-]?\s+"""), "")
             .trim()
 
     fun looksLikeEpisode(item: CinemaTitle): Boolean =
