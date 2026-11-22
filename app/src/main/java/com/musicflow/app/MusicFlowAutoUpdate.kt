@@ -15,6 +15,15 @@ import kotlinx.coroutines.launch
  * Automatic update discovery and installer UI. Android DownloadManager owns
  * the APK transfer, independently of this dialog and this Activity.
  */
+/** Never offer an APK with the same or older versionCode. */
+internal object MusicFlowUpdatePolicy {
+    fun isNewer(candidateCode: Long, installedCode: Long): Boolean =
+        candidateCode > installedCode
+
+    fun shouldShow(candidateCode: Long?, installedCode: Long, hidden: Boolean): Boolean =
+        !hidden && candidateCode != null && isNewer(candidateCode, installedCode)
+}
+
 @Composable
 internal fun MusicFlowAutoUpdate() {
     val context = LocalContext.current
@@ -31,13 +40,16 @@ internal fun MusicFlowAutoUpdate() {
 
     LaunchedEffect(Unit) {
         if (!MusicFlowUpdates.supportsOfficialUpdates(context)) return@LaunchedEffect
+        val installed = MusicFlowUpdates.currentCode(context)
         val saved = MusicFlowBackgroundUpdates.savedRelease(context)
-        if (saved != null) available = saved
+            ?.takeIf { MusicFlowUpdatePolicy.isNewer(it.versionCode, installed) }
+        if (saved != null && !hidden) available = saved
         val preferences = context.getSharedPreferences("musicflow_updates", Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
         try {
             val latest = MusicFlowUpdates.latestRelease()
-            if (latest != null && latest.versionCode > MusicFlowUpdates.currentCode(context)) {
+            if (latest != null &&
+                MusicFlowUpdatePolicy.isNewer(latest.versionCode, installed) && !hidden) {
                 val snoozedVersion = preferences.getLong("snoozed_version", 0L)
                 val snoozedUntil = preferences.getLong("snoozed_until", 0L)
                 if (saved != null || latest.versionCode != snoozedVersion || now >= snoozedUntil) {
@@ -55,8 +67,10 @@ internal fun MusicFlowAutoUpdate() {
             try {
                 transfer = MusicFlowBackgroundUpdates.snapshot(context)
                 val saved = MusicFlowBackgroundUpdates.savedRelease(context)
-                if (saved != null && available == null && !hidden &&
-                    transfer.phase != MusicFlowBackgroundUpdates.Phase.IDLE) {
+                if (saved != null && available == null &&
+                    MusicFlowUpdatePolicy.shouldShow(
+                        saved.versionCode, MusicFlowUpdates.currentCode(context), hidden
+                    ) && transfer.phase != MusicFlowBackgroundUpdates.Phase.IDLE) {
                     available = saved
                 }
             } catch (failure: Exception) {
@@ -67,7 +81,9 @@ internal fun MusicFlowAutoUpdate() {
     }
 
     val update = available
-    if (update != null) {
+    if (update != null && MusicFlowUpdatePolicy.shouldShow(
+            update.versionCode, MusicFlowUpdates.currentCode(context), hidden
+        )) {
         val sameVersion = update.versionCode ==
             MusicFlowBackgroundUpdates.savedRelease(context)?.versionCode
         val loading = sameVersion && transfer.phase in setOf(
@@ -89,7 +105,7 @@ internal fun MusicFlowAutoUpdate() {
             title = { Text("Доступно обновление MusicFlow", color = palette.foreground) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Новая версия: " + update.version,
+                    Text("Новая версия: " + update.version.removePrefix("v"),
                         fontWeight = FontWeight.SemiBold, color = palette.accent)
                     Text("Установленная версия: " + MusicFlowUpdates.currentVersion(context),
                         color = palette.muted)
@@ -139,6 +155,10 @@ internal fun MusicFlowAutoUpdate() {
                                 } else {
                                     MusicFlowBackgroundUpdates.enqueue(context, update)
                                     transfer = MusicFlowBackgroundUpdates.snapshot(context)
+                                    // DownloadManager continues in the background. The modal
+                                    // must not stay open and obscure the application.
+                                    hidden = true
+                                    available = null
                                 }
                             } catch (failure: Exception) {
                                 error = "Не удалось подготовить обновление: " +
