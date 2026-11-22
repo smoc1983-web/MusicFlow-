@@ -364,6 +364,8 @@ internal fun RuVideoHubTvScreen(
                 onPlay = { playChannel(it) },
                 onSource = { id ->
                     selected = null
+                    channels = emptyList()
+                    programmes = emptyList()
                     activeSourceId = id
                     refresh(id)
                 },
