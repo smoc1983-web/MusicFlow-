@@ -76,7 +76,11 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                 film.description.contains(query.trim(), ignoreCase = true))
     }
     fun beginPlayback(film: CinemaTitle) {
-        val address = film.streamUrl ?: return
+        val address = film.streamUrl
+        if (address == null) {
+            if (film.episodes.isNotEmpty()) selectedFilm = film
+            return
+        }
         if (!CinemaLabSources.isSafeHttps(address)) return
         CinemaLabSources.markRecent(context, film.key)
         selectedFilm = null
@@ -258,6 +262,15 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                             "не запускает скрытые JS-плееры и не обходит ограничения сайта.",
                         style = MaterialTheme.typography.bodySmall
                     )
+                    film.episodes.forEach { episode ->
+                        TextButton(onClick = {
+                            if (CinemaLabSources.isSafeHttps(episode.streamUrl)) {
+                                CinemaLabSources.markRecent(context, film.key)
+                                selectedFilm = null
+                                playing = film to episode.streamUrl
+                            }
+                        }) { Text(episode.title) }
+                    }
                     val source = sources.firstOrNull { it.id == film.sourceId }
                     source?.let {
                         Text(it.url, style = MaterialTheme.typography.labelSmall)
