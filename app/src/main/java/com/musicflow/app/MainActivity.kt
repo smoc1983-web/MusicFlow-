@@ -268,8 +268,8 @@ private fun MusicScreen(
     var appliedSearch by remember { mutableStateOf("") }
     var searchMode by remember { mutableStateOf(SearchMode.ALL) }
     var sortMode by remember { mutableStateOf(SortMode.RELEVANCE) }
-    // Cinema lab branch opens on the isolated prototype; official releases are unaffected.
-    var tab by remember { mutableIntStateOf(7) }
+    // Unified MusicFlow opens the usual music home. Cinema TEST v12 is available as "Кино".
+    var tab by remember { mutableIntStateOf(0) }
     var sectionMenu by remember { mutableStateOf(false) }
     var showAppearanceMenu by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
