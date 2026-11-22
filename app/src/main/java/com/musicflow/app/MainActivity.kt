@@ -1010,6 +1010,13 @@ private fun MusicScreen(
                                 tint = palette.accent
                             )
                         }
+                        IconButton(onClick = { stopMusic() }) {
+                            Icon(
+                                androidx.compose.material.icons.Icons.Filled.Close,
+                                contentDescription = "Закрыть радио-плеер",
+                                tint = palette.foreground
+                            )
+                        }
                     } else {
                     IconButton(onClick = { player?.seekToNextMediaItem() }) {
                         Icon(
