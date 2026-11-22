@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -74,15 +75,21 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
     var season by remember { mutableIntStateOf(1) }
     var episodes by remember { mutableStateOf<List<CinemaTitle>>(emptyList()) }
     var episodesBusy by remember { mutableStateOf(false) }
+    var seriesLookup by remember { mutableStateOf<CinemaSeriesLookup?>(null) }
     var activeSeriesGroup by remember { mutableStateOf<CinemaSeriesGroup?>(null) }
     var playing by remember { mutableStateOf<Pair<CinemaTitle, String>?>(null) }
     var playerShow by remember { mutableStateOf<CinemaTvShow?>(null) }
+    var playerSeriesLookup by remember { mutableStateOf<CinemaSeriesLookup?>(null) }
     var playerGroup by remember { mutableStateOf<CinemaSeriesGroup?>(null) }
     var playerSeason by remember { mutableIntStateOf(1) }
     var playerEpisodes by remember { mutableStateOf<List<CinemaTitle>>(emptyList()) }
     var playerEpisodesBusy by remember { mutableStateOf(false) }
     var playerError by remember { mutableStateOf<String?>(null) }
     var favorites by remember { mutableStateOf(CinemaLabSources.favoriteKeys(context)) }
+    val catalogListState = rememberLazyListState()
+    LaunchedEffect(query, section, selectedShelf?.url, selectedSource, refresh) {
+        catalogListState.scrollToItem(0)
+    }
 
     val firstSource = sources.firstOrNull {
         it.format == CinemaSourceFormat.RUTUBE_FEED
@@ -164,6 +171,13 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
         searchBusy = true
         try {
             searched = CinemaRutubeCatalog.search(text, firstSource.id, shelves)
+                .distinctBy { it.key }
+                .sortedWith(compareBy<CinemaTitle> {
+                    if (it.title.equals(text, true)) 0
+                    else if (it.title.startsWith(text, true)) 1
+                    else 2
+                }.thenBy { it.title.lowercase() })
+            catalogListState.scrollToItem(0)
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (e: Exception) {
@@ -173,11 +187,12 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    // Fetch the detailed media metadata and the linked series, if one exists.
+    // One episode must discover its complete show, not only nearby cached cards.
     LaunchedEffect(details?.key) {
         val film = details ?: return@LaunchedEffect
         detailsError = null
         tvShow = null
+        seriesLookup = null
         episodes = emptyList()
         season = film.seasonNumber ?: 1
         if (film.pageUrl == null) return@LaunchedEffect
@@ -189,9 +204,15 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                 season = resolved.seasonNumber ?: season
             }
             val id = CinemaRutubeSource.videoId(film.pageUrl)
-            if (id != null && (film.kind == CinemaKind.SERIES ||
-                resolved.kind == CinemaKind.SERIES)) {
-                tvShow = CinemaRutubeSeries.loadShowFor(id)
+            if (id != null && (CinemaSeriesSearch.looksLikeEpisode(resolved) ||
+                activeSeriesGroup != null)) {
+                val lookup = CinemaSeriesSearch.lookup(
+                    resolved, shelves,
+                    (shelfCache.values.flatMap { it.films } +
+                        otherCatalogs.values.flatten()).distinctBy { it.key }
+                )
+                seriesLookup = lookup
+                tvShow = CinemaSeriesSearch.fallbackShow(lookup, resolved)
             }
         } catch (cancel: CancellationException) {
             throw cancel
@@ -202,13 +223,19 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    LaunchedEffect(tvShow?.id, season, details?.key) {
+    LaunchedEffect(tvShow?.id, season, details?.key, seriesLookup) {
         val show = tvShow ?: return@LaunchedEffect
         val film = details ?: return@LaunchedEffect
         episodesBusy = true
         episodes = emptyList()
         try {
-            episodes = CinemaRutubeSeries.loadEpisodes(show.id, season, film.sourceId)
+            episodes = if (show.id > 0) {
+                CinemaRutubeSeries.loadEpisodes(show.id, season, film.sourceId)
+            } else {
+                CinemaSeriesSearch.inSeason(
+                    seriesLookup ?: return@LaunchedEffect, season
+                )
+            }
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (e: Exception) {
@@ -234,6 +261,7 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
         if (!CinemaLabSources.isSafeHttps(uri)) return
         CinemaLabSources.markRecent(context, item.key)
         playerGroup = activeSeriesGroup
+        playerSeriesLookup = seriesLookup
         playerShow = tvShow ?: activeSeriesGroup?.let { group ->
             CinemaTvShow(
                 id = 0, name = group.title, description = "",
@@ -291,11 +319,19 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
 
     LaunchedEffect(playing?.first?.key) {
         val item = playing?.first ?: return@LaunchedEffect
-        if (item.kind != CinemaKind.SERIES) return@LaunchedEffect
-        if (playerShow == null) {
-            val id = CinemaRutubeSource.videoId(item.pageUrl.orEmpty())
-            if (id != null) {
-                playerShow = CinemaRutubeSeries.loadShowFor(id)
+        if (playerShow == null && CinemaSeriesSearch.looksLikeEpisode(item)) {
+            try {
+                val lookup = CinemaSeriesSearch.lookup(
+                    item, shelves,
+                    (shelfCache.values.flatMap { it.films } +
+                        otherCatalogs.values.flatten()).distinctBy { it.key }
+                )
+                playerSeriesLookup = lookup
+                playerShow = CinemaSeriesSearch.fallbackShow(lookup, item)
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (e: Exception) {
+                playerError = "Поиск сезонов: " + (e.message ?: "ошибка")
             }
         }
     }
@@ -311,7 +347,11 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                     show.id, playerSeason, current.sourceId
                 )
             } else {
-                playerGroup?.episodesIn(playerSeason).orEmpty()
+                CinemaSeriesSearch.organize(
+                    playerSeriesLookup?.let {
+                        CinemaSeriesSearch.inSeason(it, playerSeason)
+                    }.orEmpty() + playerGroup?.episodesIn(playerSeason).orEmpty()
+                )
             }
         } catch (cancel: CancellationException) {
             throw cancel
@@ -397,6 +437,7 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                     playing = null
                     playerShow = null
                     playerGroup = null
+                    playerSeriesLookup = null
                     playerError = null
                 }
             )
@@ -463,6 +504,7 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.bodySmall, color = Color(0xFFFFB4B4)) }
 
         LazyColumn(
+            state = catalogListState,
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(14.dp),
             contentPadding = PaddingValues(start = 13.dp, end = 13.dp, bottom = 25.dp, top = 7.dp)
