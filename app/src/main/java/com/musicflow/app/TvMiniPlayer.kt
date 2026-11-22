@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -52,6 +54,25 @@ internal fun TvMiniPlayer(
 ) {
     val palette = LocalMusicFlowPalette.current
     var expanded by rememberSaveable { mutableStateOf(false) }
+    var streamState by remember(player) { mutableIntStateOf(player.playbackState) }
+    var isPlaying by remember(player) { mutableStateOf(player.isPlaying) }
+    var streamError by remember(player) { mutableStateOf(player.playerError?.errorCodeName) }
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                streamState = state
+                if (state == Player.STATE_READY) streamError = null
+            }
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
+            }
+            override fun onPlayerError(error: PlaybackException) {
+                streamError = error.errorCodeName
+            }
+        }
+        player.addListener(listener)
+        onDispose { player.removeListener(listener) }
+    }
     var horizontalPosition by rememberSaveable { mutableFloatStateOf(1f) }
     var verticalPosition by rememberSaveable { mutableFloatStateOf(0.73f) }
 
@@ -156,14 +177,33 @@ internal fun TvMiniPlayer(
                         modifier = Modifier.fillMaxSize()
                     )
                     Box(Modifier.matchParentSize().clickable(onClick = onExpand))
+                    if (streamState == Player.STATE_BUFFERING && streamError == null) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.align(Alignment.Center).size(32.dp),
+                            color = palette.accent, strokeWidth = 3.dp
+                        )
+                    }
+                    if (streamError != null) {
+                        Text("Эфир недоступен · попробуйте другой канал",
+                            modifier = Modifier.align(Alignment.Center).padding(10.dp),
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall)
+                    }
                 }
                 Row(
                     Modifier.fillMaxWidth().height(46.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    Text("ЭФИР", color = palette.accent,
-                        style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        when {
+                            streamError != null -> "ОШИБКА"
+                            streamState == Player.STATE_BUFFERING -> "ЗАГРУЗКА"
+                            streamState == Player.STATE_ENDED -> "ПОВТОР"
+                            else -> "ЭФИР"
+                        }, color = palette.accent,
+                        style = MaterialTheme.typography.labelSmall
+                    )
                     IconButton(onClick = {
                         if (player.isPlaying) player.pause()
                         else {
@@ -174,7 +214,7 @@ internal fun TvMiniPlayer(
                             player.play()
                         }
                     }, modifier = Modifier.size(42.dp)) {
-                        Icon(if (player.isPlaying) Icons.Filled.Pause
+                        Icon(if (isPlaying) Icons.Filled.Pause
                             else Icons.Filled.PlayArrow,
                             contentDescription = "Пауза или воспроизведение",
                             tint = palette.foreground)
