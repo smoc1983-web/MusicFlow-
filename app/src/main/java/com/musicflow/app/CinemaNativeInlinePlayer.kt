@@ -9,10 +9,13 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,6 +29,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
@@ -47,6 +51,7 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.AspectRatioFrameLayout
 import kotlinx.coroutines.delay
+import coil.compose.rememberAsyncImagePainter
 
 private data class CinemaVideoQuality(
     val label: String,
@@ -335,6 +340,7 @@ internal fun CinemaNativeInlinePlayer(
             season = seriesSeason,
             episodes = seriesEpisodes,
             loading = seriesLoading,
+            immersive = fullScreen,
             onSeason = onSeasonSelected,
             onEpisode = { episode ->
                 seriesOpen = false
@@ -351,11 +357,22 @@ private fun CinemaPlayerSeasonsDialog(
     season: Int,
     episodes: List<CinemaTitle>,
     loading: Boolean,
+    immersive: Boolean,
     onSeason: (Int) -> Unit,
     onEpisode: (CinemaTitle) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(season) { listState.scrollToItem(0) }
     Dialog(onDismissRequest = onDismiss) {
+        val dialogView = LocalView.current
+        val window = (dialogView.parent as? DialogWindowProvider)?.window
+        DisposableEffect(window, immersive) {
+            if (immersive) window?.let(::hideCinemaSystemBars)
+            onDispose {
+                if (immersive) window?.let(::showCinemaSystemBars)
+            }
+        }
         Surface(
             modifier = Modifier.fillMaxWidth().heightIn(max = 565.dp),
             color = Color(0xFF1F2430), shape = RoundedCornerShape(20.dp)
@@ -385,17 +402,61 @@ private fun CinemaPlayerSeasonsDialog(
                 if (episodes.isEmpty() && !loading) {
                     Text("Серии этого сезона не найдены.", color = Color.LightGray)
                 }
-                LazyColumn(Modifier.heightIn(max = 355.dp)) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.heightIn(max = 355.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     items(episodes, key = { it.key }) { item ->
-                        TextButton(onClick = { onEpisode(item) },
-                            modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                "Серия " + (item.episodeNumber?.toString() ?: "—") +
-                                    " · " + item.title,
-                                color = Color.White,
-                                maxLines = 2,
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                        Surface(
+                            modifier = Modifier.fillMaxWidth()
+                                .clickable { onEpisode(item) },
+                            color = Color(0xFF303648),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(
+                                Modifier.padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    Modifier.width(94.dp).height(63.dp)
+                                        .background(Color(0xFF414052)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (!item.poster.isNullOrBlank()) {
+                                        Image(
+                                            painter = rememberAsyncImagePainter(item.poster),
+                                            contentDescription = null,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    } else {
+                                        Icon(Icons.Filled.List,
+                                            contentDescription = null,
+                                            tint = Color(0xFFBCA2FF))
+                                    }
+                                }
+                                Spacer(Modifier.width(10.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        "Сезон " + (item.seasonNumber ?: season) +
+                                            " · Серия " +
+                                            (item.episodeNumber?.toString() ?: "—"),
+                                        color = Color(0xFFBCA2FF),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                    Text(
+                                        item.title, color = Color.White,
+                                        maxLines = 2,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                                Icon(
+                                    Icons.Filled.List,
+                                    contentDescription = "Выбрать серию",
+                                    tint = Color.White
+                                )
+                            }
                         }
                     }
                 }
