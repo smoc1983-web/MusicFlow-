@@ -241,8 +241,10 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                                     overflow = TextOverflow.Ellipsis,
                                     style = MaterialTheme.typography.bodySmall)
                                 if (!film.hasPlayback) Text(
-                                    "Прямая видеоссылка пока не найдена",
-                                    color = MaterialTheme.colorScheme.error,
+                                    if (CinemaRutubeSource.videoId(film.pageUrl.orEmpty()) != null)
+                                        "Поток будет проверен при открытии фильма"
+                                    else "Прямая видеоссылка пока не найдена",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     style = MaterialTheme.typography.labelSmall
                                 )
                             }
