@@ -66,6 +66,7 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
     var selected by remember { mutableStateOf<CinemaTitle?>(null) }
     var playing by remember { mutableStateOf<Triple<CinemaTitle, String, String>?>(null) }
     var showPlugins by remember { mutableStateOf(false) }
+    var showLampa by remember { mutableStateOf(false) }
     var favorites by remember { mutableStateOf(CinemaLabSources.favoriteKeys(context)) }
     var watchLater by remember { mutableStateOf(CinemaLabSources.laterKeys(context)) }
     var recent by remember { mutableStateOf(CinemaLabSources.recentKeys(context)) }
@@ -140,11 +141,16 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
         CinemaLabSources.saveLater(context, watchLater)
     }
     fun start(title: CinemaTitle, stream: String, episodeKey: String) {
-        require(CinemaLabSources.isSafeHttps(stream))
+        require(CinemaLabSources.isPlayableUri(title.sourceId, stream))
         CinemaLabSources.markRecent(context, title.key)
         recent = CinemaLabSources.recentKeys(context)
         selected = null
         playing = Triple(title, stream, episodeKey)
+    }
+
+    if (showLampa) {
+        CinemaLampaWebScreen(onExit = { showLampa = false }, modifier = modifier)
+        return
     }
 
     Column(modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
@@ -159,8 +165,11 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                 Text("Каталог • сериалы • подключаемые источники",
                     style = MaterialTheme.typography.labelSmall, color = palette.muted)
             }
+            TextButton(onClick = { showLampa = true }) {
+                Text("Lampa · JS")
+            }
             IconButton(onClick = { showPlugins = true }) {
-                Icon(Icons.Filled.Settings, "Управление плагинами", tint = CinemaViolet)
+                Icon(Icons.Filled.Settings, "JSON-плагины", tint = CinemaViolet)
             }
         }
         OutlinedTextField(
@@ -316,6 +325,7 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
             title = title.title,
             sourceKey = title.key + ":" + episodeId,
             streamUrl = url,
+            allowBuiltInFallback = title.sourceId == CinemaLabSources.DEMO_SOURCE,
             onClose = { playing = null }
         )
     }
