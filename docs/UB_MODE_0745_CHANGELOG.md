@@ -32,7 +32,7 @@
 4. Added lightweight layered glass gradients, translucent backgrounds, directional border highlights and shadow. Reused native Compose shapes without expensive content blur or bitmap assets.
 5. Preserved all other user data, MusicFlow package identity, playback functions and Pro branch. Stored `ui_theme` values are migrated to the selected Obsidian default, then future choices persist by new name.
 6. Removed a redundant duplicate backdrop gradient rather than drawing two overlapping copies.
-7. Verification: dedicated GitHub Actions `musicflow-v0745-verify.yml` runs Kotlin/JUnit theme migration tests and existing regressions, plus unsigned `assembleRelease`. Final CI run ID and result should be recorded only after completion.
+7. **Verified:** GitHub Actions run `45038975675` succeeded at source commit `95f18ba88635ae335120f7b1c937c6f2553fe335`. Kotlin/JUnit `testDebugUnitTest` and production `assembleRelease` both passed: 29 test suites, including `MusicFlowLiquidGlassThemesTest` and the existing PCM EQ/update/radio regressions. Android `aapt` confirmed package `com.musicflow.preview`, versionCode `745`, versionName `0.7.45`. Unsigned validation APK only, no release publication.
 8. CRAP / Dryer / Mutator do not support Kotlin; not executed and no metric values claimed.
 
 **The ten old theme choices have been replaced in the working branch. No new signed official release has been published.**
