@@ -31,7 +31,7 @@ android {
         getByName("debug") {
             // Debug builds must never replace a signed production package.
             applicationIdSuffix = ".cinematest6"
-            versionNameSuffix = "-cinema-sanfilm-test-v5"
+            versionNameSuffix = "-cinema-resolver-test-v6"
         }
         getByName("release") {
             isMinifyEnabled = false
