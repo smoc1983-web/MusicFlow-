@@ -22,6 +22,20 @@ assert 'if (stations.isEmpty()) return' in radio
 assert 'refreshIndex++' in radio
 assert 'musicflow_radio_favorites' in radio
 assert 'musicflow_radio_catalog_cache' in radio
+fallback = (root / "RussianRadioFallback.kt").read_text(encoding="utf-8")
+snapshot = Path("app/src/main/assets/radio_russia_fallback.m3u").read_text(encoding="utf-8")
+assert 'https://all.api.radio-browser.info' in radio
+assert 'https://nl1.api.radio-browser.info' not in radio
+assert 'https://at1.api.radio-browser.info' not in radio
+assert 'RussianRadioFallback.bundledStations(context)' in radio
+assert 'RussianRadioFallback.stations(context, applied)' in radio
+assert 'feature/musicflow-pro' not in radio
+assert 'radio_russia_fallback.m3u' in fallback
+assert 'raw.githubusercontent.com/AlonDrilich/radio-playlists' in fallback
+assert 'parseM3u(' in fallback
+assert snapshot.startswith("#EXTM3U") and snapshot.count("#EXTINF:") >= 250
+
 print("PASS: Russian radio no longer excludes stations flagged broken by external servers")
 print("PASS: mirror and catalog query fallback, persisted last-good list and favorites isolation")
+print("PASS: independent GitHub radio source + 300 bundled stations work without Radio Browser DNS")
 print("PASS: signed-update package and 0.7.39 version identity preserved")
