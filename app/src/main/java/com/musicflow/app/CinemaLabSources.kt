@@ -25,7 +25,8 @@ internal data class CinemaTitle(
     val genre: String,
     val streamUrl: String?,
     val episodes: List<CinemaEpisode>,
-    val attribution: String
+    val attribution: String,
+    val pageUrl: String? = null
 ) {
     val key: String get() = sourceId + ":" + id
     val hasPlayback: Boolean get() = streamUrl != null || episodes.isNotEmpty()
