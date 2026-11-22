@@ -11,7 +11,8 @@ internal data class CinemaSeriesLookup(
     val show: CinemaTvShow?,
     val episodes: List<CinemaTitle>,
     val completeSeasons: Boolean,
-    val message: String
+    val message: String,
+    val guide: CinemaEpisodeGuide? = null
 )
 
 /**
@@ -134,6 +135,116 @@ internal object CinemaSeriesSearch {
         )
     }
 
+    /**
+     * First compare the expected season index with published source cards.
+     * Only then run multi-page discovery and exact missing-number lookup.
+     * The callback updates the UI without requiring a separate manual search.
+     */
+    suspend fun reconcileSeason(
+        show: CinemaTvShow,
+        season: Int,
+        sourceId: String,
+        shelves: List<CinemaRutubeShelf>,
+        cached: List<CinemaTitle>,
+        native: List<CinemaTitle>,
+        guide: CinemaEpisodeGuide?,
+        onProgress: (List<CinemaTitle>, String) -> Unit
+    ): List<CinemaTitle> {
+        var found = mergeSeasonCandidates(
+            show.name, show.id, season, sourceId, native, cached
+        )
+        onProgress(found, "Сверка номеров серий с каталогом…")
+
+        // Bulk search: collect additional pages before querying individual gaps.
+        val extra = withTimeoutOrNull(30_000) {
+            coroutineScope {
+                listOf(show.name, show.name + " " + season + " сезон")
+                    .distinct().map { phrase ->
+                        async(Dispatchers.IO) {
+                            try {
+                                CinemaRutubeCatalog.searchEpisodesPages(
+                                    phrase, sourceId, maxPages = 3
+                                )
+                            } catch (cancel: CancellationException) {
+                                throw cancel
+                            } catch (_: Exception) {
+                                emptyList()
+                            }
+                        }
+                    }.awaitAll().flatten()
+            }
+        }.orEmpty()
+        found = mergeSeasonCandidates(
+            show.name, show.id, season, sourceId, native, cached + extra
+        )
+        onProgress(found, "Общий поиск завершён. Проверяем пропущенные серии…")
+
+        // If no external guide matched, only gaps within observed numbering
+        // can be inferred. They must not be presented as an official total.
+        val initial = CinemaEpisodeAudit.coverage(guide, season, found)
+        val missing = initial.missing.take(60)
+        if (missing.isEmpty()) {
+            onProgress(found, "Сверка доступных серий завершена")
+            return found
+        }
+
+        if (show.id > 0) {
+            for (batch in missing.chunked(3)) {
+                val resolved = coroutineScope {
+                    batch.map { number ->
+                        async(Dispatchers.IO) {
+                            try {
+                                CinemaRutubeSeries.loadExactEpisode(
+                                    show.id, season, number, sourceId
+                                )
+                            } catch (cancel: CancellationException) {
+                                throw cancel
+                            } catch (_: Exception) {
+                                emptyList()
+                            }
+                        }
+                    }.awaitAll().flatten()
+                }
+                found = mergeSeasonCandidates(
+                    show.name, show.id, season, sourceId,
+                    native + resolved, found + resolved
+                )
+                val checked = missing.indexOf(batch.last()) + 1
+                onProgress(found, "Проверено по номерам: " + checked +
+                    " из " + missing.size)
+            }
+        }
+
+        val left = CinemaEpisodeAudit.coverage(guide, season, found)
+            .missing.take(60)
+        for ((index, batch) in left.chunked(2).withIndex()) {
+            val searched = coroutineScope {
+                batch.map { number ->
+                    async(Dispatchers.IO) {
+                        val request = show.name + " " + season + " сезон " +
+                            number + " серия"
+                        try {
+                            CinemaRutubeCatalog.searchEpisodesPages(
+                                request, sourceId, maxPages = 2
+                            )
+                        } catch (cancel: CancellationException) {
+                            throw cancel
+                        } catch (_: Exception) {
+                            emptyList()
+                        }
+                    }
+                }.awaitAll().flatten()
+            }
+            found = mergeSeasonCandidates(
+                show.name, show.id, season, sourceId, found, searched
+            )
+            onProgress(found, "Поиск отдельных серий: " +
+                minOf((index + 1) * 2, left.size) + " из " + left.size)
+        }
+        onProgress(found, "Сверка завершена; отсутствующие записи отмечены")
+        return found
+    }
+
     /** Tries all declared seasons by TV show, or a bounded cross-catalogue search. */
     suspend fun lookup(
         selected: CinemaTitle,
@@ -144,11 +255,15 @@ internal object CinemaSeriesSearch {
         val videoId = CinemaRutubeSource.videoId(episode.pageUrl.orEmpty())
         val show = if (videoId == null) null
             else CinemaRutubeSeries.loadShowFor(videoId)
+        // Reference metadata comes before any missing-episode search.
+        val guide = CinemaEpisodeAudit.lookup(
+            show?.name ?: family(episode.title), episode.title
+        )
         if (show != null) {
             return CinemaSeriesLookup(
-                show = show, episodes = emptyList(), completeSeasons = true,
-                message = "Сериал найден. Серии доступны по сезонам " +
-                    "из опубликованного каталога."
+                show = show, episodes = emptyList(), completeSeasons = guide != null,
+                message = "Сериал найден. Каталог серий будет дополнительно проверен.",
+                guide = guide
             )
         }
 
@@ -156,7 +271,8 @@ internal object CinemaSeriesSearch {
         if (name.length < 3 || !looksLikeEpisode(episode)) {
             return CinemaSeriesLookup(
                 null, emptyList(), false,
-                "Для этого видео источник не предоставил данные о сезонах."
+                "Для этого видео источник не предоставил данные о сезонах.",
+                guide
             )
         }
         val local = cached.filter { matches(it, episode) }
@@ -203,19 +319,27 @@ internal object CinemaSeriesSearch {
                     "другие сезоны могут быть недоступны."
             else
                 "Источник не указал полный список сезонов. " +
-                    "Найдена только выбранная серия."
+                    "Найдена только выбранная серия.",
+            guide = guide
         )
     }
 
     fun fallbackShow(result: CinemaSeriesLookup, item: CinemaTitle): CinemaTvShow? {
-        if (result.show != null) return result.show
+        if (result.show != null) return result.show.copy(
+            seasons = maxOf(
+                result.show.seasons,
+                result.guide?.seasons()?.maxOrNull() ?: 1
+            ).coerceIn(1, 30)
+        )
         if (result.episodes.isEmpty()) return null
         return CinemaTvShow(
             id = 0,
             name = CinemaSeriesGrouping.titleFor(item.title),
             description = result.message,
-            seasons = (result.episodes.maxOfOrNull { it.seasonNumber ?: 1 } ?: 1)
-                .coerceIn(1, 30),
+            seasons = maxOf(
+                result.episodes.maxOfOrNull { it.seasonNumber ?: 1 } ?: 1,
+                result.guide?.seasons()?.maxOrNull() ?: 1
+            ).coerceIn(1, 30),
             cover = item.poster
         )
     }
