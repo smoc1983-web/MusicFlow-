@@ -16,8 +16,8 @@ import kotlinx.coroutines.launch
 /** Bounded recovery of unstable live IPTV streams; never retries permanent 4xx errors. */
 internal object TvStreamRetryPolicy {
     const val MAX_RETRIES = 2
-    const val BUFFERING_TIMEOUT_MS = 14_000L
-    const val STALL_TIMEOUT_MS = 12_000L
+    const val BUFFERING_TIMEOUT_MS = 65_000L
+    const val STALL_TIMEOUT_MS = 30_000L
 
     fun isLiveTv(mediaId: String?): Boolean = mediaId?.startsWith("ruvideo:") == true
 
@@ -123,7 +123,8 @@ internal class TvStreamRecovery(
             delay(TvStreamRetryPolicy.BUFFERING_TIMEOUT_MS)
             if (token == generation && player.playbackState == Player.STATE_BUFFERING &&
                 player.playWhenReady && player.playerError == null && isTv()) {
-                requestRetry("buffering exceeded 14s")
+                requestRetry("buffering exceeded " +
+                    TvStreamRetryPolicy.BUFFERING_TIMEOUT_MS / 1_000 + "s")
             }
         }
     }
