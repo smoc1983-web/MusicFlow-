@@ -13,7 +13,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
 
-internal enum class IptvSourceKind { PLAYLIST, CHANNEL, FILE }
+internal enum class IptvSourceKind { PLAYLIST, CHANNEL, FILE, PLUGIN }
 
 internal data class IptvSource(
     val id: String,
@@ -52,9 +52,12 @@ internal fun loadIptvSources(context: Context): List<IptvSource> = runCatching {
             val kind = runCatching {
                 IptvSourceKind.valueOf(item.optString("kind"))
             }.getOrNull() ?: continue
-            val good = if (kind == IptvSourceKind.FILE)
-                address == "local://" + id && Regex("[0-9a-f-]{36}").matches(id)
-            else isSupportedIptvUrl(address)
+            val good = when (kind) {
+                IptvSourceKind.FILE -> address == "local://" + id &&
+                    Regex("[0-9a-f-]{36}").matches(id)
+                IptvSourceKind.PLUGIN -> TvPluginManager.isSafePluginUrl(address)
+                else -> isSupportedIptvUrl(address)
+            }
             if (id.isNotBlank() && name.isNotBlank() && good) {
                 add(IptvSource(id, name, address, kind))
             }
@@ -83,19 +86,34 @@ internal fun newIptvSource(
 ): IptvSource {
     require(kind != IptvSourceKind.FILE) { "Для файла воспользуйтесь кнопкой импорта." }
     val url = address.trim()
-    require(isSupportedIptvUrl(url)) { "Нужна ссылка HTTP или HTTPS." }
+    require(if (kind == IptvSourceKind.PLUGIN) TvPluginManager.isSafePluginUrl(url)
+        else isSupportedIptvUrl(url)) {
+        if (kind == IptvSourceKind.PLUGIN) "Нужна публичная HTTPS-ссылка на JSON-плагин."
+        else "Нужна ссылка HTTP или HTTPS."
+    }
     require(!isCubPluginUrl(url)) {
         "Адрес CUB — плагин для Lampa, а не M3U-плейлист. Добавьте прямую ссылку на плейлист из CUB или от провайдера."
     }
     return IptvSource(
         id = UUID.randomUUID().toString(),
-        name = name.trim().ifBlank { if (kind == IptvSourceKind.CHANNEL) "Мой канал" else "Мой плейлист" }.take(70),
+        name = name.trim().ifBlank { when (kind) {
+            IptvSourceKind.CHANNEL -> "Мой канал"
+            IptvSourceKind.PLUGIN -> "ТВ-плагин"
+            else -> "Мой плейлист"
+        } }.take(70),
         address = url,
         kind = kind
     )
 }
 
 internal suspend fun fetchIptvSource(source: IptvSource): List<TvChannel> = withContext(Dispatchers.IO) {
+    if (source.kind == IptvSourceKind.PLUGIN) {
+        val manifest = TvPluginManager.load(source.address)
+        return@withContext fetchIptvSource(source.copy(
+            address = manifest.playlistUrl,
+            kind = IptvSourceKind.PLAYLIST
+        ))
+    }
     if (source.kind == IptvSourceKind.FILE && IptvStorage.appDir == null) {
         error("Хранилище IPTV не инициализировано")
     }
@@ -194,7 +212,8 @@ private fun parseUserIptvPlaylist(raw: String, source: IptvSource): List<TvChann
                         title = title.take(100),
                         group = group.take(70),
                         logo = logo,
-                        streamUrl = stream
+                        streamUrl = stream,
+                        epgId = iptvAttribute(lastInfo, "tvg-id")?.take(180)
                     )
                 )
                 if (result.size >= 5000) break
