@@ -47,6 +47,7 @@ jobs:
           assert 'applicationId = "com.musicflow.preview"' in gradle
           print("Identity and core integration checked; existing themes untouched")
           PY
+      # Re-run after Kotlin latestRelease smart cast and additional PCM processor regression.
       - name: Regression tests and production release compilation
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
       - name: Confirm tested regressions and unsigned release
@@ -57,7 +58,7 @@ jobs:
           from pathlib import Path
           tests=list(Path("app/build/test-results/testDebugUnitTest").glob("TEST-*.xml"))
           names="\n".join(p.name for p in tests)
-          for required in ("PcmEqEngineTest", "UpdateDialogGateTest", "RadioArtworkCatalogTest"):
+          for required in ("PcmEqEngineTest", "PcmEqAudioProcessorTest", "UpdateDialogGateTest", "RadioArtworkCatalogTest"):
               assert required in names, (required, names)
           print("Regression classes executed:", len(tests))
           PY
