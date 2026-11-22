@@ -47,7 +47,8 @@ jobs:
           assert 'MAX_RETRIES = 2' in retry
           assert '75_000' in tuning and '64 * 1024 * 1024' in tuning
           assert 'PcmEqAudioProcessor(AudioEqSettings.load(this))' in service
-          assert 'MusicFlowStyle.DEFAULT' in (p/'MainActivity.kt').read_text()
+          assert 'MusicFlowStyle.fromSaved' in (p/'MainActivity.kt').read_text()
+          assert 'val DEFAULT: MusicFlowStyle = OBSIDIAN_GLASS' in (p/'MusicFlowAppearance.kt').read_text()
           assert 'versionCode = 746' in version and 'versionName = "0.7.46"' in version
           assert 'applicationId = "com.musicflow.preview"' in version
           print('Slow HLS buffering, bounded recovery and existing player features checked')
