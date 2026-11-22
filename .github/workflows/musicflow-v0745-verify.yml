@@ -24,7 +24,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
-      - name: Verify unchanged theme collection and production identity
+      - name: Verify Liquid Glass themes and production identity
         shell: bash
         run: |
           set -euo pipefail
@@ -45,7 +45,15 @@ jobs:
           assert 'versionCode = 745' in gradle
           assert 'versionName = "0.7.45"' in gradle
           assert 'applicationId = "com.musicflow.preview"' in gradle
-          print("Identity and core integration checked; existing themes untouched")
+          appearance=(root/"MusicFlowAppearance.kt").read_text()
+          glass=(root/"MusicFlowGlass.kt").read_text()
+          assert "val DEFAULT: MusicFlowStyle = OBSIDIAN_GLASS" in appearance
+          assert 'getString("ui_theme", null)' in main
+          assert "MusicFlowStyle.entries.forEach" in main
+          assert "musicFlowGlass(choice, radius = 11.dp" in main
+          assert "Brush.verticalGradient" in glass
+          assert "musicFlowPalette(MusicFlowStyle.DEFAULT)" in appearance
+          print("Identity, existing features and five-theme Liquid Glass migration checked")
           PY
       # Re-run after Kotlin latestRelease smart cast and additional PCM processor regression.
       - name: Regression tests and production release compilation
@@ -58,7 +66,7 @@ jobs:
           from pathlib import Path
           tests=list(Path("app/build/test-results/testDebugUnitTest").glob("TEST-*.xml"))
           names="\n".join(p.name for p in tests)
-          for required in ("PcmEqEngineTest", "PcmEqAudioProcessorTest", "UpdateDialogGateTest", "RadioArtworkCatalogTest"):
+          for required in ("PcmEqEngineTest", "PcmEqAudioProcessorTest", "UpdateDialogGateTest", "RadioArtworkCatalogTest", "MusicFlowLiquidGlassThemesTest"):
               assert required in names, (required, names)
           print("Regression classes executed:", len(tests))
           PY
