@@ -250,30 +250,163 @@ internal fun CinemaNativeInlinePlayer(
     }
 
     if (fullScreen) {
-        Dialog(onDismissRequest = { fullScreen = false },
+        Dialog(
+            onDismissRequest = ::collapseVideo,
             properties = DialogProperties(
                 usePlatformDefaultWidth = false,
                 decorFitsSystemWindows = false
-            )) {
-            Surface(color = Color.Black, modifier = Modifier.fillMaxSize()) {
-                VideoControls(Modifier.fillMaxSize().padding(8.dp), true)
+            )
+        ) {
+            // Only video and compact icon controls, without title overlay.
+            Box(Modifier.fillMaxSize().background(Color.Black)) {
+                CinemaPlayerView(player, Modifier.fillMaxSize()) {
+                    controllerVisible = it
+                }
+                if (controllerVisible || qualityOpen || seriesOpen) {
+                    Row(
+                        modifier = Modifier.align(Alignment.TopEnd)
+                            .padding(top = 8.dp, end = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (seriesShow != null) {
+                            IconButton(onClick = { seriesOpen = true }) {
+                                Icon(Icons.Filled.List, "Выбор сезона и серии",
+                                    tint = Color.White)
+                            }
+                        }
+                        Box {
+                            IconButton(onClick = { qualityOpen = true }) {
+                                Icon(Icons.Filled.Settings, "Выбор качества",
+                                    tint = Color.White)
+                            }
+                            DropdownMenu(
+                                expanded = qualityOpen,
+                                onDismissRequest = { qualityOpen = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Автоматически") },
+                                    onClick = { selectQuality(null) }
+                                )
+                                qualityOptions.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = { Text(option.label) },
+                                        onClick = { selectQuality(option) }
+                                    )
+                                }
+                            }
+                        }
+                        IconButton(onClick = ::collapseVideo) {
+                            Icon(Icons.Filled.FullscreenExit, "Мини-плеер",
+                                tint = Color.White)
+                        }
+                        IconButton(onClick = ::closeVideo) {
+                            Icon(Icons.Filled.Close, "Закрыть видео",
+                                tint = Color.White)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (seriesOpen && seriesShow != null) {
+        CinemaPlayerSeasonsDialog(
+            show = seriesShow,
+            season = seriesSeason,
+            episodes = seriesEpisodes,
+            loading = seriesLoading,
+            onSeason = onSeasonSelected,
+            onEpisode = { episode ->
+                seriesOpen = false
+                onEpisodeSelected(episode)
+            },
+            onDismiss = { seriesOpen = false }
+        )
+    }
+}
+
+@Composable
+private fun CinemaPlayerSeasonsDialog(
+    show: CinemaTvShow,
+    season: Int,
+    episodes: List<CinemaTitle>,
+    loading: Boolean,
+    onSeason: (Int) -> Unit,
+    onEpisode: (CinemaTitle) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.fillMaxWidth().heightIn(max = 565.dp),
+            color = Color(0xFF1F2430), shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(Modifier.padding(15.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(show.name, style = MaterialTheme.typography.titleMedium,
+                        color = Color.White, modifier = Modifier.weight(1f),
+                        maxLines = 2)
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Filled.Close, "Закрыть список",
+                            tint = Color.White)
+                    }
+                }
+                Row(Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    (1..show.seasons).forEach { number ->
+                        FilterChip(
+                            selected = season == number,
+                            onClick = { onSeason(number) },
+                            label = { Text("Сезон " + number) }
+                        )
+                    }
+                }
+                if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (episodes.isEmpty() && !loading) {
+                    Text("Серии этого сезона не найдены.", color = Color.LightGray)
+                }
+                LazyColumn(Modifier.heightIn(max = 355.dp)) {
+                    items(episodes, key = { it.key }) { item ->
+                        TextButton(onClick = { onEpisode(item) },
+                            modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                "Серия " + (item.episodeNumber?.toString() ?: "—") +
+                                    " · " + item.title,
+                                color = Color.White,
+                                maxLines = 2,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun CinemaPlayerView(player: ExoPlayer, modifier: Modifier) {
+private fun CinemaPlayerView(
+    player: ExoPlayer,
+    modifier: Modifier,
+    onControlsVisible: (Boolean) -> Unit
+) {
+    val callback by rememberUpdatedState(onControlsVisible)
     AndroidView(
         factory = { ctx ->
             PlayerView(ctx).apply {
                 this.player = player
                 useController = true
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                 setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                setControllerVisibilityListener(
+                    PlayerView.ControllerVisibilityListener { visibility ->
+                        callback(visibility == View.VISIBLE)
+                    }
+                )
             }
         },
         update = { view -> view.player = player },
         onRelease = { view -> view.player = null },
-        modifier = modifier.background(Color.Black, RoundedCornerShape(12.dp))
+        modifier = modifier.background(Color.Black)
     )
 }
