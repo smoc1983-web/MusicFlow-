@@ -29,6 +29,7 @@ class CinemaSeasonMergeTest {
             episode("Сериал Американские истории ужасов – 1 сезон 5 серия / American Horror Stories",
                 "different-series"),
             episode("Американская история ужасов, 2 сезон, 5 серия", "different-season"),
+            episode("AHS, 1 сезон, 7 серия", "known-different-title", 1, 7, 111),
             episode("Американская история ужасов, 1 сезон, 5 серия", "different-show-id",
                 1, 5, 222),
             official[0]
@@ -36,11 +37,12 @@ class CinemaSeasonMergeTest {
         val merged = CinemaSeriesSearch.mergeSeasonCandidates(
             "Американская история ужасов", 111, 1, "rutube", official, discovered
         )
-        assertEquals(listOf(1, 2, 3, 4, 5, 6), merged.map { it.episodeNumber })
+        assertEquals(listOf(1, 2, 3, 4, 5, 6, 7), merged.map { it.episodeNumber })
         assertTrue(merged.any { it.id == "missing-five" })
         assertFalse(merged.any { it.id == "different-series" })
         assertFalse(merged.any { it.id == "different-show-id" })
-        assertEquals(6, merged.size)
+        assertTrue(merged.any { it.id == "known-different-title" })
+        assertEquals(7, merged.size)
     }
 
     @Test fun episodesWithAndWithoutTvIdFormOneSeriesGroup() {
