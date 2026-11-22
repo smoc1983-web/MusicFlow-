@@ -74,7 +74,14 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
     var season by remember { mutableIntStateOf(1) }
     var episodes by remember { mutableStateOf<List<CinemaTitle>>(emptyList()) }
     var episodesBusy by remember { mutableStateOf(false) }
+    var activeSeriesGroup by remember { mutableStateOf<CinemaSeriesGroup?>(null) }
     var playing by remember { mutableStateOf<Pair<CinemaTitle, String>?>(null) }
+    var playerShow by remember { mutableStateOf<CinemaTvShow?>(null) }
+    var playerGroup by remember { mutableStateOf<CinemaSeriesGroup?>(null) }
+    var playerSeason by remember { mutableIntStateOf(1) }
+    var playerEpisodes by remember { mutableStateOf<List<CinemaTitle>>(emptyList()) }
+    var playerEpisodesBusy by remember { mutableStateOf(false) }
+    var playerError by remember { mutableStateOf<String?>(null) }
     var favorites by remember { mutableStateOf(CinemaLabSources.favoriteKeys(context)) }
 
     val firstSource = sources.firstOrNull {
@@ -211,6 +218,11 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
         }
     }
 
+    fun openFilm(item: CinemaTitle) {
+        activeSeriesGroup = null
+        details = item
+    }
+
     fun toggleFavorite(item: CinemaTitle) {
         favorites = if (item.key in favorites) favorites - item.key
             else favorites + item.key
@@ -221,6 +233,16 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
         val uri = item.streamUrl ?: return
         if (!CinemaLabSources.isSafeHttps(uri)) return
         CinemaLabSources.markRecent(context, item.key)
+        playerGroup = activeSeriesGroup
+        playerShow = tvShow ?: activeSeriesGroup?.let { group ->
+            CinemaTvShow(
+                id = 0, name = group.title, description = "",
+                seasons = group.seasons.maxOrNull() ?: 1,
+                cover = group.representative.poster
+            )
+        }
+        playerSeason = item.seasonNumber ?: season
+        playerError = null
         details = null
         playing = item to uri
     }
@@ -239,6 +261,64 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
             } finally {
                 detailsBusy = false
             }
+        }
+    }
+
+    fun choosePlayerEpisode(item: CinemaTitle) {
+        playerEpisodesBusy = true
+        playerError = null
+        scope.launch {
+            try {
+                val resolved = CinemaNativeSources.resolvePage(item)
+                val uri = resolved.streamUrl
+                if (uri != null && CinemaLabSources.isSafeHttps(uri)) {
+                    CinemaLabSources.markRecent(context, resolved.key)
+                    playerSeason = resolved.seasonNumber ?: playerSeason
+                    playing = resolved to uri
+                } else {
+                    playerError = resolved.playbackDiagnostic
+                        ?: "Для выбранной серии нет доступного потока."
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (e: Exception) {
+                playerError = e.message ?: "Не удалось открыть серию"
+            } finally {
+                playerEpisodesBusy = false
+            }
+        }
+    }
+
+    LaunchedEffect(playing?.first?.key) {
+        val item = playing?.first ?: return@LaunchedEffect
+        if (item.kind != CinemaKind.SERIES) return@LaunchedEffect
+        if (playerShow == null) {
+            val id = CinemaRutubeSource.videoId(item.pageUrl.orEmpty())
+            if (id != null) {
+                playerShow = CinemaRutubeSeries.loadShowFor(id)
+            }
+        }
+    }
+
+    LaunchedEffect(playerShow?.id, playerSeason, playing?.first?.key) {
+        val show = playerShow ?: return@LaunchedEffect
+        val current = playing?.first ?: return@LaunchedEffect
+        playerEpisodesBusy = true
+        playerEpisodes = emptyList()
+        try {
+            playerEpisodes = if (show.id > 0) {
+                CinemaRutubeSeries.loadEpisodes(
+                    show.id, playerSeason, current.sourceId
+                )
+            } else {
+                playerGroup?.episodesIn(playerSeason).orEmpty()
+            }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (e: Exception) {
+            playerError = "Список серий: " + (e.message ?: "ошибка загрузки")
+        } finally {
+            playerEpisodesBusy = false
         }
     }
 
