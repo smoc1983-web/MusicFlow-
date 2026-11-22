@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 private val CinemaAccent = Color(0xFFAB8AFF)
 
@@ -37,6 +38,7 @@ private val CinemaAccent = Color(0xFFAB8AFF)
 @Composable
 internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val palette = LocalMusicFlowPalette.current
     var sources by remember { mutableStateOf(CinemaNativeSources.sources(context)) }
     var results by remember { mutableStateOf<Map<String, List<CinemaTitle>>>(emptyMap()) }
@@ -46,6 +48,8 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
     var activeSource by remember { mutableStateOf("all") }
     var addDialog by remember { mutableStateOf(false) }
     var selectedFilm by remember { mutableStateOf<CinemaTitle?>(null) }
+    var resolvingFilm by remember { mutableStateOf(false) }
+    var filmError by remember { mutableStateOf<String?>(null) }
     var playing by remember { mutableStateOf<Pair<CinemaTitle, String>?>(null) }
     var favorites by remember { mutableStateOf(CinemaLabSources.favoriteKeys(context)) }
 
@@ -75,6 +79,26 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
             (query.isBlank() || film.title.contains(query.trim(), ignoreCase = true) ||
                 film.description.contains(query.trim(), ignoreCase = true))
     }
+    fun openFilm(film: CinemaTitle) {
+        selectedFilm = film
+        filmError = null
+        val link = film.pageUrl ?: return
+        resolvingFilm = true
+        scope.launch {
+            try {
+                val resolved = CinemaNativeSources.resolvePage(film)
+                if (selectedFilm?.key == film.key) selectedFilm = resolved
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (failure: Exception) {
+                filmError = "Страница недоступна: " +
+                    (failure.message ?: "ошибка загрузки")
+            } finally {
+                resolvingFilm = false
+            }
+        }
+    }
+
     fun beginPlayback(film: CinemaTitle) {
         val address = film.streamUrl
         if (address == null) {
@@ -150,6 +174,19 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                     label = { Text(source.name, maxLines = 1) }
                 )
             }
+            if (activeSource != "all") {
+                TextButton(onClick = {
+                    val removed = activeSource
+                    val updated = sources.filterNot { it.id == removed }
+                    sources = updated
+                    CinemaNativeSources.save(context, updated)
+                    if (playing?.first?.sourceId == removed) playing = null
+                    activeSource = "all"
+                }) {
+                    Icon(Icons.Filled.Delete, contentDescription = null)
+                    Text("Удалить источник")
+                }
+            }
         }
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
 
@@ -215,8 +252,9 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                                     Text("Смотреть")
                                 }
                             } else {
-                                OutlinedButton(onClick = { selectedFilm = film }) {
-                                    Text("О странице")
+                                OutlinedButton(onClick = { openFilm(film) }) {
+                                    Text(if (film.pageUrl != null) "Открыть фильм"
+                                        else "О странице")
                                 }
                             }
                             Spacer(Modifier.weight(1f))
@@ -227,16 +265,7 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                                     contentDescription = "Избранное", tint = CinemaAccent
                                 )
                             }
-                            IconButton(onClick = {
-                                val updated = sources.filterNot { it.id == film.sourceId }
-                                sources = updated
-                                CinemaNativeSources.save(context, updated)
-                                if (activeSource == film.sourceId) activeSource = "all"
-                                if (playing?.first?.sourceId == film.sourceId) playing = null
-                            }) {
-                                Icon(Icons.Filled.Delete,
-                                    contentDescription = "Удалить киноисточник")
-                            }
+
                         }
                     }
                 }
@@ -255,6 +284,21 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Text(film.description)
+                    if (resolvingFilm) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Text("Проверяем страницу фильма…",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    filmError?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (film.hasPlayback) {
+                        Button(onClick = { beginPlayback(film) }) {
+                            Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                            Text("Смотреть в MusicFlow")
+                        }
+                    }
                     Text(
                         if (film.hasPlayback)
                             "Найден прямой HTTPS-видеопоток."
