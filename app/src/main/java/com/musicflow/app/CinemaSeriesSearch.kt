@@ -93,8 +93,9 @@ internal object CinemaSeriesSearch {
                 it.seasonNumber == season &&
                 it.episodeNumber != null &&
                 identity.length >= 3 &&
-                family(it.title) == identity &&
-                (showId <= 0 || it.tvShowId == null || it.tvShowId == showId)
+                (showId > 0 && it.tvShowId == showId ||
+                    family(it.title) == identity &&
+                        (showId <= 0 || it.tvShowId == null || it.tvShowId == showId))
         }
         return organize(native + extras)
     }
