@@ -9,12 +9,14 @@ import androidx.media3.common.Player
 import androidx.media3.common.C
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.common.util.UnstableApi
 import androidx.annotation.OptIn
@@ -43,7 +45,12 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
         AppDiagnostics.initialize(this)
         AppDiagnostics.info("PlaybackService", "service started")
-        val upstream = DefaultDataSource.Factory(this)
+        // HLS segments from slow IPTV providers need longer connect/read windows.
+        // DefaultDataSource retains Android local/content asset support.
+        val http = DefaultHttpDataSource.Factory()
+            .setConnectTimeoutMs(TvPlaybackTuning.CONNECT_TIMEOUT_MS)
+            .setReadTimeoutMs(TvPlaybackTuning.READ_TIMEOUT_MS)
+        val upstream = DefaultDataSource.Factory(this, http)
         val resolvedDataSource = ResolvingDataSource.Factory(upstream) { spec ->
             val host = spec.uri.host?.lowercase(Locale.ROOT).orEmpty()
             if (spec.uri.scheme == "chart") {
@@ -137,8 +144,18 @@ class PlaybackService : MediaSessionService() {
         eqPrefs.registerOnSharedPreferenceChangeListener(eqListener)
         eqPreferences = eqPrefs
         eqPreferenceListener = eqListener
+        val streamingLoadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMsForStreaming(
+                TvPlaybackTuning.MIN_BUFFER_MS,
+                TvPlaybackTuning.MAX_BUFFER_MS,
+                TvPlaybackTuning.START_BUFFER_MS,
+                TvPlaybackTuning.REBUFFER_MS
+            )
+            .setTargetBufferBytes(TvPlaybackTuning.TARGET_BUFFER_BYTES)
+            .build()
         val player = ExoPlayer.Builder(this, renderers)
             .setMediaSourceFactory(mediaSourceFactory)
+            .setLoadControl(streamingLoadControl)
             .build().apply {
             setAudioAttributes(
                 AudioAttributes.Builder()
