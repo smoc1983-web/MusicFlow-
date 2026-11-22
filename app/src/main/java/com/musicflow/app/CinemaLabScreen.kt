@@ -343,6 +343,15 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                         label = { Text(source.name.take(25)) }
                     )
                 }
+                if (selectedSource != "all" && selectedSource != firstSource?.id) {
+                    TextButton(onClick = {
+                        val updated = sources.filterNot { it.id == selectedSource }
+                        sources = updated
+                        CinemaNativeSources.save(context, updated)
+                        selectedSource = "all"
+                        selectedShelf = null
+                    }) { Text("Удалить источник") }
+                }
                 TextButton(onClick = { selectedSource = "all" }) {
                     Text("Все источники")
                 }
@@ -580,11 +589,15 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                 Button(onClick = {
                     try {
                         require(sources.size < 30) { "Максимум 30 источников" }
-                        val newSource = CinemaNativeSources.register("", input)
+                        val newSource = CinemaNativeSources.register(
+                            "Каталог " + (sources.size + 1), input
+                        )
                         require(sources.none { it.url == newSource.url }) {
                             "Этот источник уже добавлен"
                         }
-                        sources = sources + newSource
+                        val updated = sources + newSource
+                        sources = updated
+                        CinemaNativeSources.save(context, updated)
                         addDialog = false
                     } catch (e: Exception) {
                         error = e.message ?: "Ошибка адреса"
