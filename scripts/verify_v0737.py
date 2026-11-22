@@ -20,6 +20,6 @@ assert "findRecording" in service
 assert 'MUSIC_CHART_PLAYLIST' in player
 assert "MUSIC_CHART_PLAYLIST" in recovery
 assert "MUSIC_CHART_PLAYLIST" in journal
-assert "versionCode = 739" in gradle and 'versionName = "0.7.39"' in gradle
+assert "versionCode = 740" in gradle and 'versionName = "0.7.40"' in gradle
 assert 'applicationId = "com.musicflow.preview"' in gradle
 print("PASS: MusicFlow 0.7.37 top chart playlist and safe lazy resolution")

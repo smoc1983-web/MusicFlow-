@@ -6,7 +6,7 @@ journal=(root/"PlaybackJournal.kt").read_text()
 screen=(root/"MusicPlaybackHistoryScreen.kt").read_text()
 stats=(root/"ListeningStatisticsStore.kt").read_text()
 tracker=(root/"ListeningProgressTracker.kt").read_text()
-assert 'versionCode = 739' in gradle and 'versionName = "0.7.39"' in gradle
+assert 'versionCode = 740' in gradle and 'versionName = "0.7.40"' in gradle
 assert 'applicationId = "com.musicflow.preview"' in gradle
 assert Path("app/src/test/java/com/musicflow/app/ListeningProgressTrackerTest.kt").is_file()
 assert Path("app/src/test/java/com/musicflow/app/ListeningStatisticsReducerTest.kt").is_file()
