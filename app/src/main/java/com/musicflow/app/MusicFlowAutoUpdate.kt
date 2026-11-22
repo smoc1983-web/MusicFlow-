@@ -59,7 +59,7 @@ internal fun MusicFlowAutoUpdate() {
         val now = System.currentTimeMillis()
         try {
             val latest = MusicFlowUpdates.latestRelease()
-            if (candidateAllowed(latest)) {
+            if (latest != null && candidateAllowed(latest)) {
                 val snoozedVersion = preferences.getLong("snoozed_version", 0L)
                 val snoozedUntil = preferences.getLong("snoozed_until", 0L)
                 if (saved != null || latest.versionCode != snoozedVersion || now >= snoozedUntil) {
