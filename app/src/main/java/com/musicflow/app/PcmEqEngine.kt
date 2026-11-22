@@ -24,7 +24,7 @@ internal class PcmEqEngine {
         channelCount = channels
         current = settings
         gain = if (settings.boostEnabled) {
-            10.0.pow(settings.boostDb.coerceIn(0f, 3f) / 20.0)
+            10.0.pow(settings.boostDb.coerceIn(0f, 3f).toDouble() / 20.0)
         } else 1.0
         filters = if (!settings.enabled) emptyArray() else Array(channels) {
             Array(5) { i ->
