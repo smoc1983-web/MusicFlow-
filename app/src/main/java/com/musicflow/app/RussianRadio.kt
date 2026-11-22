@@ -30,15 +30,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
 
 internal data class RussianRadioStation(
     val uuid: String,
@@ -61,12 +55,6 @@ internal data class RussianRadioStation(
 }
 
 internal object RussianRadioDirectory {
-    // Prefer the active round-robin DNS pool; retired mirrors may not resolve.
-    private val servers = listOf(
-        "https://all.api.radio-browser.info",
-        "https://de1.api.radio-browser.info"
-    )
-
     // Do not resolve localhost, loopback, intranet or private address URLs as
     // radio stations. Streams must be public HTTP(S) radio endpoints.
     internal fun isPublicStream(url: String): Boolean {
@@ -84,137 +72,6 @@ internal object RussianRadioDirectory {
             if (block in 16..31) return false
         }
         return true
-    }
-
-    /**
-     * Do not discard stations only because the directory's remote health checker
-     * cannot reach them. Russian streams may work from the listener's network
-     * even when the public Radio Browser mirror marks them as unavailable.
-     *
-     * A successful HTTP response with no usable stations is not a successful
-     * catalog: try another mirror and then the alternate directory query.
-     */
-    suspend fun stations(query: String = ""): List<RussianRadioStation> =
-        withContext(Dispatchers.IO) {
-            val term = query.trim().take(80)
-            val encoded = URLEncoder.encode(term, "UTF-8")
-            val basePaths = if (term.isBlank()) listOf(
-                "/json/stations/bycountrycodeexact/RU?hidebroken=false&order=clickcount&reverse=true&limit=350",
-                "/json/stations/search?countrycode=RU&hidebroken=false&order=clickcount&reverse=true&limit=350"
-            ) else listOf(
-                "/json/stations/search?countrycode=RU&name=$encoded&hidebroken=false&order=clickcount&reverse=true&limit=200",
-                "/json/stations/byname/$encoded?hidebroken=false&order=clickcount&reverse=true&limit=200"
-            )
-            var failure: Throwable? = null
-            for (base in basePaths) {
-                for (server in servers) {
-                    try {
-                        val connection = (URL(server + base).openConnection() as HttpURLConnection).apply {
-                            connectTimeout = 5_500
-                            readTimeout = 8_500
-                            setRequestProperty("User-Agent", "MusicFlow/0.7.39 (https://github.com/smoc1983-web/MusicFlow-)")
-                            setRequestProperty("Accept", "application/json")
-                            setRequestProperty("Accept-Language", "ru")
-                        }
-                        val payload = try {
-                            if (connection.responseCode !in 200..299) {
-                                throw IOException("Radio Browser HTTP " + connection.responseCode)
-                            }
-                            connection.inputStream.bufferedReader(Charsets.UTF_8).use { input ->
-                                val output = StringBuilder()
-                                val buffer = CharArray(8192)
-                                while (output.length < 2_000_000) {
-                                    val amount = input.read(buffer, 0, minOf(buffer.size, 2_000_000 - output.length))
-                                    if (amount < 0) break
-                                    if (amount > 0) output.append(buffer, 0, amount)
-                                }
-                                output.toString()
-                            }
-                        } finally {
-                            connection.disconnect()
-                        }
-                        val arr = JSONArray(payload)
-                        val found = (0 until arr.length()).mapNotNull { index ->
-                            val item = arr.optJSONObject(index) ?: return@mapNotNull null
-                            val uuid = item.optString("stationuuid").trim()
-                            val name = item.optString("name").trim().take(130)
-                            if (!isListingCandidate(item.optString("countrycode"), uuid, name)) {
-                                return@mapNotNull null
-                            }
-                            // The directory's lastcheckok status is deliberately not
-                            // used here: it does not prove regional reachability.
-                            val stream = item.optString("url_resolved")
-                                .takeIf(::isPublicStream)
-                                ?: item.optString("url").takeIf(::isPublicStream)
-                                ?: return@mapNotNull null
-                            RussianRadioStation(
-                                uuid = uuid,
-                                name = name,
-                                stream = stream,
-                                favicon = item.optString("favicon").takeIf { it.startsWith("https://") },
-                                tags = item.optString("tags").take(140),
-                                codec = item.optString("codec").take(16),
-                                bitrate = item.optInt("bitrate", 0)
-                            )
-                        }.distinctBy { it.uuid }
-                        if (found.isNotEmpty()) {
-                            AppDiagnostics.info("Radio", "catalog mirror returned " + found.size + " stations")
-                            return@withContext found
-                        }
-                        failure = IOException("Каталог Radio Browser пуст: " + server)
-                        AppDiagnostics.info("Radio", "empty catalog mirror " + server)
-                    } catch (cancel: CancellationException) {
-                        throw cancel
-                    } catch (error: Exception) {
-                        failure = error
-                        AppDiagnostics.failure("Radio", "catalog mirror request", error)
-                    }
-                }
-            }
-            throw IOException("Не удалось получить список радиостанций. Проверьте интернет.", failure)
-        }
-
-    internal fun isListingCandidate(countryCode: String, uuid: String, name: String): Boolean =
-        countryCode.equals("RU", ignoreCase = true) && uuid.isNotBlank() && name.isNotBlank()
-
-    private const val CACHE_PREFS = "musicflow_radio_catalog_cache"
-    private const val CACHE_KEY = "last_good_stations"
-
-    /** Last good popular catalog. Never overwrites or clears radio favorites. */
-    fun cachedStations(context: Context): List<RussianRadioStation> = runCatching {
-        val raw = context.getSharedPreferences(CACHE_PREFS, Context.MODE_PRIVATE)
-            .getString(CACHE_KEY, "[]")
-        val json = JSONArray(raw)
-        (0 until json.length()).mapNotNull { index ->
-            val item = json.optJSONObject(index) ?: return@mapNotNull null
-            val uuid = item.optString("uuid")
-            val name = item.optString("name")
-            val stream = item.optString("stream")
-            if (uuid.isBlank() || name.isBlank() || !isPublicStream(stream)) null
-            else RussianRadioStation(
-                uuid, name, stream,
-                item.optString("favicon").takeIf { it.startsWith("https://") },
-                item.optString("tags"), item.optString("codec"), item.optInt("bitrate")
-            )
-        }
-    }.getOrDefault(emptyList())
-
-    fun saveCachedStations(context: Context, stations: List<RussianRadioStation>) {
-        if (stations.isEmpty()) return
-        val json = JSONArray()
-        stations.take(250).forEach { station ->
-            json.put(JSONObject().apply {
-                put("uuid", station.uuid)
-                put("name", station.name)
-                put("stream", station.stream)
-                put("favicon", station.favicon ?: "")
-                put("tags", station.tags)
-                put("codec", station.codec)
-                put("bitrate", station.bitrate)
-            })
-        }
-        context.getSharedPreferences(CACHE_PREFS, Context.MODE_PRIVATE)
-            .edit().putString(CACHE_KEY, json.toString()).apply()
     }
 
     private const val PREFS = "musicflow_radio_favorites"
