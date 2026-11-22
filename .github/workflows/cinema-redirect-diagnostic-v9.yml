@@ -1,0 +1,57 @@
+name: Diagnose cinema catalogue 301 redirects v9
+on:
+  push:
+    branches: ["feature/musicflow-cinema-redirect-fix-v9"]
+    paths: [".github/workflows/cinema-redirect-diagnostic-v9.yml"]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Test official feed and canonical redirect targets
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.error,urllib.parse,json
+          ua="Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36"
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,*args): return None
+          opener=urllib.request.build_opener(NoRedirect())
+          def probe(url):
+              for n in range(5):
+                  p=urllib.parse.urlsplit(url)
+                  if p.scheme!="https" or p.hostname not in ("rutube.ru","www.rutube.ru") or not p.path.startswith("/api/"):
+                      print("BLOCKED_REDIRECT",p.hostname,p.path[:110]);return
+                  req=urllib.request.Request(url,headers={"User-Agent":ua,"Referer":"https://rutube.ru/","Accept":"application/json"})
+                  try:
+                      result=opener.open(req,timeout=11)
+                  except urllib.error.HTTPError as e:
+                      result=e
+                  except Exception as e:
+                      print("ERROR",type(e).__name__,str(e)[:150]);return
+                  with result:
+                      status=result.status
+                      loc=result.headers.get("Location","")
+                      print("HOP",n,"HTTP",status,"PATH",p.path,"QUERY",p.query[:90],"REDIRECT",loc[:220],"TYPE",result.headers.get("Content-Type",""))
+                      if status in (301,302,303,307,308):
+                          url=urllib.parse.urljoin(url,loc)
+                          continue
+                      if status==200:
+                          try:
+                              data=json.loads(result.read(1000000))
+                              print("BODY_KEYS",list(data)[:13] if isinstance(data,dict) else "not-object",
+                                   "TABS",len(data.get("tabs",[])) if isinstance(data,dict) else 0,
+                                   "RESULTS",len(data.get("results",[])) if isinstance(data,dict) else 0)
+                          except Exception as e:print("BODY_READ",str(e)[:110])
+                      return
+          for url in [
+              "https://rutube.ru/api/feeds/movies?format=json",
+              "https://rutube.ru/api/feeds/movies/?format=json",
+              "https://rutube.ru/api/tags/video/2546/?limit=20",
+              "https://rutube.ru/api/search/video/?query=film&page=1"
+          ]:
+              print("PROBE",url)
+              probe(url)
+          PY
