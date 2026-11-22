@@ -1,5 +1,7 @@
 package com.musicflow.app
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -735,7 +737,11 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                                 FilterChip(
                                     selected = season == n,
                                     onClick = { season = n },
-                                    label = { Text("Сезон $n") }
+                                    label = { Text(
+                                        "Сезон $n" + (seriesLookup?.guide
+                                            ?.inSeason(n)?.size?.takeIf { it > 0 }
+                                            ?.let { " · $it" } ?: "")
+                                    ) }
                                 )
                             }
                         }
@@ -744,11 +750,63 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                             show.name, show.id, season, current.sourceId,
                             episodes, chosenGroup?.episodesIn(season).orEmpty()
                         )
-                        if (groupedEpisodes.isEmpty() && !episodesBusy) {
+                        val guide = seriesLookup?.guide
+                        val coverage = CinemaEpisodeAudit.coverage(
+                            guide, season, groupedEpisodes
+                        )
+                        Text(
+                            if (coverage.verifiedGuide) {
+                                "Эталон TVmaze: " + guide!!.seasons().size +
+                                    " сезонов · " + coverage.expectedCount +
+                                    " серий в сезоне. Найдено: " + coverage.foundCount
+                            } else {
+                                "Эталонное количество серий не подтверждено. " +
+                                    "В источниках найдено: " + groupedEpisodes.size +
+                                    ". Пропуски проверяются по нумерации."
+                            },
+                            color = CinemaTextMuted,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        if (guide != null) {
+                            TextButton(onClick = {
+                                runCatching {
+                                    context.startActivity(Intent(
+                                        Intent.ACTION_VIEW, Uri.parse(guide.url)
+                                    ))
+                                }
+                            }) {
+                                Text("Источник списка: TVmaze", color = CinemaPurple)
+                            }
+                        }
+                        if (episodeAuditMessage.isNotBlank()) {
+                            Text(episodeAuditMessage, color = CinemaTextMuted,
+                                style = MaterialTheme.typography.labelSmall)
+                        }
+                        if (groupedEpisodes.isEmpty() &&
+                            coverage.expected.isEmpty() && !episodesBusy) {
                             Text("Для выбранного сезона серии пока недоступны.",
                                 color = CinemaTextMuted)
                         }
-                        groupedEpisodes.forEach { episode ->
+                        val rows: List<Pair<Int, CinemaTitle?>> =
+                            (groupedEpisodes.map { (it.episodeNumber ?: Int.MAX_VALUE) to
+                                (it as CinemaTitle?) } +
+                                coverage.missing.map { it to null })
+                                .sortedBy { it.first }
+                        rows.forEach { (number, episode) ->
+                            if (episode == null) {
+                                Surface(
+                                    color = Color(0xFF30374A),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text(
+                                        "Серия $number · " + if (episodesBusy)
+                                            "идёт автоматический поиск"
+                                        else "не найдена в подключённых источниках",
+                                        color = CinemaTextMuted,
+                                        modifier = Modifier.padding(14.dp)
+                                    )
+                                }
+                            } else {
                             Surface(
                                 color = Color(0xFF30374A),
                                 modifier = Modifier.fillMaxWidth().clickable {
@@ -774,6 +832,7 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                                     }
                                     Icon(Icons.Filled.PlayArrow, null, tint = CinemaPurple)
                                 }
+                            }
                             }
                         }
                     }
