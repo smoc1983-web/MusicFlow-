@@ -61,10 +61,10 @@ internal data class RussianRadioStation(
 }
 
 internal object RussianRadioDirectory {
+    // Prefer the active round-robin DNS pool; retired mirrors may not resolve.
     private val servers = listOf(
-        "https://de1.api.radio-browser.info",
-        "https://nl1.api.radio-browser.info",
-        "https://at1.api.radio-browser.info"
+        "https://all.api.radio-browser.info",
+        "https://de1.api.radio-browser.info"
     )
 
     // Do not resolve localhost, loopback, intranet or private address URLs as
@@ -267,7 +267,12 @@ internal fun RussianRadioScreen(
     var refreshIndex by remember { mutableIntStateOf(0) }
     var favoritesOnly by remember { mutableStateOf(false) }
     var favorites by remember { mutableStateOf(RussianRadioDirectory.favorites(context)) }
-    var stations by remember { mutableStateOf(RussianRadioDirectory.cachedStations(context)) }
+    // Display an immediately usable station list even with no working DNS.
+    var stations by remember {
+        mutableStateOf(RussianRadioDirectory.cachedStations(context).ifEmpty {
+            RussianRadioFallback.bundledStations(context)
+        })
+    }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -281,9 +286,16 @@ internal fun RussianRadioScreen(
             if (applied.isBlank()) RussianRadioDirectory.saveCachedStations(context, fresh)
         } catch (failure: Exception) {
             if (failure is CancellationException) throw failure
-            error = (failure.message ?: "Каталог радиостанций недоступен") +
-                if (applied.isBlank() && stations.isNotEmpty())
-                    ". Показан последний сохранённый список." else ""
+            // The fallback uses a different hostname and, if necessary,
+            // the APK-bundled Russian station list without any network.
+            val fallback = RussianRadioFallback.stations(context, applied)
+            if (fallback.isNotEmpty()) {
+                stations = fallback
+                if (applied.isBlank()) RussianRadioDirectory.saveCachedStations(context, fallback)
+                error = "Основной каталог недоступен. Показаны станции из резервного списка."
+            } else {
+                error = failure.message ?: "Не удалось получить станции"
+            }
         } finally {
             loading = false
         }
