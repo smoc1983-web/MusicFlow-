@@ -10,7 +10,7 @@ on:
         description: "Git ref with MusicFlow source (versionName/versionCode in app/build.gradle.kts)"
         required: false
         type: string
-        default: "feature/musicflow-v0.7.27-reliable-updates"
+        default: "feature/musicflow-v0742-episode-audit-recovery"
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
       - name: Check out selected application source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || (github.ref_type == 'tag' && github.ref_name || 'feature/musicflow-v0.7.27-reliable-updates') }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || (github.ref_type == 'tag' && github.ref_name || 'feature/musicflow-v0742-episode-audit-recovery') }}
           persist-credentials: true
 
       - name: Verify version, package ID and release tag
@@ -151,8 +151,8 @@ jobs:
           set -euo pipefail
           gh release create "$RELEASE_TAG" "out/MusicFlow_$RELEASE_VERSION.apk" out/SHA256SUMS.txt \
             -R "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" \
-            --title "MusicFlow $RELEASE_VERSION" \
-            --notes "Официальный совместимый APK с постоянным ключом подписи. MusicFlow автоматически проверяет GitHub Releases при запуске и позволяет скачать и установить обновление из интерфейса приложения через системный установщик Android."
+            --title "MusicFlow $RELEASE_VERSION · Сверка сериалов, радио и ТВ" \
+            --notes "Официальный APK со штатной подписью для обновления поверх текущей MusicFlow. Новое: кинораздел Cinema TEST 12; сверка сезонов и эпизодов по TVmaze и RUTUBE, автоматический поиск недостающих серий и выбор доступных аудиодорожек; радио только из резервного каталога без предупреждения об основном; ТВ со счётчиком каналов выбранного источника и переходом в избранное. Обновление доступно из приложения через проверку GitHub Releases и штатный установщик Android. Сборка не изменяет Pro-ветку."
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
             --jq '.assets[].name' | grep -Fx "MusicFlow_$RELEASE_VERSION.apk"
 
