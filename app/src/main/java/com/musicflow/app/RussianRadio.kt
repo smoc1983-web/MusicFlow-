@@ -47,7 +47,7 @@ internal data class RussianRadioStation(
     fun toTrack(): Track = Track(
         id = mediaId,
         title = name,
-        artist = "Русское радио · прямой эфир",
+        artist = "",
         artwork = favicon,
         stream = stream,
         durationSec = 0
@@ -171,7 +171,10 @@ internal fun RussianRadioScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(selected = !favoritesOnly, onClick = { favoritesOnly = false },
                 label = { Text("Популярные") })
-            FilterChip(selected = favoritesOnly, onClick = { favoritesOnly = true },
+            FilterChip(selected = favoritesOnly, onClick = {
+                    favorites = RussianRadioDirectory.favorites(context)
+                    favoritesOnly = true
+                },
                 label = { Text("Избранное") })
             IconButton(onClick = {
                 // A refresh must re-run LaunchedEffect even for the same query.
