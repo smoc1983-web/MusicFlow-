@@ -75,6 +75,7 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
     var season by remember { mutableIntStateOf(1) }
     var episodes by remember { mutableStateOf<List<CinemaTitle>>(emptyList()) }
     var episodesBusy by remember { mutableStateOf(false) }
+    var episodeAuditMessage by remember { mutableStateOf("") }
     var seriesLookup by remember { mutableStateOf<CinemaSeriesLookup?>(null) }
     var activeSeriesGroup by remember { mutableStateOf<CinemaSeriesGroup?>(null) }
     var playing by remember { mutableStateOf<Pair<CinemaTitle, String>?>(null) }
@@ -84,6 +85,7 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
     var playerSeason by remember { mutableIntStateOf(1) }
     var playerEpisodes by remember { mutableStateOf<List<CinemaTitle>>(emptyList()) }
     var playerEpisodesBusy by remember { mutableStateOf(false) }
+    var playerAuditMessage by remember { mutableStateOf("") }
     var playerError by remember { mutableStateOf<String?>(null) }
     var favorites by remember { mutableStateOf(CinemaLabSources.favoriteKeys(context)) }
     val catalogListState = rememberLazyListState()
@@ -194,6 +196,7 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
         tvShow = null
         seriesLookup = null
         episodes = emptyList()
+        episodeAuditMessage = ""
         season = film.seasonNumber ?: 1
         if (film.pageUrl == null) return@LaunchedEffect
         detailsBusy = true
@@ -224,10 +227,14 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
     }
 
     LaunchedEffect(tvShow?.id, season, details?.key, seriesLookup) {
-        val show = tvShow ?: return@LaunchedEffect
+        val show = tvShow ?: activeSeriesGroup?.let { group ->
+            CinemaTvShow(0, group.title, "", group.seasons.maxOrNull() ?: 1,
+                group.representative.poster)
+        } ?: return@LaunchedEffect
         val film = details ?: return@LaunchedEffect
         episodesBusy = true
         episodes = emptyList()
+        episodeAuditMessage = "Загружаем список серий для сверки…"
         try {
             val cached = (shelfCache.values.flatMap { it.films } +
                 otherCatalogs.values.flatten() + searched +
@@ -242,27 +249,21 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                 }
             } else {
                 CinemaSeriesSearch.inSeason(
-                    seriesLookup ?: return@LaunchedEffect, season
+                    seriesLookup ?: CinemaSeriesLookup(null, cached, false, ""), season
                 )
             }
-            episodes = CinemaSeriesSearch.mergeSeasonCandidates(
-                show.name, show.id, season, film.sourceId, native, cached
-            )
-            if (show.id > 0) {
-                // Show the official season immediately, then add searchable gaps.
-                episodesBusy = false
-                val additional = CinemaSeriesSearch.discoverSeason(
-                    show, season, film.sourceId, shelves, cached
-                )
-                episodes = CinemaSeriesSearch.mergeSeasonCandidates(
-                    show.name, show.id, season, film.sourceId, native,
-                    cached + additional
-                )
+            episodes = CinemaSeriesSearch.reconcileSeason(
+                show, season, film.sourceId, shelves, cached, native,
+                seriesLookup?.guide
+            ) { found, progress ->
+                episodes = found
+                episodeAuditMessage = progress
             }
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (e: Exception) {
             detailsError = "Список серий: " + (e.message ?: "недоступен")
+            episodeAuditMessage = "Не удалось завершить сверку"
         } finally {
             episodesBusy = false
         }
@@ -366,6 +367,7 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
         val current = playing?.first ?: return@LaunchedEffect
         playerEpisodesBusy = true
         playerEpisodes = emptyList()
+        playerAuditMessage = "Сверяем серии…"
         try {
             val cached = (shelfCache.values.flatMap { it.films } +
                 otherCatalogs.values.flatten() + searched +
@@ -387,23 +389,18 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                     }.orEmpty() + playerGroup?.episodesIn(playerSeason).orEmpty()
                 )
             }
-            playerEpisodes = CinemaSeriesSearch.mergeSeasonCandidates(
-                show.name, show.id, playerSeason, current.sourceId, native, cached
-            )
-            if (show.id > 0) {
-                playerEpisodesBusy = false
-                val additional = CinemaSeriesSearch.discoverSeason(
-                    show, playerSeason, current.sourceId, shelves, cached
-                )
-                playerEpisodes = CinemaSeriesSearch.mergeSeasonCandidates(
-                    show.name, show.id, playerSeason, current.sourceId,
-                    native, cached + additional
-                )
+            playerEpisodes = CinemaSeriesSearch.reconcileSeason(
+                show, playerSeason, current.sourceId, shelves, cached, native,
+                playerSeriesLookup?.guide
+            ) { found, progress ->
+                playerEpisodes = found
+                playerAuditMessage = progress
             }
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (e: Exception) {
             playerError = "Список серий: " + (e.message ?: "ошибка загрузки")
+            playerAuditMessage = "Не удалось завершить сверку"
         } finally {
             playerEpisodesBusy = false
         }
@@ -478,6 +475,9 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                 seriesSeason = playerSeason,
                 seriesEpisodes = playerEpisodes,
                 seriesLoading = playerEpisodesBusy,
+                seriesExpected = playerSeriesLookup?.guide?.inSeason(playerSeason).orEmpty(),
+                seriesGuideUrl = playerSeriesLookup?.guide?.url,
+                seriesAuditMessage = playerAuditMessage,
                 onSeasonSelected = { playerSeason = it },
                 onEpisodeSelected = ::choosePlayerEpisode,
                 onClose = {
