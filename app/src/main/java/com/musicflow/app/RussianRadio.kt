@@ -269,32 +269,25 @@ internal fun RussianRadioScreen(
     var favorites by remember { mutableStateOf(RussianRadioDirectory.favorites(context)) }
     // Display an immediately usable station list even with no working DNS.
     var stations by remember {
-        mutableStateOf(RussianRadioDirectory.cachedStations(context).ifEmpty {
-            RussianRadioFallback.bundledStations(context)
-        })
+        mutableStateOf(RussianRadioFallback.bundledStations(context))
     }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    // The reserve M3U is now the sole radio directory. Favorites stay unchanged.
     LaunchedEffect(applied, refreshIndex) {
         loading = true
         error = null
-        if (applied.isNotBlank()) stations = emptyList()
         try {
-            val fresh = RussianRadioDirectory.stations(applied)
-            stations = fresh
-            if (applied.isBlank()) RussianRadioDirectory.saveCachedStations(context, fresh)
+            stations = RussianRadioFallback.stations(context, applied)
+        } catch (cancel: CancellationException) {
+            throw cancel
         } catch (failure: Exception) {
-            if (failure is CancellationException) throw failure
-            // The fallback uses a different hostname and, if necessary,
-            // the APK-bundled Russian station list without any network.
-            val fallback = RussianRadioFallback.stations(context, applied)
-            if (fallback.isNotEmpty()) {
-                stations = fallback
-                if (applied.isBlank()) RussianRadioDirectory.saveCachedStations(context, fallback)
-                error = "Основной каталог недоступен. Показаны станции из резервного списка."
-            } else {
-                error = failure.message ?: "Не удалось получить станции"
+            stations = RussianRadioFallback.filterStations(
+                RussianRadioFallback.bundledStations(context), applied
+            )
+            if (stations.isEmpty() && applied.isBlank()) {
+                error = "Резервный список радиостанций недоступен."
             }
         } finally {
             loading = false
@@ -303,9 +296,9 @@ internal fun RussianRadioScreen(
 
     val shown = if (favoritesOnly) favorites else stations
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-        Text("Русское радио", color = palette.foreground,
+        Text("Радио", color = palette.foreground,
             style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Text("Радиостанции России · прямой эфир, не поиск отдельных песен",
+        Text("Радиостанции России",
             color = palette.muted, style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(
             value = query,
