@@ -1,4 +1,4 @@
-"""ub-mode red: Android OS owns MusicFlow APK background download in 0.7.38."""
+"""ub-mode red: Android OS owns MusicFlow APK background download in 0.7.39."""
 from pathlib import Path
 root=Path("app/src/main/java/com/musicflow/app")
 transport=(root/"MusicFlowBackgroundUpdates.kt").read_text(encoding="utf-8")
@@ -19,5 +19,5 @@ assert "MusicFlowBackgroundUpdates.snapshot(" in about
 assert "MusicFlowBackgroundUpdates.snapshot(" in automatic
 assert "MusicFlowUpdates.downloadVerified(context, update)" not in automatic
 assert "MusicFlowUpdates.downloadVerified(context, release)" not in about
-assert "versionCode = 738" in gradle and 'versionName = "0.7.38"' in gradle
+assert "versionCode = 739" in gradle and 'versionName = "0.7.39"' in gradle
 print("PASS: durable system-managed update downloads and signature gating")

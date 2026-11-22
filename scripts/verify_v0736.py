@@ -19,6 +19,6 @@ assert 'enum class TopSongsRegion' in charts
 for key in ('7d/', 'YYYY-MM', 'Europe/Moscow', 'ol.rows > li.row', 'a.title', 'span.artists', 'span.num'):
     assert key in charts, key
 assert 'https://api.listenbrainz.org/1/stats/sitewide/recordings' in charts
-assert "versionCode = 738" in gradle and 'versionName = "0.7.38"' in gradle
+assert "versionCode = 739" in gradle and 'versionName = "0.7.39"' in gradle
 assert 'applicationId = "com.musicflow.preview"' in gradle
 print("PASS: MusicFlow 0.7.37 home charts and signed update compatibility")

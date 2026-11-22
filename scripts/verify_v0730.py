@@ -14,7 +14,7 @@ sources = (root / "MusicSources.kt").read_text(encoding="utf-8")
 gradle = Path("app/build.gradle.kts").read_text(encoding="utf-8")
 workflow = Path(".github/workflows/android-apk.yml").read_text(encoding="utf-8")
 
-assert 'versionCode = 738' in gradle and 'versionName = "0.7.38"' in gradle
+assert 'versionCode = 739' in gradle and 'versionName = "0.7.39"' in gradle
 assert 'applicationId = "com.musicflow.preview"' in gradle
 assert 'applicationIdSuffix = ".dev"' in gradle
 assert '"vk" to ::' not in sources
@@ -23,8 +23,8 @@ assert '6 -> "Радио"' in main and '5 -> "История"' in main
 assert 'RussianRadioScreen(' in main and 'MusicPlaybackHistoryScreen(' in main
 assert 'onPlay = { station -> queueAndPlay(listOf(station.toTrack()), 0) }' in main
 assert 'https://de1.api.radio-browser.info' in radio
-assert 'bycountrycodeexact/RU' in radio and 'countrycode=RU' in radio and 'hidebroken=true' in radio
-assert 'isPublicStream' in radio and 'item.optInt("lastcheckok", 0) != 1' in radio
+assert 'bycountrycodeexact/RU' in radio and 'countrycode=RU' in radio and 'hidebroken=false' in radio
+assert 'isPublicStream' in radio and 'item.optInt("lastcheckok", 0) != 1' not in radio
 assert 'getSharedPreferences(PREFS' in radio
 assert 'https://lrclib.net/api/search?' in lyrics
 assert 'syncedLyrics' in lyrics and 'plainLyrics' in lyrics

@@ -1,4 +1,4 @@
-"""MusicFlow 0.7.38: artwork follows the actual Media3 track without stale covers."""
+"""MusicFlow 0.7.39: artwork follows the actual Media3 track without stale covers."""
 from pathlib import Path
 src=Path("app/src/main/java/com/musicflow/app")
 covers=(src/"CoverLookup.kt").read_text(encoding="utf-8")
