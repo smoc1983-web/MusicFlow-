@@ -59,6 +59,12 @@ private data class CinemaVideoQuality(
     val trackIndex: Int
 )
 
+private data class CinemaAudioOption(
+    val label: String,
+    val mediaGroup: androidx.media3.common.TrackGroup,
+    val trackIndex: Int
+)
+
 @OptIn(UnstableApi::class)
 @Composable
 internal fun CinemaNativeInlinePlayer(
@@ -83,7 +89,9 @@ internal fun CinemaNativeInlinePlayer(
     var seriesOpen by remember { mutableStateOf(false) }
     var controllerVisible by remember { mutableStateOf(true) }
     var qualityOpen by remember { mutableStateOf(false) }
-    var selectedQuality by remember { mutableStateOf("Авто") }
+    var selectedQuality by remember(sourceKey, streamUrl) { mutableStateOf("Авто") }
+    var audioOpen by remember { mutableStateOf(false) }
+    var selectedAudio by remember(sourceKey, streamUrl) { mutableStateOf("Авто") }
     var tracksVersion by remember { mutableIntStateOf(0) }
 
     val player = remember(sourceKey, streamUrl, pageUrl) {
@@ -152,6 +160,7 @@ internal fun CinemaNativeInlinePlayer(
     fun collapseVideo() {
         fullScreen = false
         qualityOpen = false
+        audioOpen = false
         activity?.window?.let(::showCinemaSystemBars)
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
     }
@@ -201,6 +210,77 @@ internal fun CinemaNativeInlinePlayer(
         qualityOpen = false
     }
 
+    val audioOptions = remember(player, tracksVersion) {
+        val available = buildList {
+            var count = 0
+            for (group in player.currentTracks.groups) {
+                if (group.type != C.TRACK_TYPE_AUDIO) continue
+                for (i in 0 until group.length) {
+                    if (!group.isTrackSupported(i)) continue
+                    count++
+                    val format = group.getTrackFormat(i)
+                    add(CinemaAudioOption(
+                        CinemaAudioTrackLabels.display(
+                            format.label, format.language, count
+                        ), group.mediaTrackGroup, i
+                    ))
+                }
+            }
+        }
+        available.mapIndexed { index, option ->
+            if (available.count { it.label == option.label } > 1)
+                option.copy(label = option.label + " · " + (index + 1))
+            else option
+        }
+    }
+
+    fun selectAudio(option: CinemaAudioOption?) {
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+            .apply {
+                if (option != null) addOverride(
+                    TrackSelectionOverride(
+                        option.mediaGroup, listOf(option.trackIndex)
+                    )
+                )
+            }.build()
+        selectedAudio = option?.label ?: "Авто"
+        audioOpen = false
+    }
+
+    @Composable
+    fun AudioPicker() {
+        Box {
+            TextButton(
+                onClick = { audioOpen = true },
+                enabled = audioOptions.size > 1
+            ) {
+                Text(
+                    "Озвучка: " + when {
+                        audioOptions.isEmpty() -> "не указана"
+                        audioOptions.size == 1 -> audioOptions.first().label
+                        else -> selectedAudio
+                    }, color = Color(0xFFBCA2FF)
+                )
+            }
+            DropdownMenu(
+                expanded = audioOpen && audioOptions.size > 1,
+                onDismissRequest = { audioOpen = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Автоматически") },
+                    onClick = { selectAudio(null) }
+                )
+                audioOptions.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option.label) },
+                        onClick = { selectAudio(option) }
+                    )
+                }
+            }
+        }
+    }
+
     @Composable
     fun VideoControls(modifier: Modifier) {
         Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -213,6 +293,14 @@ internal fun CinemaNativeInlinePlayer(
                         Icon(Icons.Filled.List, "Сезоны и серии", tint = Color.White)
                     }
                 }
+                IconButton(onClick = { fullScreen = true }) {
+                    Icon(Icons.Filled.Fullscreen, "На весь экран", tint = Color.White)
+                }
+                IconButton(onClick = ::closeVideo) {
+                    Icon(Icons.Filled.Close, "Закрыть плеер", tint = Color.White)
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Box {
                     TextButton(onClick = { qualityOpen = true }) {
                         Text("Качество: " + selectedQuality, color = Color(0xFFBCA2FF))
@@ -231,12 +319,7 @@ internal fun CinemaNativeInlinePlayer(
                         }
                     }
                 }
-                IconButton(onClick = { fullScreen = true }) {
-                    Icon(Icons.Filled.Fullscreen, "На весь экран", tint = Color.White)
-                }
-                IconButton(onClick = ::closeVideo) {
-                    Icon(Icons.Filled.Close, "Закрыть плеер", tint = Color.White)
-                }
+                AudioPicker()
             }
             CinemaPlayerView(player, Modifier.fillMaxWidth().height(218.dp)) {
                 controllerVisible = it
@@ -287,7 +370,7 @@ internal fun CinemaNativeInlinePlayer(
                 CinemaPlayerView(player, Modifier.fillMaxSize()) {
                     controllerVisible = it
                 }
-                if (controllerVisible || qualityOpen || seriesOpen) {
+                if (controllerVisible || qualityOpen || audioOpen || seriesOpen) {
                     Row(
                         modifier = Modifier.align(Alignment.TopEnd)
                             .padding(top = 8.dp, end = 12.dp),
@@ -320,6 +403,7 @@ internal fun CinemaNativeInlinePlayer(
                                 }
                             }
                         }
+                        AudioPicker()
                         IconButton(onClick = ::collapseVideo) {
                             Icon(Icons.Filled.FullscreenExit, "Мини-плеер",
                                 tint = Color.White)
