@@ -116,7 +116,6 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                     title = film.title,
                     sourceKey = film.key,
                     streamUrl = media,
-                    allowBuiltInFallback = false,
                     onClose = { playing = null }
                 )
             }
