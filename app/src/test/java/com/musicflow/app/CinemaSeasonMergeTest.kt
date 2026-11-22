@@ -43,6 +43,17 @@ class CinemaSeasonMergeTest {
         assertEquals(6, merged.size)
     }
 
+    @Test fun episodesWithAndWithoutTvIdFormOneSeriesGroup() {
+        val known = episode("Сериал: Интерны, 1 сезон, 1 серия", "known", 1, 1, 44)
+        val unknown = episode("Интерны, 1 сезон, 2 серия", "unknown", 1, 2)
+        val unrelated = episode("Американские истории ужасов, 1 сезон, 1 серия",
+            "other", 1, 1)
+        val groups = CinemaSeriesGrouping.group(listOf(known, unknown, unrelated))
+        assertEquals(2, groups.size)
+        val interns = groups.first { it.title == "Интерны" }
+        assertEquals(listOf(1, 2), interns.episodesIn(1).map { it.episodeNumber })
+    }
+
     @Test fun seriesNameAndSpinOffStaySeparate() {
         assertFalse(CinemaSeriesSearch.family(
             "Американская история ужасов, 1 сезон, 5 серия"
