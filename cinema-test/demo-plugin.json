@@ -1,0 +1,6 @@
+{
+  "format": "musicflow.cinema.v1",
+  "name": "Cinema LAB — открытые фильмы",
+  "catalog_url": "https://raw.githubusercontent.com/smoc1983-web/MusicFlow-/feature/musicflow-cinema-lab-20261122/cinema-test/catalog.json",
+  "description": "Демонстрационный источник для тестов без платных видеохостингов."
+}
