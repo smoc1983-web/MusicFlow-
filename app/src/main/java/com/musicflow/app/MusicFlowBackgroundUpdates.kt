@@ -49,6 +49,14 @@ internal object MusicFlowBackgroundUpdates {
     internal fun savedRelease(context: Context): MusicFlowUpdate? {
         val p = preferences(context)
         val code = p.getLong(CODE, 0L)
+        // A completed Android installation preserves app preferences. Purge the
+        // previous DownloadManager record so it cannot reopen the same version.
+        if (code > 0L && code <= MusicFlowUpdates.currentCode(context)) {
+            val previousId = p.getLong(ID, -1L)
+            if (previousId >= 0L) runCatching { manager(context).remove(previousId) }
+            forget(context)
+            return null
+        }
         val id = p.getLong(ID, -1L)
         val url = p.getString(URL, "").orEmpty()
         val bytes = p.getLong(BYTES, 0L)
