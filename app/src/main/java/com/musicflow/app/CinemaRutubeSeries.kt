@@ -41,8 +41,9 @@ internal object CinemaRutubeSeries {
             if (!id.matches(Regex("[a-fA-F0-9]{32}"))) continue
             if (item.optBoolean("is_paid") || item.optBoolean("is_hidden")) continue
             val season = item.optInt("season", 0)
-            val episode = item.optInt("episode", 0)
-            result.add(CinemaTitle(
+            val episode = item.optInt("episode", 0).takeIf { it > 0 }
+                ?: item.optInt("series", 0)
+            result.add(CinemaSeriesSearch.enrich(CinemaTitle(
                 id = id, sourceId = sourceId,
                 title = item.optString("title").ifBlank {
                     "Серия " + if (episode > 0) episode else i + 1
@@ -58,8 +59,9 @@ internal object CinemaRutubeSeries {
                 attribution = "Кино",
                 pageUrl = "https://rutube.ru/video/$id/",
                 seasonNumber = season.takeIf { it > 0 },
-                episodeNumber = episode.takeIf { it > 0 }
-            ))
+                episodeNumber = episode.takeIf { it > 0 },
+                tvShowId = item.optInt("tv_show_id", 0).takeIf { it > 0 }
+            )))
         }
         return result.distinctBy { it.id }.sortedWith(
             compareBy<CinemaTitle> { it.episodeNumber ?: Int.MAX_VALUE }
@@ -91,10 +93,17 @@ internal object CinemaRutubeSeries {
         val found = mutableListOf<CinemaTitle>()
         var next: String? = base
         var calls = 0
-        while (next != null && calls < 4 && found.size < 200) {
+        val visited = HashSet<String>()
+        while (next != null && calls < 16 && found.size < 1200 &&
+            visited.add(next)) {
             calls++
             val data = CinemaRutubeCatalog.get(next)
-            found.addAll(parseEpisodes(data, sourceId))
+            found.addAll(parseEpisodes(data, sourceId)
+                .filter { it.seasonNumber == null || it.seasonNumber == season }
+                .map { it.copy(
+                    seasonNumber = it.seasonNumber ?: season,
+                    tvShowId = it.tvShowId ?: showId
+                ) })
             next = JSONObject(data).optString("next")
                 .takeIf(CinemaRutubeCatalog::permittedApi)
         }
