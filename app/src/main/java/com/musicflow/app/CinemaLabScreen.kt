@@ -208,7 +208,8 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                 val lookup = CinemaSeriesSearch.lookup(
                     resolved, shelves,
                     (shelfCache.values.flatMap { it.films } +
-                        otherCatalogs.values.flatten()).distinctBy { it.key }
+                        otherCatalogs.values.flatten() + searched +
+                        activeSeriesGroup?.items.orEmpty()).distinctBy { it.key }
                 )
                 seriesLookup = lookup
                 tvShow = CinemaSeriesSearch.fallbackShow(lookup, resolved)
@@ -228,11 +229,34 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
         episodesBusy = true
         episodes = emptyList()
         try {
-            episodes = if (show.id > 0) {
-                CinemaRutubeSeries.loadEpisodes(show.id, season, film.sourceId)
+            val cached = (shelfCache.values.flatMap { it.films } +
+                otherCatalogs.values.flatten() + searched +
+                activeSeriesGroup?.items.orEmpty() + film).distinctBy { it.key }
+            val native = if (show.id > 0) {
+                try {
+                    CinemaRutubeSeries.loadEpisodes(show.id, season, film.sourceId)
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (_: Exception) {
+                    emptyList()
+                }
             } else {
                 CinemaSeriesSearch.inSeason(
                     seriesLookup ?: return@LaunchedEffect, season
+                )
+            }
+            episodes = CinemaSeriesSearch.mergeSeasonCandidates(
+                show.name, show.id, season, film.sourceId, native, cached
+            )
+            if (show.id > 0) {
+                // Show the official season immediately, then add searchable gaps.
+                episodesBusy = false
+                val additional = CinemaSeriesSearch.discoverSeason(
+                    show, season, film.sourceId, shelves, cached
+                )
+                episodes = CinemaSeriesSearch.mergeSeasonCandidates(
+                    show.name, show.id, season, film.sourceId, native,
+                    cached + additional
                 )
             }
         } catch (cancel: CancellationException) {
@@ -324,7 +348,8 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                 val lookup = CinemaSeriesSearch.lookup(
                     item, shelves,
                     (shelfCache.values.flatMap { it.films } +
-                        otherCatalogs.values.flatten()).distinctBy { it.key }
+                        otherCatalogs.values.flatten() + searched +
+                        playerGroup?.items.orEmpty()).distinctBy { it.key }
                 )
                 playerSeriesLookup = lookup
                 playerShow = CinemaSeriesSearch.fallbackShow(lookup, item)
@@ -342,15 +367,37 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
         playerEpisodesBusy = true
         playerEpisodes = emptyList()
         try {
-            playerEpisodes = if (show.id > 0) {
-                CinemaRutubeSeries.loadEpisodes(
-                    show.id, playerSeason, current.sourceId
-                )
+            val cached = (shelfCache.values.flatMap { it.films } +
+                otherCatalogs.values.flatten() + searched +
+                playerGroup?.items.orEmpty() + current).distinctBy { it.key }
+            val native = if (show.id > 0) {
+                try {
+                    CinemaRutubeSeries.loadEpisodes(
+                        show.id, playerSeason, current.sourceId
+                    )
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (_: Exception) {
+                    emptyList()
+                }
             } else {
                 CinemaSeriesSearch.organize(
                     playerSeriesLookup?.let {
                         CinemaSeriesSearch.inSeason(it, playerSeason)
                     }.orEmpty() + playerGroup?.episodesIn(playerSeason).orEmpty()
+                )
+            }
+            playerEpisodes = CinemaSeriesSearch.mergeSeasonCandidates(
+                show.name, show.id, playerSeason, current.sourceId, native, cached
+            )
+            if (show.id > 0) {
+                playerEpisodesBusy = false
+                val additional = CinemaSeriesSearch.discoverSeason(
+                    show, playerSeason, current.sourceId, shelves, cached
+                )
+                playerEpisodes = CinemaSeriesSearch.mergeSeasonCandidates(
+                    show.name, show.id, playerSeason, current.sourceId,
+                    native, cached + additional
                 )
             }
         } catch (cancel: CancellationException) {
@@ -693,9 +740,10 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                             }
                         }
                         if (episodesBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                        val groupedEpisodes = if (tvShow == null) {
-                            chosenGroup?.episodesIn(season).orEmpty()
-                        } else episodes
+                        val groupedEpisodes = CinemaSeriesSearch.mergeSeasonCandidates(
+                            show.name, show.id, season, current.sourceId,
+                            episodes, chosenGroup?.episodesIn(season).orEmpty()
+                        )
                         if (groupedEpisodes.isEmpty() && !episodesBusy) {
                             Text("Для выбранного сезона серии пока недоступны.",
                                 color = CinemaTextMuted)
