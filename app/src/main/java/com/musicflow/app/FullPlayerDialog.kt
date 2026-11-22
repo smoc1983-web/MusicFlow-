@@ -379,6 +379,11 @@ internal fun FullPlayerDialog(
                             onClick = onStop) {
                             Icon(Icons.Filled.Close, "Выключить музыку", tint = palette.foreground)
                         }
+                        } else {
+                            IconButton(modifier = Modifier.size(42.dp), onClick = onStop) {
+                                Icon(Icons.Filled.Close, "Закрыть радио-плеер",
+                                    tint = palette.foreground)
+                            }
                         }
                     }
                     playbackStatus?.let {
