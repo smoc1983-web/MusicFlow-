@@ -30,7 +30,7 @@ internal data class CinemaRutubePage(
  * film genres, and native search. No HTML guesswork or code execution.
  */
 internal object CinemaRutubeCatalog {
-    private const val FEED = "https://rutube.ru/api/feeds/movies?format=json"
+    private const val FEED = "https://rutube.ru/api/feeds/movies/?format=json"
     private const val MAX_BYTES = 2_400_000
 
     fun permittedApi(url: String): Boolean {
@@ -42,32 +42,70 @@ internal object CinemaRutubeCatalog {
             uri.path.orEmpty().startsWith("/api/") && url.length <= 2048
     }
 
+    /**
+     * Resolve only RUTUBE HTTPS /api/... redirects. In particular, the
+     * movies feed sends 301 to the canonical trailing-slash path.
+     */
+    internal fun redirectTarget(current: String, location: String?): String? {
+        if (location.isNullOrBlank()) return null
+        val target = runCatching {
+            URI(current).resolve(location.trim()).normalize().toString()
+        }.getOrNull() ?: return null
+        return target.takeIf(::permittedApi)
+    }
+
     internal fun get(url: String): String {
-        require(permittedApi(url)) { "Для каталога нужен поддерживаемый публичный API." }
-        val conn = URL(url).openConnection() as HttpURLConnection
-        conn.connectTimeout = 7_000
-        conn.readTimeout = 13_000
-        conn.instanceFollowRedirects = false
-        conn.setRequestProperty("User-Agent",
-            "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36")
-        conn.setRequestProperty("Referer", "https://rutube.ru/")
-        conn.setRequestProperty("Accept", "application/json")
-        try {
-            require(conn.responseCode == 200) { "RUTUBE HTTP " + conn.responseCode }
-            conn.inputStream.use { input ->
-                val bytes = ByteArrayOutputStream()
-                val buffer = ByteArray(8192)
-                while (true) {
-                    val n = input.read(buffer)
-                    if (n == -1) break
-                    if (n > 0) {
-                        require(bytes.size() + n <= MAX_BYTES) { "Слишком большой каталог RUTUBE" }
-                        bytes.write(buffer, 0, n)
+        require(permittedApi(url)) {
+            "Для каталога нужен поддерживаемый публичный API."
+        }
+        var current = url
+        val visited = hashSetOf<String>()
+        repeat(5) { hop ->
+            require(visited.add(current)) {
+                "Обнаружено циклическое перенаправление каталога"
+            }
+            val conn = URL(current).openConnection() as HttpURLConnection
+            conn.connectTimeout = 7_000
+            conn.readTimeout = 13_000
+            conn.instanceFollowRedirects = false
+            conn.setRequestProperty("User-Agent",
+                "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36")
+            conn.setRequestProperty("Referer", "https://rutube.ru/")
+            conn.setRequestProperty("Accept", "application/json")
+            try {
+                val status = conn.responseCode
+                if (status in listOf(301, 302, 303, 307, 308)) {
+                    check(hop < 4) {
+                        "Каталог перенаправляет запрос слишком много раз"
+                    }
+                    current = redirectTarget(
+                        current, conn.getHeaderField("Location")
+                    ) ?: throw IllegalStateException(
+                        "Сервер перенаправил каталог на недопустимый адрес"
+                    )
+                } else {
+                    check(status == 200) { "Каталог HTTP $status" }
+                    conn.inputStream.use { input ->
+                        val bytes = ByteArrayOutputStream()
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            val n = input.read(buffer)
+                            if (n == -1) break
+                            if (n > 0) {
+                                check(bytes.size() + n <= MAX_BYTES) {
+                                    "Слишком большой ответ киноисточника"
+                                }
+                                bytes.write(buffer, 0, n)
+                            }
+                        }
+                        return bytes.toString("UTF-8")
                     }
                 }
-                return bytes.toString("UTF-8")
+            } finally {
+                conn.disconnect()
             }
-        } finally { conn.disconnect() }
+        }
+        error("Каталог недоступен: превышен лимит перенаправлений")
     }
 
     fun parseShelves(raw: String): List<CinemaRutubeShelf> {
