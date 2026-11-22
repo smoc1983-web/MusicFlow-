@@ -12,8 +12,8 @@ android {
         minSdk = 26
         targetSdk = 35
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 742
-        versionName = "0.7.42"
+        versionCode = 743
+        versionName = "0.7.43"
     }
     // Signed releases use one persistent key stored in GitHub Actions secrets.
     // Local debug builds keep working when the release key is unavailable.
@@ -30,8 +30,8 @@ android {
     buildTypes {
         getByName("debug") {
             // Debug builds must never replace a signed production package.
-            applicationIdSuffix = ".episodeaudittest42"
-            versionNameSuffix = "-episode-audit-test"
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
         }
         getByName("release") {
             isMinifyEnabled = false
