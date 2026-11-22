@@ -1,4 +1,4 @@
-"""MusicFlow 0.7.39: rounded menus and audited in-app upgrade tests."""
+"""MusicFlow 0.7.40: rounded menus and audited in-app upgrade tests."""
 from pathlib import Path
 
 root = Path("app/src/main")
@@ -21,8 +21,8 @@ assert "shadowElevation = 14.dp" in main and "shadowElevation = 14.dp" in home
 assert "shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)" in about
 assert "shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)" in autoupdate
 
-assert 'versionName = "0.7.39"' in gradle
-assert "versionCode = 739" in gradle
+assert 'versionName = "0.7.40"' in gradle
+assert "versionCode = 740" in gradle
 assert 'applicationId = "com.musicflow.preview"' in gradle
 assert 'incoming.packageName != context.packageName' in updater
 assert "signatures(incoming)" in updater
@@ -37,4 +37,4 @@ assert "old_cert" in check and "new_cert" in check
 assert "compatible=false" in check
 assert "Do NOT uninstall v0.7.20" in check
 
-print("MusicFlow v0.7.39 rounded UI and Android upgrade checks PASS")
+print("MusicFlow v0.7.40 rounded UI and Android upgrade checks PASS")
