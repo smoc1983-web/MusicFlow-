@@ -2,14 +2,22 @@ package com.musicflow.app
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.view.View
+import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,6 +40,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.AspectRatioFrameLayout
 import kotlinx.coroutines.delay
 
 private data class CinemaVideoQuality(
@@ -47,6 +56,12 @@ internal fun CinemaNativeInlinePlayer(
     sourceKey: String,
     streamUrl: String,
     pageUrl: String? = null,
+    seriesShow: CinemaTvShow? = null,
+    seriesSeason: Int = 1,
+    seriesEpisodes: List<CinemaTitle> = emptyList(),
+    seriesLoading: Boolean = false,
+    onSeasonSelected: (Int) -> Unit = {},
+    onEpisodeSelected: (CinemaTitle) -> Unit = {},
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
@@ -54,6 +69,9 @@ internal fun CinemaNativeInlinePlayer(
     var errorText by remember(sourceKey, streamUrl) { mutableStateOf<String?>(null) }
     var position by remember(sourceKey, streamUrl) { mutableLongStateOf(0L) }
     var fullScreen by remember { mutableStateOf(false) }
+    var enteredFullScreen by remember { mutableStateOf(false) }
+    var seriesOpen by remember { mutableStateOf(false) }
+    var controllerVisible by remember { mutableStateOf(true) }
     var qualityOpen by remember { mutableStateOf(false) }
     var selectedQuality by remember { mutableStateOf("Авто") }
     var tracksVersion by remember { mutableIntStateOf(0) }
@@ -96,15 +114,35 @@ internal fun CinemaNativeInlinePlayer(
         }
     }
 
+    // Always return to portrait when fullscreen ends, including Back and closing.
     DisposableEffect(fullScreen, activity) {
-        val previous = activity?.requestedOrientation
         if (fullScreen && activity != null) {
+            enteredFullScreen = true
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         }
         onDispose {
-            if (fullScreen && previous != null) activity?.requestedOrientation = previous
+            if (fullScreen) {
+                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            }
         }
     }
+    DisposableEffect(activity) {
+        onDispose {
+            if (enteredFullScreen) {
+                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            }
+        }
+    }
+    fun collapseVideo() {
+        fullScreen = false
+        qualityOpen = false
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    }
+    fun closeVideo() {
+        collapseVideo()
+        onClose()
+    }
+    BackHandler(enabled = fullScreen) { collapseVideo() }
 
     LaunchedEffect(player) {
         while (true) {
@@ -147,12 +185,17 @@ internal fun CinemaNativeInlinePlayer(
     }
 
     @Composable
-    fun VideoControls(modifier: Modifier, isFull: Boolean) {
+    fun VideoControls(modifier: Modifier) {
         Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(title, color = Color.White,
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1, modifier = Modifier.weight(1f))
+                if (seriesShow != null) {
+                    IconButton(onClick = { seriesOpen = true }) {
+                        Icon(Icons.Filled.List, "Сезоны и серии", tint = Color.White)
+                    }
+                }
                 Box {
                     TextButton(onClick = { qualityOpen = true }) {
                         Text("Качество: " + selectedQuality, color = Color(0xFFBCA2FF))
@@ -171,23 +214,16 @@ internal fun CinemaNativeInlinePlayer(
                         }
                     }
                 }
-                IconButton(onClick = { fullScreen = !fullScreen }) {
-                    Icon(if (isFull) Icons.Filled.FullscreenExit
-                        else Icons.Filled.Fullscreen,
-                        if (isFull) "Свернуть плеер" else "На весь экран",
-                        tint = Color.White)
+                IconButton(onClick = { fullScreen = true }) {
+                    Icon(Icons.Filled.Fullscreen, "На весь экран", tint = Color.White)
                 }
-                IconButton(onClick = {
-                    if (fullScreen) fullScreen = false else onClose()
-                }) {
-                    Icon(Icons.Filled.Close,
-                        if (fullScreen) "Закрыть полный экран" else "Закрыть плеер",
-                        tint = Color.White)
+                IconButton(onClick = ::closeVideo) {
+                    Icon(Icons.Filled.Close, "Закрыть плеер", tint = Color.White)
                 }
             }
-            CinemaPlayerView(player,
-                if (isFull) Modifier.fillMaxWidth().weight(1f)
-                else Modifier.fillMaxWidth().height(218.dp))
+            CinemaPlayerView(player, Modifier.fillMaxWidth().height(218.dp)) {
+                controllerVisible = it
+            }
             errorText?.let { message ->
                 Text(message, color = Color(0xFFFFB9B8),
                     style = MaterialTheme.typography.bodySmall)
@@ -197,7 +233,7 @@ internal fun CinemaNativeInlinePlayer(
                     player.play()
                 }) { Text("Повторить") }
             }
-            if (!isFull) Text(
+            Text(
                 "Позиция: " + position / 1000L + " сек. • " +
                     (if (qualityOptions.isEmpty()) "Качество определяется потоком"
                      else "Доступно: " + qualityOptions.joinToString { it.label }),
@@ -210,7 +246,7 @@ internal fun CinemaNativeInlinePlayer(
         Surface(color = Color(0xFF11131D),
             shape = RoundedCornerShape(17.dp),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp)
-        ) { VideoControls(Modifier.padding(7.dp), false) }
+        ) { VideoControls(Modifier.padding(7.dp)) }
     }
 
     if (fullScreen) {
