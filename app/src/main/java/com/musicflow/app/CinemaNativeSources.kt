@@ -27,9 +27,9 @@ internal data class CinemaNativeSource(
 )
 
 internal object CinemaNativeSources {
-    const val FIRST_PAGE = "https://ff.sanfilm2.link/69359-zavodchica-2026.html"
-    private const val FIRST_NAME = "Заводчица (2026)"
-    private const val PREFS = "musicflow_cinema_urls_v4"
+    const val FIRST_PAGE = "https://ff.sanfilm2.link/"
+    private const val FIRST_NAME = "Sanfilm · каталог"
+    private const val PREFS = "musicflow_cinema_urls_v5"
     private const val MAX_SOURCES = 30
     private const val MAX_RESPONSE_BYTES = 1_500_000
 
@@ -41,7 +41,7 @@ internal object CinemaNativeSources {
         val preferences = prefs(context)
         if (!preferences.getBoolean("initialized", false)) {
             val first = CinemaNativeSource(
-                "starter-film", FIRST_NAME, FIRST_PAGE, CinemaSourceFormat.WEB_PAGE
+                "starter-site", FIRST_NAME, FIRST_PAGE, CinemaSourceFormat.WEB_PAGE
             )
             save(context, listOf(first))
             preferences.edit().putBoolean("initialized", true).apply()
@@ -138,11 +138,88 @@ internal object CinemaNativeSources {
                     } else raw
                     CinemaLabSources.parseCatalog(catalog, source.id)
                 }
-                CinemaSourceFormat.WEB_PAGE -> listOf(
-                    parseHtml(fetch(source.url), source.url, source.id, source.name)
-                )
+                CinemaSourceFormat.WEB_PAGE -> {
+                    val markup = fetch(source.url)
+                    val path = URI(source.url).path.orEmpty()
+                    if (path.isEmpty() || path == "/" || path == "/index.html") {
+                        parseSiteIndex(markup, source.url, source.id).ifEmpty {
+                            listOf(parseHtml(markup, source.url, source.id, source.name))
+                        }
+                    } else listOf(parseHtml(markup, source.url, source.id, source.name))
+                }
             }
         }
+
+
+    /**
+     * For a website homepage, offer a list of ordinary public movie-page links.
+     * No page scripts or embedded player code is evaluated. Entries become
+     * metadata-only cards until the user opens a specific page.
+     */
+    fun parseSiteIndex(raw: String, base: String, sourceId: String): List<CinemaTitle> {
+        val document = Jsoup.parse(raw, base)
+        val origin = URI(base).host.lowercase().removePrefix("www.")
+        val entries = mutableListOf<CinemaTitle>()
+        val seen = HashSet<String>()
+        for (anchor in document.select("a[href]")) {
+            if (entries.size >= 80) break
+            val absolute = anchor.attr("abs:href").trim()
+            val address = runCatching { URI(absolute) }.getOrNull() ?: continue
+            if (!CinemaLabSources.isSafeHttps(absolute) ||
+                address.host?.lowercase()?.removePrefix("www.") != origin ||
+                !address.path.orEmpty().lowercase().endsWith(".html") ||
+                address.path.orEmpty().count { it == '/' } > 5 ||
+                !seen.add(address.path.orEmpty())) continue
+            val lastPart = address.path.orEmpty().substringAfterLast('/').lowercase()
+            if (listOf("privacy", "contact", "feedback", "help", "terms",
+                    "about", "login", "search", "rules", "sitemap").any {
+                    lastPart.contains(it)
+                }) continue
+            val image = anchor.selectFirst("img")
+                ?: anchor.parent()?.selectFirst("img")
+            val possibleNames = listOf(
+                anchor.attr("title"), anchor.attr("aria-label"),
+                image?.attr("alt").orEmpty(), anchor.text(),
+                anchor.parent()?.selectFirst(".title,.name,h2,h3")?.text().orEmpty()
+            )
+            val title = possibleNames.firstOrNull {
+                it.trim().length in 5..150 && !it.contains("Подробнее", true)
+            }?.trim() ?: continue
+            val posterCandidate = listOfNotNull(
+                image?.attr("abs:data-src"),
+                image?.attr("abs:src"),
+                image?.absUrl("data-src"),
+                image?.absUrl("src")
+            ).firstOrNull(CinemaLabSources::isSafeHttps)
+            val year = Regex("(?:19|20)\\d{2}").find(title)?.value?.toIntOrNull()
+            entries.add(CinemaTitle(
+                id = UUID.nameUUIDFromBytes(
+                    address.path.orEmpty().toByteArray(StandardCharsets.UTF_8)
+                ).toString(),
+                sourceId = sourceId,
+                title = title,
+                kind = CinemaKind.MOVIE,
+                year = year,
+                description = "Карточка каталога сайта. Откройте страницу, чтобы проверить описание и наличие прямого видеопотока.",
+                poster = posterCandidate,
+                genre = "Каталог сайта",
+                streamUrl = null,
+                episodes = emptyList(),
+                attribution = "Страница: " + address.host,
+                pageUrl = absolute
+            ))
+        }
+        return entries
+    }
+
+    suspend fun resolvePage(item: CinemaTitle): CinemaTitle = withContext(Dispatchers.IO) {
+        val address = item.pageUrl ?: return@withContext item
+        require(CinemaLabSources.isSafeHttps(address)) {
+            "Небезопасная ссылка страницы фильма."
+        }
+        parseHtml(fetch(address), address, item.id, item.title)
+            .copy(sourceId = item.sourceId)
+    }
 
     fun placeholder(source: CinemaNativeSource, error: Throwable): CinemaTitle =
         CinemaTitle(
