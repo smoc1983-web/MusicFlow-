@@ -1,7 +1,7 @@
 package com.musicflow.app
 
 import android.content.Context
-import android.net.Uri
+import java.net.URI
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -58,7 +58,7 @@ internal object RussianRadioDirectory {
     // Do not resolve localhost, loopback, intranet or private address URLs as
     // radio stations. Streams must be public HTTP(S) radio endpoints.
     internal fun isPublicStream(url: String): Boolean {
-        val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return false
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
         if (uri.scheme !in listOf("https", "http")) return false
         val host = uri.host?.lowercase()?.removeSuffix(".") ?: return false
         if (host.isBlank() || host == "localhost" || host.endsWith(".local") ||
