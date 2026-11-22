@@ -263,6 +263,7 @@ private fun MusicScreen(
     var pendingHomeSong by remember { mutableStateOf<String?>(null) }
     var homePlaybackMessage by remember { mutableStateOf<String?>(null) }
     val favorites = remember { mutableStateListOf<Track>().also { it.addAll(saved()) } }
+    var radioFavoritesRevision by remember { mutableIntStateOf(0) }
     var tracks by remember { mutableStateOf<List<Track>>(emptyList()) }
     var search by remember { mutableStateOf("") }
     var appliedSearch by remember { mutableStateOf("") }
@@ -565,9 +566,39 @@ private fun MusicScreen(
         }
     }
 
+    fun isCurrentRadioFavorite(): Boolean {
+        radioFavoritesRevision // trigger refresh after saving the radio favorite
+        return RussianRadioDirectory.favorites(context).any {
+            it.mediaId == currentMediaId
+        }
+    }
+
     fun toggleCurrentFavorite() {
         val item = player?.currentMediaItem ?: return
         val id = item.mediaId
+        if (id.startsWith("radio:")) {
+            val uuid = id.removePrefix("radio:")
+            val savedStations = RussianRadioDirectory.favorites(context)
+            val updated = if (savedStations.any { it.uuid == uuid }) {
+                savedStations.filterNot { it.uuid == uuid }
+            } else {
+                val stream = item.localConfiguration?.uri?.toString().orEmpty()
+                if (!RussianRadioDirectory.isPublicStream(stream)) return
+                val station = RussianRadioStation(
+                    uuid = uuid,
+                    name = item.mediaMetadata.title?.toString().orEmpty()
+                        .ifBlank { "Радиостанция" },
+                    stream = stream,
+                    favicon = item.mediaMetadata.artworkUri?.toString()
+                        ?.takeIf { it.startsWith("https://") },
+                    tags = "", codec = "", bitrate = 0
+                )
+                (listOf(station) + savedStations).take(100)
+            }
+            RussianRadioDirectory.saveFavorites(context, updated)
+            radioFavoritesRevision++
+            return
+        }
         if (favorites.any { it.id == id }) {
             favorites.removeAll { it.id == id }
         } else {
@@ -909,6 +940,7 @@ private fun MusicScreen(
         }
         if (trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
             val miniCover by rememberCoverArt(trackArtist, trackTitle, currentArtwork)
+            val isRadio = currentMediaId.startsWith("radio:")
             Column(
                 modifier = Modifier.fillMaxWidth()
                     .musicFlowGlass(palette, radius = 18.dp)
@@ -943,8 +975,8 @@ private fun MusicScreen(
                         Column(Modifier.weight(1f)) {
                             Text(trackTitle, fontWeight = FontWeight.SemiBold, maxLines = 1,
                                 overflow = TextOverflow.Ellipsis)
-                            Text(trackArtist, color = palette.muted, maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
+                            if (!isRadio) Text(trackArtist, color = palette.muted,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.bodySmall)
                             Text(playbackStatus.orEmpty(), color = palette.accent,
                                 style = MaterialTheme.typography.labelSmall)
@@ -966,6 +998,17 @@ private fun MusicScreen(
                             tint = palette.foreground
                         )
                     }
+                    if (isRadio) {
+                        IconButton(onClick = { toggleCurrentFavorite() }) {
+                            Icon(
+                                if (isCurrentRadioFavorite())
+                                    androidx.compose.material.icons.Icons.Filled.Favorite
+                                else androidx.compose.material.icons.Icons.Filled.FavoriteBorder,
+                                contentDescription = "Радио в избранное",
+                                tint = palette.accent
+                            )
+                        }
+                    } else {
                     IconButton(onClick = { player?.seekToNextMediaItem() }) {
                         Icon(
                             androidx.compose.material.icons.Icons.Filled.SkipNext,
@@ -980,8 +1023,9 @@ private fun MusicScreen(
                             tint = palette.foreground
                         )
                     }
+                    }
                 }
-                LinearProgressIndicator(
+                if (!isRadio) LinearProgressIndicator(
                     progress = { if (durationMs > 0L) {
                         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
                     } else 0f },
@@ -1067,7 +1111,8 @@ private fun MusicScreen(
             playbackStatus = playbackStatus,
             positionMs = positionMs,
             durationMs = durationMs,
-            favorite = favorites.any { it.id == currentMediaId },
+            favorite = if (currentMediaId.startsWith("radio:"))
+                isCurrentRadioFavorite() else favorites.any { it.id == currentMediaId },
             onFavorite = { toggleCurrentFavorite() },
             onStop = { stopMusic() },
             availableTracks = combineMusicTracks(queueCatalog, tracks + favorites.toList()),
