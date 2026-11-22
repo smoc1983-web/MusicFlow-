@@ -44,7 +44,8 @@ internal object CinemaRutubeSource {
             photo?.attr("srcset")?.substringBefore(' ')?.trim(),
             photo?.attr("data-srcset")?.substringBefore(' ')?.trim()
         )
-        return candidates.asSequence().mapNotNull { candidate ->
+        return candidates.asSequence().filter { it.isNotBlank() }
+            .mapNotNull { candidate ->
             val full = runCatching {
                 URI(FEED_URL).resolve(candidate).toString()
             }.getOrNull()
