@@ -1,0 +1,111 @@
+name: Publish MusicFlow 0.7.40 original-signed TV hub update
+on:
+  push:
+    branches: ["feature/musicflow-v0.7.40-tv-hub-plugins"]
+    paths: [".github/release-assets/v0740/signed-delta.doublezstd.b64"]
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: musicflow-v0740-original-signed-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare zstd and Android APK verification tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v zstd >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y zstd
+          fi
+          yes | sdkmanager "build-tools;36.0.0" >/dev/null || test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+      - name: Download exact CI-tested unsigned release from 0.7.40
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/unsigned" out
+          gh run download 44983299040 -R "$GITHUB_REPOSITORY" \
+            -n MusicFlow-0.7.40-aligned-unsigned --dir "$RUNNER_TEMP/unsigned"
+          UNSIGNED="$RUNNER_TEMP/unsigned/MusicFlow_0.7.40-aligned-unsigned.apk"
+          echo "f3a71809e491e7860fcdf73cbc79fabe861ce337310de085a44c1c1159dbc1ba  $UNSIGNED" |
+            sha256sum -c -
+      - name: Rebuild privately signed APK from verified binary delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          UNSIGNED="$RUNNER_TEMP/unsigned/MusicFlow_0.7.40-aligned-unsigned.apk"
+          OUTER="$RUNNER_TEMP/signed-delta.doublezstd"
+          PATCH="$RUNNER_TEMP/unsigned-to-signed.patch.zst"
+          base64 -d .github/release-assets/v0740/signed-delta.doublezstd.b64 > "$OUTER"
+          echo "98e241e0df39a7d7a231a23c0f02f5b70b160a5aa478fa23eb6710943e896e2f  $OUTER" |
+            sha256sum -c -
+          zstd -q -d "$OUTER" -o "$PATCH"
+          echo "172110904ff6fe6808431d2602fbdc4550d96aa58597ca45567396f83e9a52d4  $PATCH" |
+            sha256sum -c -
+          zstd -q -d --patch-from="$UNSIGNED" "$PATCH" -o out/MusicFlow_0.7.40.apk
+          echo "bc61c0e4c1815b82ee344c940484a42aa1c762fe3fdde262eb038ca2d8c0dd5d  out/MusicFlow_0.7.40.apk" |
+            sha256sum -c -
+      - name: Verify original certificate, versionCode, update compatibility, and radio fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=out/MusicFlow_0.7.40.apk
+          TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          "$TOOLS/zipalign" -c -p 4 "$APK"
+          "$TOOLS/apksigner" verify --verbose --min-sdk-version 26 "$APK"
+          "$TOOLS/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview' versionCode='740' versionName='0.7.40'"
+          SIGNER=$("$TOOLS/apksigner" verify --print-certs "$APK" |
+            sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
+          test "$SIGNER" = "c461ee635d5b295ef6c765e1ae533d0079dc6e53cb2632a11a1b445773752410"
+          unzip -Z1 "$APK" | grep -Fx 'assets/radio_russia_fallback.m3u'
+          sha256sum "$APK" > out/SHA256SUMS.txt
+      - name: Publish GitHub Release for MusicFlow in-app updater
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view v0.7.40 -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release already exists. Never replace an existing signed APK."
+            exit 1
+          fi
+          cat > out/RELEASE_NOTES.md <<'NOTES'
+          MusicFlow 0.7.40 — обновлённый раздел ТВ и подключение сторонних источников.
+
+          - Три переключаемых интерфейса ТВ: «Обзор», «Эфир», «Моё»; оригинальная «Классика» сохранена.
+          - Реальные каналы RuVideoHub и пользовательских M3U-плейлистов отображаются в современных карточках с поиском и категориями.
+          - Избранное, список «Смотреть позже», история просмотренных каналов и рекомендации по категориям хранятся на устройстве.
+          - Безопасный формат стороннего ТВ-плагина musicflow.tv-plugin.v1: декларативный JSON по HTTPS, M3U-плейлист и при наличии XMLTV для EPG.
+          - Телепрограмма показывает только реальные данные, предоставленные источником. Если EPG отсутствует, отображается объяснение.
+          - Защита от загрузки плагинов по HTTP/локальным адресам, от перенаправлений и выполнения стороннего кода.
+          - Существующие ТВ-плеер, пользовательские IPTV, радио и поиск музыки сохранены. Экспериментальная Pro-функция не изменена.
+
+          Ограничения: интерфейс не предоставляет облачный DVR, запись программ, офлайн-скачивание чужих ТВ-каналов, детский профиль или синхронизацию между устройствами. Эти функции требуют дополнительных сервисов и прав на контент.
+
+          Совместимое обновление: package com.musicflow.preview, versionCode 740, versionName 0.7.40. Оригинальный сертификат MusicFlow.
+          Установка: MusicFlow → «О приложении» → «Проверить обновления», затем подтверждение системного установщика Android. Удалять приложение не нужно.
+          Интерфейс и воспроизведение на конкретном телефоне ещё требуют пользовательской проверки; CI подтверждает сборку, тесты и подлинность APK.
+          NOTES
+          gh release create v0.7.40 out/MusicFlow_0.7.40.apk out/SHA256SUMS.txt \
+            -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest \
+            --title "MusicFlow 0.7.40 · Новое ТВ и плагины" \
+            --notes-file out/RELEASE_NOTES.md
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.7.40" \
+            --jq '.assets[].name' | grep -Fx 'MusicFlow_0.7.40.apk'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.40-official-signed
+          path: |
+            out/MusicFlow_0.7.40.apk
+            out/SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error
