@@ -1,278 +1,286 @@
 package com.musicflow.app
 
 import android.content.Context
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import org.jsoup.Jsoup
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URL
-import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 
-/** Supported input adapters for native Media3 video playback (no embedded Lampa UI). */
+/** URLs entered by the user; no installable plug-ins or untrusted JavaScript execution. */
 internal enum class CinemaSourceFormat {
-    CINEMA_JSON, M3U_PLAYLIST, DIRECT_MEDIA, LAMPA_REFERENCE
+    WEB_PAGE, DIRECT_MEDIA, M3U_PLAYLIST, CINEMA_JSON
 }
+
 internal data class CinemaNativeSource(
     val id: String,
     val name: String,
     val url: String,
     val format: CinemaSourceFormat
-) {
-    val playable: Boolean get() = format != CinemaSourceFormat.LAMPA_REFERENCE
-}
+)
 
 internal object CinemaNativeSources {
-    private const val PREFS = "musicflow_cinema_native_sources_v3"
-    private const val MAX_SOURCE_BYTES = 1_500_000
-    private const val MAX_SOURCES = 24
-    const val DEMO_M3U =
-        "https://raw.githubusercontent.com/smoc1983-web/MusicFlow-/feature/musicflow-cinema-native-sources-test-v3/cinema-test/native-demo.m3u"
-    const val DEMO_JSON =
-        "https://raw.githubusercontent.com/smoc1983-web/MusicFlow-/feature/musicflow-cinema-native-sources-test-v3/cinema-test/catalog.json"
+    const val FIRST_PAGE = "https://ff.sanfilm2.link/69359-zavodchica-2026.html"
+    private const val FIRST_NAME = "Заводчица (2026)"
+    private const val PREFS = "musicflow_cinema_urls_v4"
+    private const val MAX_SOURCES = 30
+    private const val MAX_RESPONSE_BYTES = 1_500_000
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    fun isVideoUrl(url: String): Boolean {
-        if (!CinemaLabSources.isSafeHttps(url)) return false
-        val suffix = runCatching { URL(url).path.lowercase() }.getOrDefault("")
-        return listOf(".mp4", ".m3u8", ".webm", ".mkv", ".mpd", ".ts")
-            .any { suffix.endsWith(it) }
-    }
-
-    fun isLampaPluginUrl(url: String): Boolean =
-        url.substringBefore('?').endsWith(".js", true) ||
-            url.contains("bwa.ad/rc", true) || url.contains("bwa.to/rc", true) ||
-            url.contains("app.bwa.ad/online.js", true)
-
-    /** A legacy JavaScript URL is stored only as a reference, never executed. */
-    fun isValidLampaReference(value: String): Boolean {
-        if (value.length !in 8..2048 || value.any { it.isWhitespace() }) return false
-        val url = runCatching { java.net.URI(value) }.getOrNull() ?: return false
-        val host = url.host?.lowercase()?.trimEnd('.') ?: return false
-        if (url.scheme !in listOf("http", "https") || url.userInfo != null ||
-            url.fragment != null || (url.port != -1 && url.port !in listOf(80, 443))) return false
-        if (!host.contains('.') || host == "localhost" || host.endsWith(".local") ||
-            host.endsWith(".internal") || host.contains(':') ||
-            host.all { it.isDigit() || it == '.' } ||
-            host.startsWith("127.") || host.startsWith("10.") ||
-            host.startsWith("192.168.") || host.startsWith("169.254.")) return false
-        if (host.startsWith("172.")) {
-            val second = host.split('.').getOrNull(1)?.toIntOrNull()
-            if (second != null && second in 16..31) return false
+    /** Seed the supplied page once, not every time the user removes it. */
+    fun sources(context: Context): List<CinemaNativeSource> {
+        val preferences = prefs(context)
+        if (!preferences.getBoolean("initialized", false)) {
+            val first = CinemaNativeSource(
+                "starter-film", FIRST_NAME, FIRST_PAGE, CinemaSourceFormat.WEB_PAGE
+            )
+            save(context, listOf(first))
+            preferences.edit().putBoolean("initialized", true).apply()
+            return listOf(first)
         }
-        return true
-    }
-
-    fun sources(context: Context): List<CinemaNativeSource> = runCatching {
-        val arr = JSONArray(prefs(context).getString("registered", "[]"))
-        buildList {
-            for (i in 0 until minOf(MAX_SOURCES, arr.length())) {
-                val o = arr.optJSONObject(i) ?: continue
-                val kind = runCatching {
-                    CinemaSourceFormat.valueOf(o.optString("format"))
-                }.getOrNull() ?: continue
-                val url = o.optString("url")
-                if (kind == CinemaSourceFormat.LAMPA_REFERENCE) {
-                    if (!isValidLampaReference(url)) continue
-                } else if (!CinemaLabSources.isSafeHttps(url)) continue
-                add(CinemaNativeSource(
-                    o.optString("id"),
-                    o.optString("name"),
-                    url,
-                    kind
-                ))
+        return runCatching {
+            val array = JSONArray(preferences.getString("sources", "[]"))
+            buildList {
+                for (index in 0 until minOf(array.length(), MAX_SOURCES)) {
+                    val item = array.optJSONObject(index) ?: continue
+                    val format = runCatching {
+                        CinemaSourceFormat.valueOf(item.optString("format"))
+                    }.getOrNull() ?: continue
+                    val url = item.optString("url")
+                    if (!CinemaLabSources.isSafeHttps(url)) continue
+                    val id = item.optString("id")
+                    if (id.isBlank()) continue
+                    add(CinemaNativeSource(
+                        id, item.optString("name").take(90), url, format
+                    ))
+                }
             }
-        }
-    }.getOrDefault(emptyList())
+        }.getOrDefault(emptyList())
+    }
 
     fun save(context: Context, sources: List<CinemaNativeSource>) {
-        val items = JSONArray()
-        sources.take(MAX_SOURCES).forEach {
-            items.put(JSONObject().apply {
-                put("id", it.id)
-                put("name", it.name)
-                put("url", it.url)
-                put("format", it.format.name)
+        val array = JSONArray()
+        sources.take(MAX_SOURCES).forEach { source ->
+            array.put(JSONObject().apply {
+                put("id", source.id)
+                put("name", source.name)
+                put("url", source.url)
+                put("format", source.format.name)
             })
         }
-        prefs(context).edit().putString("registered", items.toString()).apply()
+        prefs(context).edit().putString("sources", array.toString()).apply()
     }
 
-    private fun fetch(address: String): String {
-        require(CinemaLabSources.isSafeHttps(address)) { "Нужен публичный HTTPS-адрес." }
-        val connection = URL(address).openConnection() as HttpURLConnection
-        connection.instanceFollowRedirects = false
-        connection.connectTimeout = 7_000
-        connection.readTimeout = 12_000
-        connection.setRequestProperty("User-Agent", "MusicFlow-Cinema-Native-Test/3")
-        connection.setRequestProperty("Accept", "application/json,audio/x-mpegurl,text/plain")
-        try {
-            if (connection.responseCode !in 200..299) {
-                throw IOException("Источник вернул HTTP " + connection.responseCode)
-            }
-            val bytes = ByteArrayOutputStream()
-            connection.inputStream.use { input ->
-                val buffer = ByteArray(8192)
-                while (true) {
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    if (count > 0) {
-                        if (bytes.size() + count > MAX_SOURCE_BYTES) {
-                            throw IOException("Слишком большой ответ источника")
-                        }
-                        bytes.write(buffer, 0, count)
-                    }
-                }
-            }
-            return bytes.toString(StandardCharsets.UTF_8.name())
-        } finally {
-            connection.disconnect()
+    fun isVideoUrl(url: String): Boolean {
+        if (!CinemaLabSources.isSafeHttps(url)) return false
+        val path = runCatching { URI(url).path.lowercase() }.getOrDefault("")
+        return listOf(".mp4", ".m3u8", ".mpd", ".webm", ".mkv", ".ts")
+            .any { path.endsWith(it) }
+    }
+
+    fun chooseFormat(url: String): CinemaSourceFormat {
+        val path = runCatching { URI(url).path.lowercase() }.getOrDefault("")
+        return when {
+            isVideoUrl(url) -> CinemaSourceFormat.DIRECT_MEDIA
+            path.endsWith(".m3u") -> CinemaSourceFormat.M3U_PLAYLIST
+            path.endsWith(".json") -> CinemaSourceFormat.CINEMA_JSON
+            else -> CinemaSourceFormat.WEB_PAGE
         }
     }
 
-    suspend fun register(name: String, input: String): CinemaNativeSource =
-        withContext(Dispatchers.IO) {
-            val url = input.trim()
-            val title = name.trim().take(64)
-            require(url.isNotBlank()) { "Вставьте URL источника." }
-            if (isLampaPluginUrl(url)) {
-                require(isValidLampaReference(url)) {
-                    "Недопустимый адрес JS-плагина."
-                }
-                return@withContext CinemaNativeSource(
-                    UUID.randomUUID().toString(),
-                    title.ifBlank { "Lampa JS · адаптер не подключён" },
-                    url,
-                    CinemaSourceFormat.LAMPA_REFERENCE
-                )
-            }
-            require(CinemaLabSources.isSafeHttps(url)) {
-                "Для нативного каталога требуется публичный HTTPS."
-            }
-            val kind = if (isVideoUrl(url)) {
-                CinemaSourceFormat.DIRECT_MEDIA
-            } else {
-                val response = fetch(url).trimStart('\uFEFF', '\n', '\r', ' ', '\t')
-                when {
-                    response.startsWith("#EXTM3U") -> {
-                        if (response.contains("#EXT-X-STREAM-INF") ||
-                            response.contains("#EXT-X-TARGETDURATION")) {
-                            CinemaSourceFormat.DIRECT_MEDIA
-                        } else {
-                            require(parseM3u(response, "validate").isNotEmpty()) {
-                                "M3U не содержит доступных HTTPS-видео."
-                            }
-                            CinemaSourceFormat.M3U_PLAYLIST
-                        }
-                    }
-                    response.startsWith("{") -> {
-                        val json = JSONObject(response)
-                        val manifest = json.optString("format") == "musicflow.cinema.v1"
-                        if (manifest) {
-                            val catalog = json.optString("catalog_url")
-                            require(CinemaLabSources.isSafeHttps(catalog)) {
-                                "Некорректный catalog_url в JSON."
-                            }
-                            require(CinemaLabSources.parseCatalog(fetch(catalog), "validate")
-                                .isNotEmpty()) { "Каталог JSON не содержит элементов." }
-                        } else {
-                            require(CinemaLabSources.parseCatalog(response, "validate")
-                                .isNotEmpty()) { "JSON-каталог пуст." }
-                        }
-                        CinemaSourceFormat.CINEMA_JSON
-                    }
-                    else -> throw IllegalArgumentException(
-                        "Источник не распознан: поддерживаются JSON, M3U и видео HTTPS. " +
-                        "Скрипты Lampa можно зарегистрировать как ссылку, " +
-                        "но они не передают нативному Media3 прямые потоки."
-                    )
-                }
-            }
-            CinemaNativeSource(UUID.randomUUID().toString(),
-                title.ifBlank { url.substringAfter("://").substringBefore('/').take(55) },
-                url, kind)
+    /** Adds the URL immediately, even when its server is blocked on this device. */
+    fun register(name: String, value: String): CinemaNativeSource {
+        val url = value.trim()
+        require(CinemaLabSources.isSafeHttps(url)) {
+            "Нужна публичная HTTPS-ссылка без логина и пароля."
         }
+        require(!url.lowercase().substringBefore('?').endsWith(".js")) {
+            "JS-плагины больше не поддерживаются. Добавьте ссылку на страницу фильма или видео."
+        }
+        val fallback = URL(url).host.removePrefix("www.")
+        return CinemaNativeSource(
+            UUID.randomUUID().toString(),
+            name.trim().take(90).ifBlank { fallback },
+            url,
+            chooseFormat(url)
+        )
+    }
 
     suspend fun load(source: CinemaNativeSource): List<CinemaTitle> =
         withContext(Dispatchers.IO) {
             when (source.format) {
-                CinemaSourceFormat.LAMPA_REFERENCE -> emptyList()
-                CinemaSourceFormat.DIRECT_MEDIA ->
-                    listOf(CinemaTitle(
-                        source.id,
-                        source.id,
-                        source.name,
-                        CinemaKind.MOVIE,
-                        null,
-                        "Прямая HTTPS-ссылка на видео, добавленная пользователем.",
-                        null, "Мой источник", source.url,
-                        emptyList(), "Личный источник"
-                    ))
+                CinemaSourceFormat.DIRECT_MEDIA -> listOf(
+                    CinemaTitle(
+                        source.id, source.id, source.name, CinemaKind.MOVIE,
+                        null, "Прямая видеоссылка пользователя.",
+                        null, "Видео", source.url, emptyList(), "Добавлено по URL"
+                    )
+                )
                 CinemaSourceFormat.M3U_PLAYLIST -> parseM3u(fetch(source.url), source.id)
                 CinemaSourceFormat.CINEMA_JSON -> {
                     val raw = fetch(source.url)
                     val obj = JSONObject(raw)
                     val catalog = if (obj.optString("format") == "musicflow.cinema.v1") {
-                        val url = obj.optString("catalog_url")
-                        require(CinemaLabSources.isSafeHttps(url)) {
-                            "Каталог плагина должен быть по HTTPS."
+                        val remote = obj.optString("catalog_url")
+                        require(CinemaLabSources.isSafeHttps(remote)) {
+                            "JSON ссылается на недопустимый адрес каталога."
                         }
-                        fetch(url)
+                        fetch(remote)
                     } else raw
                     CinemaLabSources.parseCatalog(catalog, source.id)
                 }
+                CinemaSourceFormat.WEB_PAGE -> listOf(
+                    parseHtml(fetch(source.url), source.url, source.id, source.name)
+                )
             }
         }
 
-    /** Extract only user-supplied HTTPS direct streams from structured M3U playlists. */
+    fun placeholder(source: CinemaNativeSource, error: Throwable): CinemaTitle =
+        CinemaTitle(
+            source.id, source.id, source.name, CinemaKind.MOVIE, null,
+            "Страница пока не отвечает или недоступна из этой сети: " +
+                (error.message ?: "ошибка подключения").take(160) +
+                ". Ссылка сохранена; попробуйте обновить её позже.",
+            null, "Страница по ссылке", null, emptyList(), "Источник пользователя"
+        )
+
+    /**
+     * Reads public OpenGraph/HTML5 video markup only. No iframe execution,
+     * deobfuscation, DRM bypass, private tokens or hidden player APIs.
+     */
+    fun parseHtml(raw: String, url: String, id: String, userTitle: String): CinemaTitle {
+        val document = Jsoup.parse(raw, url)
+        fun meta(property: String): String = document
+            .selectFirst("meta[property=\"$property\"],meta[name=\"$property\"]")
+            ?.attr("content").orEmpty().trim()
+
+        fun resolvePublic(value: String): String? {
+            if (value.isBlank()) return null
+            val resolved = runCatching { URI(url).resolve(value.trim()).toString() }
+                .getOrNull() ?: return null
+            return resolved.takeIf(CinemaLabSources::isSafeHttps)
+        }
+        val pageTitle = meta("og:title").ifBlank { document.title() }
+            .replace(Regex("\\s+"), " ").trim().take(150)
+        val name = pageTitle.takeIf {
+            it.isNotBlank() &&
+                !it.contains("Just a moment", true) &&
+                !it.contains("Access denied", true)
+        } ?: userTitle
+        val description = meta("og:description").ifBlank {
+            document.selectFirst("meta[name=description]")?.attr("content").orEmpty()
+        }.take(850).ifBlank {
+            "Киноисточник сохранён. Прямая видеоссылка на странице не подтверждена."
+        }
+        val poster = resolvePublic(meta("og:image"))
+        val options = mutableListOf<String>()
+        options.add(meta("og:video:url"))
+        options.add(meta("og:video:secure_url"))
+        options.add(meta("twitter:player:stream"))
+        document.select("video[src],video source[src],source[type^=video/][src]").take(20)
+            .forEach { options.add(it.attr("src")) }
+        val stream = options.asSequence().mapNotNull(::resolvePublic)
+            .firstOrNull(::isVideoUrl)
+        val year = Regex("(?:19|20)\\d{2}").find(name)?.value?.toIntOrNull()
+        return CinemaTitle(
+            id, id, name, CinemaKind.MOVIE, year,
+            description, poster, "Страница фильма",
+            stream, emptyList(), "Добавлено по ссылке: " + URI(url).host
+        )
+    }
+
     fun parseM3u(raw: String, sourceId: String): List<CinemaTitle> {
-        val results = mutableListOf<CinemaTitle>()
-        var name = ""
-        var genre = "Плейлист M3U"
+        val result = mutableListOf<CinemaTitle>()
+        var title = ""
+        var group = "Каталог M3U"
         var poster: String? = null
         for (line in raw.lineSequence()) {
-            val text = line.trim()
+            val item = line.trim()
             when {
-                text.startsWith("#EXTINF:", true) -> {
-                    name = text.substringAfter(",", "").trim().take(140)
-                    genre = Regex("group-title=\"([^\"]+)\"")
-                        .find(text)?.groupValues?.getOrNull(1)?.take(80) ?: "Плейлист M3U"
+                item.startsWith("#EXTINF:", ignoreCase = true) -> {
+                    title = item.substringAfter(',', "").trim().take(150)
+                    group = Regex("group-title=\"([^\"]+)\"")
+                        .find(item)?.groupValues?.getOrNull(1)?.take(100)
+                        ?: "Каталог M3U"
                     poster = Regex("tvg-logo=\"([^\"]+)\"")
-                        .find(text)?.groupValues?.getOrNull(1)?.takeIf {
-                            CinemaLabSources.isSafeHttps(it)
-                        }
+                        .find(item)?.groupValues?.getOrNull(1)
+                        ?.takeIf(CinemaLabSources::isSafeHttps)
                 }
-                text.isNotEmpty() && !text.startsWith("#") -> {
-                    if (name.isNotEmpty() && CinemaLabSources.isSafeHttps(text) &&
-                        results.size < 400) {
-                        results.add(CinemaTitle(
-                            id = UUID.nameUUIDFromBytes(text.toByteArray(StandardCharsets.UTF_8))
+                item.isNotBlank() && !item.startsWith("#") -> {
+                    if (title.isNotBlank() && isVideoUrl(item) && result.size < 300) {
+                        result.add(CinemaTitle(
+                            UUID.nameUUIDFromBytes(item.toByteArray(StandardCharsets.UTF_8))
                                 .toString(),
-                            sourceId = sourceId,
-                            title = name,
-                            kind = CinemaKind.MOVIE,
-                            year = null,
-                            description = "Видео из пользовательского M3U-плейлиста.",
-                            poster = poster,
-                            genre = genre,
-                            streamUrl = text,
-                            episodes = emptyList(),
-                            attribution = "Сторонний M3U-источник"
+                            sourceId, title, CinemaKind.MOVIE, null,
+                            "Видео из пользовательского M3U-каталога.",
+                            poster, group, item, emptyList(), "Добавлено по M3U"
                         ))
                     }
-                    name = ""
-                    genre = "Плейлист M3U"
+                    title = ""
+                    group = "Каталог M3U"
                     poster = null
                 }
             }
         }
-        return results.distinctBy { it.id }
+        return result.distinctBy { it.key }
+    }
+
+    /** Bound responses. Only HTTPS, redirects followed only to other public HTTPS URLs. */
+    private fun fetch(address: String): String {
+        var current = address
+        repeat(4) { hop ->
+            require(CinemaLabSources.isSafeHttps(current)) {
+                "Источнику разрешён только публичный HTTPS-адрес."
+            }
+            val conn = URL(current).openConnection() as HttpURLConnection
+            conn.instanceFollowRedirects = false
+            conn.connectTimeout = 6_000
+            conn.readTimeout = 10_000
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Android) MusicFlowCinema/4")
+            conn.setRequestProperty("Accept", "text/html,application/json,audio/x-mpegurl,*/*")
+            try {
+                val status = conn.responseCode
+                if (status in 300..399) {
+                    if (hop == 3) throw IOException("Превышено число перенаправлений")
+                    val location = conn.getHeaderField("Location").orEmpty()
+                    val next = runCatching {
+                        URI(current).resolve(location).toString()
+                    }.getOrNull() ?: throw IOException("Некорректное перенаправление")
+                    require(CinemaLabSources.isSafeHttps(next)) {
+                        "Небезопасное перенаправление заблокировано"
+                    }
+                    current = next
+                } else {
+                    if (status !in 200..299) throw IOException("HTTP $status")
+                    val out = ByteArrayOutputStream()
+                    conn.inputStream.use { input ->
+                        val buf = ByteArray(8192)
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            if (n > 0) {
+                                if (out.size() + n > MAX_RESPONSE_BYTES) {
+                                    throw IOException("Слишком большая страница (макс. 1,5 МБ)")
+                                }
+                                out.write(buf, 0, n)
+                            }
+                        }
+                    }
+                    return out.toString(StandardCharsets.UTF_8.name())
+                }
+            } finally {
+                conn.disconnect()
+            }
+        }
+        throw IOException("Источник не отвечает")
     }
 }
