@@ -1,0 +1,82 @@
+name: Verify MusicFlow 0.7.46 slow-network IPTV
+on:
+  push:
+    branches: ["feature/musicflow-v0746-tv-hls-buffer-resilience"]
+    paths:
+      - ".github/workflows/musicflow-v0746-tv-buffer-verify.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" ||
+            test -x "$ANDROID_HOME/build-tools/36.0.0/aapt"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Guard TV loading and existing MusicFlow features
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('app/src/main/java/com/musicflow/app')
+          service=(p/'PlaybackService.kt').read_text()
+          retry=(p/'TvStreamRecovery.kt').read_text()
+          tuning=(p/'TvPlaybackTuning.kt').read_text()
+          version=Path('app/build.gradle.kts').read_text()
+          assert 'DefaultHttpDataSource.Factory()' in service
+          assert 'setReadTimeoutMs(TvPlaybackTuning.READ_TIMEOUT_MS)' in service
+          assert 'setConnectTimeoutMs(TvPlaybackTuning.CONNECT_TIMEOUT_MS)' in service
+          assert 'setBufferDurationsMsForStreaming(' in service
+          assert 'setLoadControl(streamingLoadControl)' in service
+          assert '65_000L' in retry and '30_000L' in retry
+          assert 'MAX_RETRIES = 2' in retry
+          assert '75_000' in tuning and '64 * 1024 * 1024' in tuning
+          assert 'PcmEqAudioProcessor(AudioEqSettings.load(this))' in service
+          assert 'MusicFlowStyle.DEFAULT' in (p/'MainActivity.kt').read_text()
+          assert 'versionCode = 746' in version and 'versionName = "0.7.46"' in version
+          assert 'applicationId = "com.musicflow.preview"' in version
+          print('Slow HLS buffering, bounded recovery and existing player features checked')
+          PY
+      - name: Kotlin tests and release compilation
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
+      - name: Check TV tuning regression and APK metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          suites=list(Path('app/build/test-results/testDebugUnitTest').glob('TEST-*.xml'))
+          names='\n'.join(x.name for x in suites)
+          for key in ('TvPlaybackTuningTest','TvStreamRecoveryTest','PcmEqEngineTest',
+                      'MusicFlowLiquidGlassThemesTest','UpdateDialogGateTest'):
+              assert key in names, (key, names)
+          print('Regression suites:',len(suites))
+          PY
+          TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          APK=app/build/outputs/apk/release/app-release-unsigned.apk
+          test -s "$APK"
+          mkdir -p out
+          "$TOOLS/zipalign" -p -f 4 "$APK" out/MusicFlow_0.7.46-unsigned.apk
+          "$TOOLS/aapt" dump badging out/MusicFlow_0.7.46-unsigned.apk |
+            grep -F "name='com.musicflow.preview' versionCode='746' versionName='0.7.46'"
+          sha256sum out/MusicFlow_0.7.46-unsigned.apk > out/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.46-aligned-unsigned
+          path: out/
+          retention-days: 30
+          if-no-files-found: error
