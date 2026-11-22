@@ -36,6 +36,22 @@ class RussianRadioFallbackTest {
         assertTrue(allowed[0].mediaId.startsWith("radio:"))
     }
 
+    @Test fun reserveOnlyCatalogueSupportsRussianSearchWithoutOtherDirectory() {
+        val playlist = """
+            #EXTM3U
+            #EXTINF:-1,РАДИО ВАНЯ
+            https://radio.example.org/one
+            #EXTINF:-1,Радио Русские Песни
+            https://radio.example.org/two
+        """.trimIndent()
+        val stations = RussianRadioFallback.parseM3u(playlist) { true }
+        assertEquals(2, RussianRadioFallback.filterStations(stations, "").size)
+        assertEquals("Радио Русские Песни",
+            RussianRadioFallback.filterStations(stations, "русские")[0].name)
+        assertEquals(1, RussianRadioFallback.filterStations(stations, "песни").size)
+        assertTrue(RussianRadioFallback.filterStations(stations, "нет").isEmpty())
+    }
+
     @Test fun doesNotPairAnExtinfEntryWithAnUnrelatedNextEntry() {
         val m3u = """
             #EXTM3U
