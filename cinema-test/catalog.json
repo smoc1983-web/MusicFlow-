@@ -1,0 +1,77 @@
+{
+  "format": "musicflow.cinema-catalog.v1",
+  "name": "Cinema LAB · открытые фильмы",
+  "items": [
+    {
+      "id": "bbb2008",
+      "title": "Big Buck Bunny",
+      "type": "movie",
+      "year": 2008,
+      "genre": "Анимация · Комедия",
+      "description": "Открытый анимационный короткометражный фильм Blender Foundation. Демонстрационный контент для проверки воспроизведения.",
+      "poster": "https://storage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg",
+      "stream_url": "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+      "attribution": "Blender Foundation · CC BY 3.0"
+    },
+    {
+      "id": "sintel2010",
+      "title": "Sintel",
+      "type": "movie",
+      "year": 2010,
+      "genre": "Фэнтези · Анимация",
+      "description": "Короткометражная анимационная история, созданная Blender Foundation. Тестовое воспроизведение по прямой HTTPS-ссылке.",
+      "poster": "https://storage.googleapis.com/gtv-videos-bucket/sample/images/Sintel.jpg",
+      "stream_url": "https://storage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+      "attribution": "Blender Foundation · CC BY 3.0"
+    },
+    {
+      "id": "tears2012",
+      "title": "Tears of Steel",
+      "type": "movie",
+      "year": 2012,
+      "genre": "Фантастика · Короткометражный",
+      "description": "Научно-фантастический короткометражный фильм Blender Foundation с компьютерной графикой и живыми актёрами.",
+      "poster": "https://storage.googleapis.com/gtv-videos-bucket/sample/images/TearsOfSteel.jpg",
+      "stream_url": "https://storage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
+      "attribution": "Blender Foundation · CC BY 3.0"
+    },
+    {
+      "id": "elephants2006",
+      "title": "Elephants Dream",
+      "type": "movie",
+      "year": 2006,
+      "genre": "Фантастика · Анимация",
+      "description": "Один из первых открытых анимационных фильмов Blender Foundation.",
+      "poster": "https://storage.googleapis.com/gtv-videos-bucket/sample/images/ElephantsDream.jpg",
+      "stream_url": "https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+      "attribution": "Blender Foundation · CC BY 2.5"
+    },
+    {
+      "id": "blender-collection",
+      "title": "Открытые короткометражки",
+      "type": "series",
+      "year": 2010,
+      "genre": "Антология · Анимация",
+      "description": "Демонстрационная подборка независимых открытых короткометражных фильмов. Каждый элемент доступен как отдельный эпизод для проверки выбора серий.",
+      "poster": "https://storage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg",
+      "episodes": [
+        {
+          "id": "ep-1",
+          "title": "1 · Big Buck Bunny",
+          "stream_url": "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+        },
+        {
+          "id": "ep-2",
+          "title": "2 · Sintel",
+          "stream_url": "https://storage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4"
+        },
+        {
+          "id": "ep-3",
+          "title": "3 · Elephants Dream",
+          "stream_url": "https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"
+        }
+      ],
+      "attribution": "Blender Foundation · CC BY (лицензии указаны для каждого фильма)"
+    }
+  ]
+}
