@@ -59,6 +59,7 @@ jobs:
           assert "mainHandler.postDelayed(scheduledApply, 160L)" in effects
           print("Source checks passed: installed-version guard, radio transport, Bluetooth PCM EQ")
           PY
+      # Build after fixing the missing radio favorite icon imports.
       - name: Kotlin tests and production APK compilation
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
       - name: Align unsigned production package and verify version
