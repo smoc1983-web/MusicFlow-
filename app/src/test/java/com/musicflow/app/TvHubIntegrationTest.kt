@@ -15,6 +15,25 @@ class TvHubIntegrationTest {
             TvHubMode.entries.map { it.title })
     }
 
+    @Test fun favoritesCountAndListBelongOnlyToSelectedSource() {
+        val first = TvChannel("first", "Первый", "Новости",
+            null, "https://iptv.example.org/one")
+        val second = TvChannel("second", "Второй", "Музыка",
+            null, "https://iptv.example.org/two")
+        val selected = listOf(first, second)
+        val keys = setOf(
+            TvHubLibrary.channelKey("source-one", first),
+            TvHubLibrary.channelKey("source-two", second)
+        )
+        assertEquals(listOf(first), TvHubLibrary.favoritesForSource(
+            "source-one", selected, keys))
+        assertEquals(listOf(second), TvHubLibrary.favoritesForSource(
+            "source-two", selected, keys))
+        assertEquals(emptyList<TvChannel>(), TvHubLibrary.favoritesForSource(
+            "other-source", selected, keys))
+        assertEquals(2, selected.size)
+    }
+
     @Test fun filtersUseRealGroupOrChannelNames() {
         assertTrue(TvHubLibrary.channelMatchesGenre(channel("Новости", "Информация"), "Новости"))
         assertTrue(TvHubLibrary.channelMatchesGenre(channel("Вещание", "Спорт"), "Спорт"))
