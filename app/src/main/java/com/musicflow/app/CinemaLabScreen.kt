@@ -2,16 +2,18 @@ package com.musicflow.app
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Movie
@@ -23,382 +25,683 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.rememberAsyncImagePainter
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private val CinemaAccent = Color(0xFFAB8AFF)
+private val CinemaPurple = Color(0xFFBB9BFF)
+private val CinemaDark = Color(0xFF151923)
+private val CinemaTile = Color(0xFF23283A)
+private val CinemaTextMuted = Color(0xFFB5B6C5)
 
-/** URLs only, directly in the app. No demos, plugins or Lampa windows. */
 @Composable
 internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val palette = LocalMusicFlowPalette.current
     var sources by remember { mutableStateOf(CinemaNativeSources.sources(context)) }
-    var results by remember { mutableStateOf<Map<String, List<CinemaTitle>>>(emptyMap()) }
-    var loading by remember { mutableStateOf(false) }
     var refresh by remember { mutableIntStateOf(0) }
+    var loading by remember { mutableStateOf(false) }
+    var shelves by remember { mutableStateOf<List<CinemaRutubeShelf>>(emptyList()) }
+    var shelfCache by remember { mutableStateOf<Map<String, CinemaRutubePage>>(emptyMap()) }
+    var otherCatalogs by remember { mutableStateOf<Map<String, List<CinemaTitle>>>(emptyMap()) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    var section by remember { mutableStateOf("Главная") }
+    var selectedShelf by remember { mutableStateOf<CinemaRutubeShelf?>(null) }
+    var shelfBusy by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    var activeSource by remember { mutableStateOf("all") }
+    var searched by remember { mutableStateOf<List<CinemaTitle>>(emptyList()) }
+    var searchBusy by remember { mutableStateOf(false) }
+    var selectedSource by remember { mutableStateOf("all") }
     var addDialog by remember { mutableStateOf(false) }
-    var selectedFilm by remember { mutableStateOf<CinemaTitle?>(null) }
-    var resolvingFilm by remember { mutableStateOf(false) }
-    var filmError by remember { mutableStateOf<String?>(null) }
+    var details by remember { mutableStateOf<CinemaTitle?>(null) }
+    var detailsBusy by remember { mutableStateOf(false) }
+    var detailsError by remember { mutableStateOf<String?>(null) }
+    var tvShow by remember { mutableStateOf<CinemaTvShow?>(null) }
+    var season by remember { mutableIntStateOf(1) }
+    var episodes by remember { mutableStateOf<List<CinemaTitle>>(emptyList()) }
+    var episodesBusy by remember { mutableStateOf(false) }
     var playing by remember { mutableStateOf<Pair<CinemaTitle, String>?>(null) }
     var favorites by remember { mutableStateOf(CinemaLabSources.favoriteKeys(context)) }
 
+    val firstSource = sources.firstOrNull {
+        it.format == CinemaSourceFormat.RUTUBE_FEED
+    }
+    val displayMedia = selectedSource == "all" || selectedSource == firstSource?.id
+
     LaunchedEffect(sources, refresh) {
-        loading = sources.isNotEmpty()
-        results = results.filterKeys { id -> sources.any { it.id == id } }
+        loading = true
+        loadError = null
+        shelves = emptyList()
+        shelfCache = emptyMap()
         try {
-            for (source in sources) {
+            if (firstSource != null) {
+                val available = CinemaRutubeCatalog.shelves()
+                shelves = available
+                val priority = (
+                    available.filter { it.section == "Главная" }.take(3) +
+                    available.filter { it.section == "По жанрам" }.take(4)
+                ).distinctBy { it.url }
+                val list = coroutineScope {
+                    priority.map { item ->
+                        async(Dispatchers.IO) {
+                            item.url to runCatching {
+                                CinemaRutubeCatalog.loadShelf(item, firstSource.id)
+                            }.getOrNull()
+                        }
+                    }.awaitAll()
+                }
+                shelfCache = list.mapNotNull { (url, data) ->
+                    if (data == null) null else url to data
+                }.toMap()
+            }
+            val extras = sources.filter { it.format != CinemaSourceFormat.RUTUBE_FEED }
+            for (source in extras) {
                 try {
-                    results = results + (source.id to CinemaNativeSources.load(source))
+                    otherCatalogs = otherCatalogs + (source.id to
+                        CinemaNativeSources.load(source))
                 } catch (cancel: CancellationException) {
                     throw cancel
-                } catch (error: Exception) {
-                    results = results + (source.id to listOf(
-                        CinemaNativeSources.placeholder(source, error)
+                } catch (e: Exception) {
+                    otherCatalogs = otherCatalogs + (source.id to listOf(
+                        CinemaNativeSources.placeholder(source, e)
                     ))
                 }
             }
+            otherCatalogs = otherCatalogs.filterKeys { key ->
+                extras.any { it.id == key }
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            loadError = "Каталог временно недоступен: " + (e.message ?: "ошибка сети")
         } finally {
             loading = false
         }
     }
 
-    val allTitles = sources.flatMap { results[it.id].orEmpty() }
-    val filtered = allTitles.filter { film ->
-        (activeSource == "all" || film.sourceId == activeSource) &&
-            (query.isBlank() || film.title.contains(query.trim(), ignoreCase = true) ||
-                film.description.contains(query.trim(), ignoreCase = true))
-    }
-    fun openFilm(film: CinemaTitle) {
-        selectedFilm = film
-        filmError = null
-        val link = film.pageUrl ?: return
-        resolvingFilm = true
-        scope.launch {
-            try {
-                val resolved = CinemaNativeSources.resolvePage(film)
-                if (selectedFilm?.key == film.key) selectedFilm = resolved
-            } catch (cancel: CancellationException) {
-                throw cancel
-            } catch (failure: Exception) {
-                filmError = "Страница недоступна: " +
-                    (failure.message ?: "ошибка загрузки")
-            } finally {
-                resolvingFilm = false
-            }
+    LaunchedEffect(selectedShelf?.url, firstSource?.id) {
+        val wanted = selectedShelf ?: return@LaunchedEffect
+        val src = firstSource ?: return@LaunchedEffect
+        if (shelfCache.containsKey(wanted.url)) return@LaunchedEffect
+        shelfBusy = true
+        try {
+            shelfCache = shelfCache + (wanted.url to
+                CinemaRutubeCatalog.loadShelf(wanted, src.id))
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (e: Exception) {
+            loadError = "Подборка недоступна: " + (e.message ?: "ошибка сети")
+        } finally {
+            shelfBusy = false
         }
     }
 
-    fun beginPlayback(film: CinemaTitle) {
-        val address = film.streamUrl
-        if (address == null) {
-            if (film.episodes.isNotEmpty()) selectedFilm = film
-            return
+    LaunchedEffect(query, firstSource?.id, shelves, selectedSource) {
+        searched = emptyList()
+        val text = query.trim()
+        if (text.length < 2 || firstSource == null || !displayMedia) return@LaunchedEffect
+        delay(550)
+        searchBusy = true
+        try {
+            searched = CinemaRutubeCatalog.search(text, firstSource.id, shelves)
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (e: Exception) {
+            loadError = "Поиск недоступен: " + (e.message ?: "ошибка")
+        } finally {
+            searchBusy = false
         }
-        if (!CinemaLabSources.isSafeHttps(address)) return
-        CinemaLabSources.markRecent(context, film.key)
-        selectedFilm = null
-        playing = film to address
     }
-    fun toggleFavorite(film: CinemaTitle) {
-        favorites = if (film.key in favorites) favorites - film.key
-            else favorites + film.key
+
+    // Fetch the detailed media metadata and the linked series, if one exists.
+    LaunchedEffect(details?.key) {
+        val film = details ?: return@LaunchedEffect
+        detailsError = null
+        tvShow = null
+        episodes = emptyList()
+        season = film.seasonNumber ?: 1
+        if (film.pageUrl == null) return@LaunchedEffect
+        detailsBusy = true
+        try {
+            val resolved = CinemaNativeSources.resolvePage(film)
+            if (details?.key == film.key) {
+                details = resolved
+                season = resolved.seasonNumber ?: season
+            }
+            val id = CinemaRutubeSource.videoId(film.pageUrl)
+            if (id != null && (film.kind == CinemaKind.SERIES ||
+                resolved.kind == CinemaKind.SERIES)) {
+                tvShow = CinemaRutubeSeries.loadShowFor(id)
+            }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (e: Exception) {
+            detailsError = e.message ?: "Не удалось загрузить информацию"
+        } finally {
+            detailsBusy = false
+        }
+    }
+
+    LaunchedEffect(tvShow?.id, season, details?.key) {
+        val show = tvShow ?: return@LaunchedEffect
+        val film = details ?: return@LaunchedEffect
+        episodesBusy = true
+        episodes = emptyList()
+        try {
+            episodes = CinemaRutubeSeries.loadEpisodes(show.id, season, film.sourceId)
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (e: Exception) {
+            detailsError = "Список серий: " + (e.message ?: "недоступен")
+        } finally {
+            episodesBusy = false
+        }
+    }
+
+    fun toggleFavorite(item: CinemaTitle) {
+        favorites = if (item.key in favorites) favorites - item.key
+            else favorites + item.key
         CinemaLabSources.saveFavorites(context, favorites)
     }
 
-    Column(modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-        Row(
-            Modifier.fillMaxWidth().padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Filled.Movie, contentDescription = null, tint = CinemaAccent)
-            Spacer(Modifier.width(8.dp))
+    fun startVideo(item: CinemaTitle) {
+        val uri = item.streamUrl ?: return
+        if (!CinemaLabSources.isSafeHttps(uri)) return
+        CinemaLabSources.markRecent(context, item.key)
+        details = null
+        playing = item to uri
+    }
+
+    fun openEpisode(item: CinemaTitle) {
+        detailsBusy = true
+        detailsError = null
+        scope.launch {
+            try {
+                val resolved = CinemaNativeSources.resolvePage(item)
+                if (resolved.hasPlayback) startVideo(resolved)
+                else detailsError = resolved.playbackDiagnostic ?:
+                    "Для выбранной серии нет разрешённого видеопотока"
+            } catch (e: Exception) {
+                detailsError = e.message ?: "Не удалось открыть серию"
+            } finally {
+                detailsBusy = false
+            }
+        }
+    }
+
+    fun requestNextShelf(item: CinemaRutubeShelf) {
+        val src = firstSource ?: return
+        val old = shelfCache[item.url] ?: return
+        val next = old.next ?: return
+        shelfBusy = true
+        scope.launch {
+            try {
+                val extra = CinemaRutubeCatalog.loadShelf(item, src.id, next)
+                shelfCache = shelfCache + (item.url to CinemaRutubePage(
+                    (old.films + extra.films).distinctBy { it.id },
+                    extra.next
+                ))
+            } catch (e: Exception) {
+                loadError = "Не удалось загрузить продолжение: " +
+                    (e.message ?: "ошибка")
+            } finally { shelfBusy = false }
+        }
+    }
+
+    val allItems = (
+        shelfCache.values.flatMap { it.films } +
+        otherCatalogs.values.flatten()
+    ).distinctBy { it.key }
+    val activeSelected = selectedShelf
+    val shelfTitles = if (activeSelected == null) emptyList()
+        else shelfCache[activeSelected.url]?.films.orEmpty()
+    val categoryTitles = when {
+        selectedSource != "all" && selectedSource != firstSource?.id ->
+            otherCatalogs[selectedSource].orEmpty()
+        query.trim().length >= 2 && displayMedia -> searched
+        activeSelected != null -> shelfTitles
+        section == "Избранное" -> allItems.filter { it.key in favorites }
+        section == "Сериалы" -> allItems.filter { it.kind == CinemaKind.SERIES }
+        section == "Фильмы" -> allItems.filter { it.kind == CinemaKind.MOVIE }
+        else -> allItems
+    }.filter { query.isBlank() || (displayMedia && query.trim().length >= 2) ||
+        it.title.contains(query.trim(), ignoreCase = true) }
+
+    Column(modifier.fillMaxWidth().background(CinemaDark)) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp, top = 10.dp),
+            verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Кино", style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold)
-                Text("Источники по ссылке · собственный плеер",
-                    color = palette.muted, style = MaterialTheme.typography.labelSmall)
+                Text("Кино", style = MaterialTheme.typography.headlineMedium,
+                    color = Color.White, fontWeight = FontWeight.Bold)
+                Text("Фильмы • Сериалы • Подборки",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = CinemaTextMuted)
             }
             IconButton(onClick = { refresh++ }) {
-                Icon(Icons.Filled.Refresh, contentDescription = "Обновить", tint = CinemaAccent)
+                Icon(Icons.Filled.Refresh, "Обновить каталог", tint = CinemaPurple)
             }
-            Button(onClick = { addDialog = true }) {
-                Icon(Icons.Filled.Add, contentDescription = null)
-                Text("Источник")
+            TextButton(onClick = { addDialog = true }) {
+                Icon(Icons.Filled.Add, null, tint = CinemaPurple)
+                Text("Источник", color = CinemaPurple)
             }
         }
-
-        playing?.let { (film, media) ->
-            key(film.key + ":" + media) {
-                CinemaNativeInlinePlayer(
-                    title = film.title,
-                    sourceKey = film.key,
-                    streamUrl = media,
-                    pageUrl = film.pageUrl,
-                    onClose = { playing = null }
-                )
-            }
-            Spacer(Modifier.height(10.dp))
-        }
-
-        OutlinedTextField(
-            value = query, onValueChange = { query = it.take(75) },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            label = { Text("Поиск среди добавленных фильмов") },
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) }
-        )
-        Spacer(Modifier.height(5.dp))
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(7.dp)
-        ) {
-            FilterChip(
-                selected = activeSource == "all",
-                onClick = { activeSource = "all" },
-                label = { Text("Все · " + allTitles.size) }
+        playing?.let { (item, url) ->
+            CinemaNativeInlinePlayer(
+                title = item.title,
+                sourceKey = item.key,
+                streamUrl = url,
+                pageUrl = item.pageUrl,
+                onClose = { playing = null }
             )
-            sources.forEach { source ->
+        }
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it.take(90) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 7.dp),
+            placeholder = { Text("Название фильма или сериала") },
+            leadingIcon = { Icon(Icons.Filled.Search, null) },
+            shape = RoundedCornerShape(18.dp)
+        )
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            .padding(horizontal = 13.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            listOf("Главная", "Фильмы", "Сериалы", "Жанры", "По годам",
+                "По странам", "Избранное").forEach { tab ->
                 FilterChip(
-                    selected = activeSource == source.id,
-                    onClick = { activeSource = source.id },
-                    label = { Text(source.name, maxLines = 1) }
+                    selected = section == tab,
+                    onClick = {
+                        section = tab
+                        selectedShelf = null
+                        query = ""
+                        selectedSource = "all"
+                    },
+                    label = { Text(tab) }
                 )
             }
-            if (activeSource != "all") {
-                TextButton(onClick = {
-                    val removed = activeSource
-                    val updated = sources.filterNot { it.id == removed }
-                    sources = updated
-                    CinemaNativeSources.save(context, updated)
-                    if (playing?.first?.sourceId == removed) playing = null
-                    activeSource = "all"
-                }) {
-                    Icon(Icons.Filled.Delete, contentDescription = null)
-                    Text("Удалить источник")
+        }
+        if (sources.size > 1) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                .padding(horizontal = 13.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                sources.forEach { source ->
+                    FilterChip(
+                        selected = selectedSource == source.id,
+                        onClick = { selectedSource = source.id; selectedShelf = null },
+                        label = { Text(source.name.take(25)) }
+                    )
+                }
+                TextButton(onClick = { selectedSource = "all" }) {
+                    Text("Все источники")
                 }
             }
         }
-        if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (loading || shelfBusy || searchBusy) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
+        loadError?.let { Text(it,
+            modifier = Modifier.padding(horizontal = 15.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.bodySmall, color = Color(0xFFFFB4B4)) }
 
         LazyColumn(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(vertical = 10.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = PaddingValues(start = 13.dp, end = 13.dp, bottom = 25.dp, top = 7.dp)
         ) {
-            if (sources.isEmpty()) item {
-                Text("Добавьте ссылку на страницу фильма или прямой видеопоток.",
-                    color = palette.muted, modifier = Modifier.padding(12.dp))
+            val genreTab = when (section) {
+                "Жанры" -> "По жанрам"
+                "По годам" -> "По годам"
+                "По странам" -> "По странам"
+                else -> ""
             }
-            items(filtered, key = { it.key }) { film ->
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainer,
-                    shape = RoundedCornerShape(17.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(verticalAlignment = Alignment.Top) {
-                            Box(
-                                Modifier.width(88.dp).height(116.dp)
-                                    .clip(RoundedCornerShape(13.dp))
-                                    .background(Color(0xFF302942)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (!film.poster.isNullOrBlank()) {
-                                    Image(
-                                        rememberAsyncImagePainter(film.poster),
-                                        contentDescription = null,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                } else Icon(Icons.Filled.Movie,
-                                    contentDescription = null, tint = CinemaAccent)
-                            }
-                            Spacer(Modifier.width(12.dp))
-                            Column(Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                Text(film.title, fontWeight = FontWeight.Bold,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                Text(
-                                    film.year?.toString() ?: "Киноисточник по ссылке",
-                                    color = CinemaAccent,
-                                    style = MaterialTheme.typography.labelSmall
-                                )
-                                Text(film.description, maxLines = 4,
-                                    overflow = TextOverflow.Ellipsis,
-                                    style = MaterialTheme.typography.bodySmall)
-                                if (!film.hasPlayback) Text(
-                                    if (CinemaRutubeSource.videoId(film.pageUrl.orEmpty()) != null)
-                                        "Поток будет проверен при открытии фильма"
-                                    else "Прямая видеоссылка пока не найдена",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.labelSmall
-                                )
-                            }
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (film.hasPlayback) {
-                                Button(onClick = { beginPlayback(film) }) {
-                                    Icon(Icons.Filled.PlayArrow, contentDescription = null)
-                                    Text("Смотреть")
-                                }
-                            } else {
-                                OutlinedButton(onClick = { openFilm(film) }) {
-                                    Text(if (film.pageUrl != null) "Открыть фильм"
-                                        else "О странице")
-                                }
-                            }
-                            Spacer(Modifier.weight(1f))
-                            IconButton(onClick = { toggleFavorite(film) }) {
-                                Icon(
-                                    if (film.key in favorites) Icons.Filled.Favorite
-                                    else Icons.Filled.FavoriteBorder,
-                                    contentDescription = "Избранное", tint = CinemaAccent
-                                )
-                            }
-
+            if (genreTab.isNotEmpty() && displayMedia) {
+                item(key = "genre-chips") {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        shelves.filter { it.section == genreTab }.forEach { option ->
+                            FilterChip(
+                                selected = option.url == activeSelected?.url,
+                                onClick = { selectedShelf = option },
+                                label = { Text(option.title) }
+                            )
                         }
                     }
                 }
             }
-            if (!loading && sources.isNotEmpty() && filtered.isEmpty()) item {
-                Text("Нет совпадений. Измените поиск или обновите страницу.",
-                    color = palette.muted, modifier = Modifier.padding(12.dp))
+
+            if (section == "Главная" && query.isBlank() && activeSelected == null &&
+                selectedSource == "all" && displayMedia) {
+                val featured = shelves.firstOrNull { it.section == "Главная" &&
+                    shelfCache[it.url]?.films?.isNotEmpty() == true }
+                val hero = featured?.let { shelfCache[it.url]?.films?.firstOrNull() }
+                if (hero != null) {
+                    item(key = "cinema-hero") {
+                        CinemaHeroCard(hero, onClick = { details = hero })
+                    }
+                }
+                shelves.filter { shelfCache[it.url]?.films?.isNotEmpty() == true }
+                    .take(8).forEach { shelf ->
+                        item(key = "shelf-" + shelf.url) {
+                            CinemaPosterRail(shelf.title,
+                                shelfCache[shelf.url]?.films.orEmpty().take(20),
+                                onClick = { details = it },
+                                onMore = {
+                                    selectedShelf = shelf
+                                    section = "Жанры"
+                                })
+                        }
+                    }
+            } else {
+                if (activeSelected != null) {
+                    item(key = "selected-shelf") {
+                        TextButton(onClick = { selectedShelf = null }) {
+                            Icon(Icons.Filled.ArrowBack, null)
+                            Text(activeSelected.title)
+                        }
+                    }
+                }
+                if (categoryTitles.isNotEmpty()) {
+                    item(key = "count") {
+                        Text(
+                            if (query.length >= 2) "Найдено: " + categoryTitles.size
+                            else activeSelected?.title ?: section,
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+                items(categoryTitles, key = { it.key }) { film ->
+                    CinemaBrowseRow(film, film.key in favorites,
+                        onClick = { details = film },
+                        onFavorite = { toggleFavorite(film) })
+                }
+                if (activeSelected?.let { shelfCache[it.url]?.next != null } == true) {
+                    item(key = "load-more") {
+                        Button(
+                            onClick = { requestNextShelf(activeSelected) },
+                            enabled = !shelfBusy,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Загрузить ещё") }
+                    }
+                }
+                if (categoryTitles.isEmpty() && !loading && !shelfBusy && !searchBusy) {
+                    item(key = "empty") {
+                        Text(if (query.length >= 2)
+                            "В доступных подборках совпадений нет. Попробуйте другое название."
+                            else "Выберите жанр или обновите каталог.",
+                            color = CinemaTextMuted, modifier = Modifier.padding(15.dp))
+                    }
+                }
+            }
+            item(key = "rights") {
+                Text("Доступность просмотра зависит от условий правообладателей.",
+                    color = CinemaTextMuted,
+                    style = MaterialTheme.typography.labelSmall)
             }
         }
     }
 
-    selectedFilm?.let { film ->
-        AlertDialog(
-            onDismissRequest = { selectedFilm = null },
-            title = { Text(film.title) },
-            text = {
+    details?.let { current ->
+        Dialog(
+            onDismissRequest = { details = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(0.96f).heightIn(max = 670.dp),
+                color = CinemaTile, shape = RoundedCornerShape(24.dp)
+            ) {
                 Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(9.dp)
+                    Modifier.verticalScroll(rememberScrollState()).padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text(film.description)
-                    if (resolvingFilm) {
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
-                        Text("Проверяем страницу фильма…",
-                            style = MaterialTheme.typography.bodySmall)
-                    }
-                    filmError?.let {
-                        Text(it, color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall)
-                    }
-                    if (film.hasPlayback) {
-                        Button(onClick = { beginPlayback(film) }) {
-                            Icon(Icons.Filled.PlayArrow, contentDescription = null)
-                            Text("Смотреть в MusicFlow")
+                    Row(verticalAlignment = Alignment.Top) {
+                        CinemaPoster(current.poster, Modifier.width(110.dp).height(155.dp))
+                        Spacer(Modifier.width(13.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(current.title,
+                                style = MaterialTheme.typography.titleLarge,
+                                color = Color.White, fontWeight = FontWeight.Bold)
+                            Text(current.genre, color = CinemaPurple)
+                            current.year?.let {
+                                Text(it.toString(), color = CinemaTextMuted)
+                            }
                         }
                     }
-                    Text(
-                        film.playbackDiagnostic ?:
-                            (if (film.hasPlayback) "Найден прямой видеопоток."
-                            else "Публичной MP4/HLS-ссылки нет. Сайт может использовать " +
-                                "встроенный JS-плеер или защищённое воспроизведение."),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    film.episodes.forEach { episode ->
-                        TextButton(onClick = {
-                            if (CinemaLabSources.isSafeHttps(episode.streamUrl)) {
-                                CinemaLabSources.markRecent(context, film.key)
-                                selectedFilm = null
-                                playing = film to episode.streamUrl
-                            }
-                        }) { Text(episode.title) }
+                    Text(current.description, color = Color.White,
+                        style = MaterialTheme.typography.bodyMedium)
+                    if (detailsBusy) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Text("Загружаем сведения…", color = CinemaTextMuted)
                     }
-                    val source = sources.firstOrNull { it.id == film.sourceId }
-                    source?.let {
-                        Text(film.pageUrl ?: it.url,
+                    detailsError?.let {
+                        Text(it, color = Color(0xFFFFB4B4),
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (current.hasPlayback) {
+                        Button(onClick = { startVideo(current) },
+                            modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Filled.PlayArrow, null)
+                            Text("Смотреть")
+                        }
+                    }
+                    tvShow?.let { show ->
+                        HorizontalDivider()
+                        Text("Сериал: " + show.name, fontWeight = FontWeight.Bold,
+                            color = Color.White)
+                        Text("Выберите сезон", color = CinemaTextMuted)
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            (1..show.seasons).forEach { n ->
+                                FilterChip(
+                                    selected = season == n,
+                                    onClick = { season = n },
+                                    label = { Text("Сезон $n") }
+                                )
+                            }
+                        }
+                        if (episodesBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        if (episodes.isEmpty() && !episodesBusy) {
+                            Text("Для выбранного сезона серии пока недоступны.",
+                                color = CinemaTextMuted)
+                        }
+                        episodes.forEach { episode ->
+                            Surface(
+                                color = Color(0xFF30374A),
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                    openEpisode(episode)
+                                },
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Row(
+                                    Modifier.padding(9.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    CinemaPoster(episode.poster,
+                                        Modifier.width(83.dp).height(58.dp))
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            (episode.episodeNumber?.let { "Серия $it · " } ?: "") +
+                                                episode.title,
+                                            maxLines = 2, color = Color.White,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    Icon(Icons.Filled.PlayArrow, null, tint = CinemaPurple)
+                                }
+                            }
+                        }
+                    }
+                    current.playbackDiagnostic?.let {
+                        Text(it, color = CinemaTextMuted,
                             style = MaterialTheme.typography.labelSmall)
                     }
+                    TextButton(onClick = { details = null },
+                        modifier = Modifier.align(Alignment.End)) {
+                        Text("Закрыть", color = CinemaPurple)
+                    }
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { selectedFilm = null }) { Text("Закрыть") }
             }
-        )
+        }
     }
 
     if (addDialog) {
-        CinemaUrlAddDialog(
-            onDismiss = { addDialog = false },
-            onAdd = { address ->
-                require(sources.size < 30) { "Максимум 30 киноисточников." }
-                val source = CinemaNativeSources.register("", address)
-                require(sources.none { it.url.equals(source.url, ignoreCase = true) }) {
-                    "Ссылка уже есть в каталоге."
+        var input by remember { mutableStateOf("") }
+        var error by remember { mutableStateOf<String?>(null) }
+        AlertDialog(
+            onDismissRequest = { addDialog = false },
+            title = { Text("Добавить киноисточник") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    OutlinedTextField(
+                        value = input, onValueChange = { input = it.take(2048) },
+                        label = { Text("HTTPS-ссылка на каталог или видео") }
+                    )
+                    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    Text("Поддерживаются страницы, JSON, M3U и прямые видеопотоки.",
+                        style = MaterialTheme.typography.bodySmall)
                 }
-                val updated = sources + source
-                sources = updated
-                CinemaNativeSources.save(context, updated)
-                activeSource = source.id
-                addDialog = false
+            },
+            confirmButton = {
+                Button(onClick = {
+                    try {
+                        require(sources.size < 30) { "Максимум 30 источников" }
+                        val newSource = CinemaNativeSources.register("", input)
+                        require(sources.none { it.url == newSource.url }) {
+                            "Этот источник уже добавлен"
+                        }
+                        sources = sources + newSource
+                        addDialog = false
+                    } catch (e: Exception) {
+                        error = e.message ?: "Ошибка адреса"
+                    }
+                }) { Text("Добавить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { addDialog = false }) { Text("Отмена") }
             }
         )
     }
 }
 
 @Composable
-private fun CinemaUrlAddDialog(
-    onDismiss: () -> Unit,
-    onAdd: (String) -> Unit
-) {
-    var link by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Добавить киноисточник") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                Text(
-                    "Вставьте HTTPS-ссылку на фильм, каталог M3U/JSON " +
-                        "или прямое MP4/HLS-видео. Плагины не нужны.",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                OutlinedTextField(
-                    value = link,
-                    onValueChange = { link = it.take(2048) },
-                    label = { Text("Ссылка на источник") },
-                    modifier = Modifier.fillMaxWidth(), maxLines = 3
-                )
-                error?.let {
-                    Text(it, color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall)
+private fun CinemaPoster(url: String?, modifier: Modifier = Modifier) {
+    Box(modifier.clip(RoundedCornerShape(12.dp)).background(Color(0xFF343248)),
+        contentAlignment = Alignment.Center) {
+        if (!url.isNullOrBlank()) {
+            Image(
+                painter = rememberAsyncImagePainter(url),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        } else Icon(Icons.Filled.Movie, null, tint = CinemaPurple)
+    }
+}
+
+@Composable
+private fun CinemaHeroCard(film: CinemaTitle, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(24.dp),
+        color = Color(0xFF342841)
+    ) {
+        Box(Modifier.fillMaxWidth().height(215.dp)) {
+            CinemaPoster(film.poster, Modifier.fillMaxSize())
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
+                listOf(Color.Black.copy(alpha = 0.05f), Color(0xEB11121D))
+            )))
+            Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
+                Text("Рекомендуем", color = CinemaPurple,
+                    style = MaterialTheme.typography.labelMedium)
+                Text(film.title, style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold, color = Color.White,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(7.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.PlayArrow, null, tint = Color.White)
+                    Text("Подробнее", color = Color.White)
                 }
-                Text(
-                    "С обычной страницы берутся открытые сведения и прямые видеоссылки, " +
-                        "если они опубликованы. Закрытые плееры не обходятся.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
-        },
-        confirmButton = {
-            Button(onClick = {
-                try { onAdd(link.trim()) }
-                catch (errorFromInput: Exception) {
-                    error = errorFromInput.message ?: "Неверный адрес"
-                }
-            }, enabled = link.isNotBlank()) { Text("Добавить") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
         }
-    )
+    }
+}
+
+@Composable
+private fun CinemaPosterRail(
+    name: String,
+    films: List<CinemaTitle>,
+    onClick: (CinemaTitle) -> Unit,
+    onMore: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(name, color = Color.White, fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f))
+            TextButton(onClick = onMore) { Text("Все", color = CinemaPurple) }
+        }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+            items(films, key = { it.key }) { film ->
+                Column(Modifier.width(126.dp).clickable { onClick(film) }) {
+                    CinemaPoster(film.poster, Modifier.fillMaxWidth().height(165.dp))
+                    Spacer(Modifier.height(6.dp))
+                    Text(film.title, maxLines = 2, minLines = 2,
+                        overflow = TextOverflow.Ellipsis, color = Color.White,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CinemaBrowseRow(
+    film: CinemaTitle,
+    favorite: Boolean,
+    onClick: () -> Unit,
+    onFavorite: () -> Unit
+) {
+    Surface(
+        color = CinemaTile,
+        shape = RoundedCornerShape(17.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            CinemaPoster(film.poster, Modifier.width(89.dp).height(117.dp))
+            Spacer(Modifier.width(11.dp))
+            Column(Modifier.weight(1f)) {
+                Text(film.title, color = Color.White,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 3, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(5.dp))
+                Text(film.genre, color = CinemaPurple,
+                    style = MaterialTheme.typography.labelSmall)
+                Text(film.description, color = CinemaTextMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 3, overflow = TextOverflow.Ellipsis)
+            }
+            IconButton(onClick = onFavorite) {
+                Icon(if (favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    "Избранное", tint = CinemaPurple)
+            }
+        }
+    }
 }
