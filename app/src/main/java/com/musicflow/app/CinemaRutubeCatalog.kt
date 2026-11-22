@@ -42,7 +42,7 @@ internal object CinemaRutubeCatalog {
             uri.path.orEmpty().startsWith("/api/") && url.length <= 2048
     }
 
-    private fun get(url: String): String {
+    internal fun get(url: String): String {
         require(permittedApi(url)) { "Допустим только публичный API RUTUBE." }
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 7_000
