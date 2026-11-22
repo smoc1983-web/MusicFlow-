@@ -110,10 +110,15 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             var themeStyle by remember {
-                mutableStateOf(MusicFlowStyle.fromSaved(
-                    getSharedPreferences("musicflow", MODE_PRIVATE)
-                        .getString("ui_theme", MusicFlowStyle.AB_ICY_NIGHT.name)
-                ))
+                val preferences = getSharedPreferences("musicflow", MODE_PRIVATE)
+                val oldKey = preferences.getString("ui_theme", null)
+                val selected = MusicFlowStyle.fromSaved(oldKey)
+                // One-time canonical migration. Legacy theme names never leak back
+                // into the new picker and Obsidian is the default for old installs.
+                if (oldKey != selected.name) {
+                    preferences.edit().putString("ui_theme", selected.name).apply()
+                }
+                mutableStateOf(selected)
             }
             val palette = musicFlowPalette(themeStyle)
             // Material3 DropdownMenu/AlertDialog use surfaceContainer, not surface.
@@ -158,7 +163,17 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(colorScheme = scheme) {
                 CompositionLocalProvider(LocalMusicFlowPalette provides palette) {
                     Surface(color = palette.background) {
-                        Box(Modifier.fillMaxSize()) {
+                        Box(
+                            Modifier.fillMaxSize().background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        palette.gradientTop,
+                                        palette.background,
+                                        palette.gradientBottom
+                                    )
+                                )
+                            )
+                        ) {
                         MusicScreen(
                             player = playerState.value,
                             saved = { loadFavorites() },
@@ -1073,7 +1088,7 @@ private fun MusicScreen(
     if (showThemePicker) {
         AlertDialog(
             onDismissRequest = { showThemePicker = false },
-            title = { Text("Оформление MusicFlow") },
+            title = { Text("Liquid Glass · оформление MusicFlow") },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     MusicFlowStyle.entries.forEach { style ->
@@ -1087,11 +1102,14 @@ private fun MusicScreen(
                                 .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(Modifier.size(30.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(choice.background)) {
-                                Box(Modifier.align(Alignment.Center).size(16.dp)
-                                    .clip(RoundedCornerShape(7.dp))
+                            Box(
+                                Modifier.size(34.dp)
+                                    .musicFlowGlass(choice, radius = 11.dp,
+                                        active = style == themeStyle),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Box(Modifier.size(16.dp)
+                                    .clip(RoundedCornerShape(8.dp))
                                     .background(choice.accent))
                             }
                             Spacer(Modifier.width(12.dp))
