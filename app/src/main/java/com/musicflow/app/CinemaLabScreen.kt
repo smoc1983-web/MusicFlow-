@@ -359,6 +359,9 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
         else -> allItems
     }.filter { query.isBlank() || (displayMedia && query.trim().length >= 2) ||
         it.title.contains(query.trim(), ignoreCase = true) }
+    val groupedSeries = CinemaSeriesGrouping.group(categoryTitles)
+    val groupingEnabled = section == "Сериалы" &&
+        selectedShelf == null && query.isBlank()
 
     Column(modifier.fillMaxWidth().background(CinemaDark)) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp, top = 10.dp),
@@ -384,8 +387,23 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                 sourceKey = item.key,
                 streamUrl = url,
                 pageUrl = item.pageUrl,
-                onClose = { playing = null }
+                seriesShow = playerShow,
+                seriesSeason = playerSeason,
+                seriesEpisodes = playerEpisodes,
+                seriesLoading = playerEpisodesBusy,
+                onSeasonSelected = { playerSeason = it },
+                onEpisodeSelected = ::choosePlayerEpisode,
+                onClose = {
+                    playing = null
+                    playerShow = null
+                    playerGroup = null
+                    playerError = null
+                }
             )
+            playerError?.let { message ->
+                Text(message, color = Color(0xFFFFB4B4),
+                    modifier = Modifier.padding(horizontal = 15.dp))
+            }
         }
         OutlinedTextField(
             value = query,
@@ -477,7 +495,7 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                 val hero = featured?.let { shelfCache[it.url]?.films?.firstOrNull() }
                 if (hero != null) {
                     item(key = "cinema-hero") {
-                        CinemaHeroCard(hero, onClick = { details = hero })
+                        CinemaHeroCard(hero, onClick = { openFilm(hero) })
                     }
                 }
                 shelves.filter { shelfCache[it.url]?.films?.isNotEmpty() == true }
@@ -485,7 +503,7 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                         item(key = "shelf-" + shelf.url) {
                             CinemaPosterRail(shelf.title,
                                 shelfCache[shelf.url]?.films.orEmpty().take(20),
-                                onClick = { details = it },
+                                onClick = { openFilm(it) },
                                 onMore = {
                                     selectedShelf = shelf
                                     section = "Жанры"
@@ -512,10 +530,33 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                         )
                     }
                 }
-                items(categoryTitles, key = { it.key }) { film ->
-                    CinemaBrowseRow(film, film.key in favorites,
-                        onClick = { details = film },
-                        onFavorite = { toggleFavorite(film) })
+                if (groupingEnabled) {
+                    item(key = "series-group-hint") {
+                        Text(
+                            "Сериалы сгруппированы по названию. Выберите сериал, " +
+                                "чтобы открыть сезоны и серии.",
+                            color = CinemaTextMuted,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    items(groupedSeries, key = { group ->
+                        group.representative.key
+                    }) { group ->
+                        CinemaSeriesGroupRow(
+                            group = group,
+                            onClick = {
+                                activeSeriesGroup = group
+                                details = group.representative
+                                season = group.seasons.firstOrNull() ?: 1
+                            }
+                        )
+                    }
+                } else {
+                    items(categoryTitles, key = { it.key }) { film ->
+                        CinemaBrowseRow(film, film.key in favorites,
+                            onClick = { openFilm(film) },
+                            onFavorite = { toggleFavorite(film) })
+                    }
                 }
                 if (activeSelected?.let { shelfCache[it.url]?.next != null } == true) {
                     item(key = "load-more") {
@@ -586,7 +627,15 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                             Text("Смотреть")
                         }
                     }
-                    tvShow?.let { show ->
+                    val chosenGroup = activeSeriesGroup
+                    val selectedShow = tvShow ?: chosenGroup?.let { group ->
+                        CinemaTvShow(
+                            id = 0, name = group.title, description = "",
+                            seasons = group.seasons.maxOrNull() ?: 1,
+                            cover = group.representative.poster
+                        )
+                    }
+                    selectedShow?.let { show ->
                         HorizontalDivider()
                         Text("Сериал: " + show.name, fontWeight = FontWeight.Bold,
                             color = Color.White)
@@ -602,11 +651,14 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                             }
                         }
                         if (episodesBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                        if (episodes.isEmpty() && !episodesBusy) {
+                        val groupedEpisodes = if (tvShow == null) {
+                            chosenGroup?.episodesIn(season).orEmpty()
+                        } else episodes
+                        if (groupedEpisodes.isEmpty() && !episodesBusy) {
                             Text("Для выбранного сезона серии пока недоступны.",
                                 color = CinemaTextMuted)
                         }
-                        episodes.forEach { episode ->
+                        groupedEpisodes.forEach { episode ->
                             Surface(
                                 color = Color(0xFF30374A),
                                 modifier = Modifier.fillMaxWidth().clickable {
