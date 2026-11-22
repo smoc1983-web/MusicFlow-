@@ -8,10 +8,10 @@ import org.junit.Test
 class CinemaNativeSourcesTest {
     @Test fun userPageIsInitialSourceAndIsNotMisclassifiedAsStream() {
         assertEquals(
-            "https://ff.sanfilm2.link/",
+            CinemaRutubeSource.FEED_URL,
             CinemaNativeSources.FIRST_PAGE
         )
-        assertEquals(CinemaSourceFormat.WEB_PAGE,
+        assertEquals(CinemaSourceFormat.RUTUBE_FEED,
             CinemaNativeSources.chooseFormat(CinemaNativeSources.FIRST_PAGE))
         assertEquals(CinemaSourceFormat.DIRECT_MEDIA,
             CinemaNativeSources.chooseFormat("https://example.org/film.mp4"))
@@ -71,11 +71,11 @@ class CinemaNativeSourcesTest {
     }
 
     @Test fun homepageLinksBecomeMovieCardsInsteadOfOneFakePlayableFilm() {
-        val base = "https://ff.sanfilm2.link/"
+        val base = "https://movies.example.org/"
         val home = """
           <html><head><title>Кино онлайн</title></head><body>
-          <div class="shortstory"><a href="/69359-zavodchica-2026.html">
-          <img src="/uploads/zavodchica.jpg" alt="Заводчица (2026)" /></a></div>
+          <div class="shortstory"><a href="/12345-demo-film-2026.html">
+          <img src="/uploads/zavodchica.jpg" alt="Демо фильм (2026)" /></a></div>
           <a href="/contact.html">Контакты</a>
           <a href="https://other.example.org/12345-movie.html">Посторонний сайт</a>
           <a href="javascript:alert('unsafe')">Небезопасная ссылка</a>
@@ -83,10 +83,10 @@ class CinemaNativeSourcesTest {
         """.trimIndent()
         val entries = CinemaNativeSources.parseSiteIndex(home, base, "starter-site")
         assertEquals(1, entries.size)
-        assertEquals("Заводчица (2026)", entries[0].title)
-        assertEquals("https://ff.sanfilm2.link/uploads/zavodchica.jpg",
+        assertEquals("Демо фильм (2026)", entries[0].title)
+        assertEquals("https://movies.example.org/uploads/zavodchica.jpg",
             entries[0].poster)
-        assertEquals("https://ff.sanfilm2.link/69359-zavodchica-2026.html",
+        assertEquals("https://movies.example.org/12345-demo-film-2026.html",
             entries[0].pageUrl)
         assertFalse(entries[0].hasPlayback)
         assertEquals("starter-site", entries[0].sourceId)
