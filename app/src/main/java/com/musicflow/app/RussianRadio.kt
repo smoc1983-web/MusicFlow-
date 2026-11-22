@@ -193,6 +193,12 @@ internal fun RussianRadioScreen(
             verticalArrangement = Arrangement.spacedBy(7.dp)
         ) {
             items(shown, key = { it.uuid }) { station ->
+                // Metadata-only lookup; no Radio Browser stations or streams added.
+                val logo by produceState<String?>(station.favicon, station.uuid) {
+                    value = RadioArtworkCatalog.resolve(context, station)
+                }
+                val decorated = if (logo != null) station.copy(favicon = logo)
+                    else station
                 val active = station.mediaId == activeId
                 Surface(
                     color = palette.surface,
@@ -201,12 +207,12 @@ internal fun RussianRadioScreen(
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth()
-                            .clickable { if (active && playing) onStop() else onPlay(station) }
+                            .clickable { if (active && playing) onStop() else onPlay(decorated) }
                             .padding(9.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (station.favicon != null) {
-                            Image(rememberAsyncImagePainter(station.favicon),
+                        if (logo != null) {
+                            Image(rememberAsyncImagePainter(logo),
                                 contentDescription = null,
                                 contentScale = ContentScale.Fit,
                                 modifier = Modifier.size(42.dp).clip(RoundedCornerShape(8.dp)))
@@ -229,7 +235,7 @@ internal fun RussianRadioScreen(
                         val saved = favorites.any { it.uuid == station.uuid }
                         IconButton(onClick = {
                             favorites = if (saved) favorites.filterNot { it.uuid == station.uuid }
-                                else (listOf(station) + favorites).distinctBy { it.uuid }.take(100)
+                                else (listOf(decorated) + favorites).distinctBy { it.uuid }.take(100)
                             RussianRadioDirectory.saveFavorites(context, favorites)
                         }) {
                             Icon(if (saved) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
