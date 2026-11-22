@@ -80,7 +80,7 @@ internal object CinemaRutubeSource {
                     !it.contains("подробнее", true) &&
                     !it.contains("подписаться", true) &&
                     !it.matches(Regex("\\d+"))
-            } ?: "Видео RUTUBE · " + id.take(8)
+            } ?: "Видео · " + id.take(8)
 
             val category = when {
                 title.contains("сезон", true) || title.contains("серия", true) ->
@@ -95,13 +95,13 @@ internal object CinemaRutubeSource {
                 kind = if (category.startsWith("Сериал")) CinemaKind.SERIES
                     else CinemaKind.MOVIE,
                 year = Regex("(?:19|20)\\d{2}").find(title)?.value?.toIntOrNull(),
-                description = "Видео из раздела «Кино и сериалы» RUTUBE. " +
+                description = "Видео из раздела «Кино и сериалы». " +
                     "При выборе проверяется публичный HLS-поток.",
                 poster = poster,
                 genre = category,
                 streamUrl = null,
                 episodes = emptyList(),
-                attribution = "RUTUBE",
+                attribution = "Каталог",
                 pageUrl = "https://rutube.ru/video/$id/"
             ))
         }
@@ -142,11 +142,11 @@ internal object CinemaRutubeSource {
                 .takeIf(CinemaLabSources::isSafeHttps) ?: original.poster,
             streamUrl = if (playable) rawStream else null,
             playbackDiagnostic = when {
-                restricted -> "RUTUBE ограничивает доступ к этому видео. " +
+                restricted -> "Видеосервис ограничивает доступ к этому видео. " +
                     "Платный, закрытый или запрещённый контент не открывается."
-                playable -> "RUTUBE предоставил публичный HLS-поток через /api/play/options/. " +
+                playable -> "Для видео доступен HLS-поток. " +
                     "Проверка фактического воспроизведения выполняется Media3."
-                else -> "В публичном API RUTUBE нет разрешённого HLS-потока для этого видео. " +
+                else -> "Для этого видео нет доступного HLS-потока. " +
                     "Просмотр в собственном Media3-плеере недоступен."
             }
         )
