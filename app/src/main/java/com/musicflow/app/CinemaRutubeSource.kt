@@ -160,7 +160,13 @@ internal object CinemaRutubeSource {
                 .ifBlank { original.description }.let { Jsoup.parse(it).text() },
             poster = data.optString("thumbnail_url").takeIf(CinemaLabSources::isSafeHttps)
                 ?: original.poster,
-            year = original.year
+            year = original.year,
+            kind = if (data.optBoolean("is_serial", false) ||
+                data.optInt("season", 0) > 0 ||
+                data.optInt("episode", 0) > 0) CinemaKind.SERIES else original.kind,
+            seasonNumber = data.optInt("season", 0).takeIf { it > 0 },
+            episodeNumber = data.optInt("episode", 0).takeIf { it > 0 },
+            tvShowId = data.optInt("tv_show_id", 0).takeIf { it > 0 }
         )
     }
 }
