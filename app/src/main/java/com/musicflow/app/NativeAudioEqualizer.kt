@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
+import android.os.Handler
+import android.os.Looper
+import androidx.media3.common.DeviceInfo
 import androidx.media3.common.Player
 import kotlin.math.ln
 import kotlin.math.roundToInt
@@ -90,6 +93,9 @@ internal class NativeAudioEqualizer(context: Context) :
     private var audioSessionId = -1
     private var equalizer: Equalizer? = null
     private var enhancer: LoudnessEnhancer? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val scheduledApply = Runnable { refresh() }
+    private var lastApplied: AudioEqState? = null
 
     init {
         preferences.registerOnSharedPreferenceChangeListener(this)
@@ -100,13 +106,26 @@ internal class NativeAudioEqualizer(context: Context) :
         if (this.audioSessionId == audioSessionId) return
         releaseEffect()
         this.audioSessionId = audioSessionId
-        refresh()
+        mainHandler.removeCallbacks(scheduledApply)
+        // AudioTrack can be recreating while Bluetooth changes output route.
+        mainHandler.postDelayed(scheduledApply, 120L)
+    }
+
+    override fun onDeviceInfoChanged(deviceInfo: DeviceInfo) {
+        // The session ID may remain unchanged after a Bluetooth handoff, but
+        // the native effect binding can become stale on the new output device.
+        releaseEffect()
+        mainHandler.removeCallbacks(scheduledApply)
+        mainHandler.postDelayed(scheduledApply, 250L)
     }
 
     override fun onSharedPreferenceChanged(prefs: SharedPreferences?, key: String?) {
         if (key == "enabled" || key == "preset" || key?.startsWith("gain_") == true ||
             key == "boost_enabled" || key == "boost_db") {
-            refresh()
+            // Do not reconfigure the underlying native AudioTrack for every
+            // preference changed while dragging a slider. Apply the last value.
+            mainHandler.removeCallbacks(scheduledApply)
+            mainHandler.postDelayed(scheduledApply, 160L)
         }
     }
 
@@ -116,6 +135,7 @@ internal class NativeAudioEqualizer(context: Context) :
             releaseEffect()
             return
         }
+        if (state == lastApplied) return
         if (!state.enabled) {
             runCatching { equalizer?.release() }
             equalizer = null
@@ -130,9 +150,11 @@ internal class NativeAudioEqualizer(context: Context) :
                     val target = AudioEqSettings.gainAtFrequency(state.gainsDb, hz)
                     val millibels = (target * 100f).roundToInt()
                         .coerceIn(range[0].toInt(), range[1].toInt())
-                    effect.setBandLevel(band, millibels.toShort())
+                    if (effect.getBandLevel(band).toInt() != millibels) {
+                        effect.setBandLevel(band, millibels.toShort())
+                    }
                 }
-                effect.enabled = true
+                if (!effect.enabled) effect.enabled = true
             } catch (failure: Exception) {
                 runCatching { equalizer?.release() }
                 equalizer = null
@@ -149,21 +171,24 @@ internal class NativeAudioEqualizer(context: Context) :
             try {
                 val effect = enhancer ?: LoudnessEnhancer(audioSessionId).also { enhancer = it }
                 effect.setTargetGain((state.boostDb.coerceIn(0f, 3f) * 100).roundToInt())
-                effect.enabled = true
+                if (!effect.enabled) effect.enabled = true
             } catch (failure: Exception) {
                 runCatching { enhancer?.release() }
                 enhancer = null
                 AppDiagnostics.failure("AudioEQ", "Loudness enhancer unavailable on device", failure)
             }
         }
+        lastApplied = state
     }
 
     fun release() {
+        mainHandler.removeCallbacks(scheduledApply)
         preferences.unregisterOnSharedPreferenceChangeListener(this)
         releaseEffect()
     }
 
     private fun releaseEffect() {
+        lastApplied = null
         val old = equalizer
         equalizer = null
         runCatching { old?.enabled = false }
