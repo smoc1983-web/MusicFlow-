@@ -43,7 +43,7 @@ internal object CinemaRutubeCatalog {
     }
 
     internal fun get(url: String): String {
-        require(permittedApi(url)) { "Допустим только публичный API RUTUBE." }
+        require(permittedApi(url)) { "Для каталога нужен поддерживаемый публичный API." }
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 7_000
         conn.readTimeout = 13_000
@@ -120,8 +120,8 @@ internal object CinemaRutubeCatalog {
                     .containsMatchIn(title)
             val originalDesc = item.optString("description")
             val shortDescription = Jsoup.parse(originalDesc).text().take(480)
-            val cover = safeImage(item.optString("picture_url"))
-                ?: safeImage(item.optString("thumbnail_url"))
+            val cover = safeImage(item.optString("thumbnail_url"))
+                ?: safeImage(item.optString("picture_url"))
             films.add(CinemaTitle(
                 id = id.lowercase(),
                 sourceId = sourceId,
@@ -129,13 +129,13 @@ internal object CinemaRutubeCatalog {
                 kind = if (isSeries) CinemaKind.SERIES else CinemaKind.MOVIE,
                 year = Regex("(?:19|20)\\d{2}").find(title)?.value?.toIntOrNull(),
                 description = shortDescription.ifBlank {
-                    "Фильм или сериал из каталога RUTUBE"
+                    "Описание фильма пока не загружено"
                 },
                 poster = cover,
                 genre = genre,
                 streamUrl = null,
                 episodes = emptyList(),
-                attribution = "RUTUBE",
+                attribution = "Каталог",
                 pageUrl = "https://rutube.ru/video/$id/"
             ))
         }
