@@ -33,10 +33,10 @@ jobs:
           set -euo pipefail
           source .github/release-assets/v0744/checksums.env
           mkdir -p "$RUNNER_TEMP/unsigned" out
-          gh run download 45035289623 -R "$GITHUB_REPOSITORY"             -n MusicFlow-0.7.44-aligned-unsigned-for-original-signature             --dir "$RUNNER_TEMP/unsigned"
+          gh run download 45035544758 -R "$GITHUB_REPOSITORY"             -n MusicFlow-0.7.44-aligned-unsigned-for-original-signature             --dir "$RUNNER_TEMP/unsigned"
           UNSIGNED="$RUNNER_TEMP/unsigned/MusicFlow_0.7.44-aligned-unsigned.apk"
           echo "$UNSIGNED_SHA  $UNSIGNED" | sha256sum -c -
-          ACTUAL_SOURCE=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/45035289623" --jq '.head_sha')
+          ACTUAL_SOURCE=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/45035544758" --jq '.head_sha')
           test "$ACTUAL_SOURCE" = "$SOURCE_SHA" || {
             echo "::error::The unsigned APK source revision changed."
             exit 1
