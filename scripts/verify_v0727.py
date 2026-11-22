@@ -7,7 +7,7 @@ about = (root / "MusicFlowAboutDialog.kt").read_text(encoding="utf-8")
 gradle = Path("app/build.gradle.kts").read_text(encoding="utf-8")
 workflow = Path(".github/workflows/publish-v0727-inapp.yml").read_text(encoding="utf-8")
 assert 'applicationId = "com.musicflow.preview"' in gradle
-assert 'versionCode = 738' in gradle and 'versionName = "0.7.38"' in gradle
+assert 'versionCode = 739' in gradle and 'versionName = "0.7.39"' in gradle
 assert 'MUSICFLOW_SIGNING_KEYSTORE' in gradle
 assert 'getByName("release")' in gradle
 assert 'private const val OFFICIAL_PACKAGE = "com.musicflow.preview"' in updates

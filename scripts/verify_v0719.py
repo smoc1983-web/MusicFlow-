@@ -36,5 +36,5 @@ assert "android:roundIcon=\"@mipmap/ic_launcher_graphite_v19\"" in manifest
 assert '@drawable/ic_musicflow_graphite' in launcher
 assert (root / "res/drawable-nodpi/ic_musicflow_graphite.webp").is_file()
 assert 'applicationId = "com.musicflow.preview"' in gradle
-assert 'versionName = "0.7.38"' in gradle
+assert 'versionName = "0.7.39"' in gradle
 print("MusicFlow v0.7.19 banks, updates and restored graphite icon checks PASS")
