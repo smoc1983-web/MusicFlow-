@@ -51,6 +51,25 @@ internal object CinemaNativeSources {
             url.contains("bwa.ad/rc", true) || url.contains("bwa.to/rc", true) ||
             url.contains("/plugins/", true) && !url.endsWith(".json", true)
 
+    /** A legacy JavaScript URL is stored only as a reference, never executed. */
+    fun isValidLampaReference(value: String): Boolean {
+        if (value.length !in 8..2048 || value.any { it.isWhitespace() }) return false
+        val url = runCatching { java.net.URI(value) }.getOrNull() ?: return false
+        val host = url.host?.lowercase()?.trimEnd('.') ?: return false
+        if (url.scheme !in listOf("http", "https") || url.userInfo != null ||
+            url.fragment != null || (url.port != -1 && url.port !in listOf(80, 443))) return false
+        if (!host.contains('.') || host == "localhost" || host.endsWith(".local") ||
+            host.endsWith(".internal") || host.contains(':') ||
+            host.all { it.isDigit() || it == '.' } ||
+            host.startsWith("127.") || host.startsWith("10.") ||
+            host.startsWith("192.168.") || host.startsWith("169.254.")) return false
+        if (host.startsWith("172.")) {
+            val second = host.split('.').getOrNull(1)?.toIntOrNull()
+            if (second != null && second in 16..31) return false
+        }
+        return true
+    }
+
     fun sources(context: Context): List<CinemaNativeSource> = runCatching {
         val arr = JSONArray(prefs(context).getString("registered", "[]"))
         buildList {
@@ -61,7 +80,7 @@ internal object CinemaNativeSources {
                 }.getOrNull() ?: continue
                 val url = o.optString("url")
                 if (kind == CinemaSourceFormat.LAMPA_REFERENCE) {
-                    if (!CinemaLampaBridge.allowedPluginUrl(url)) continue
+                    if (!isValidLampaReference(url)) continue
                 } else if (!CinemaLabSources.isSafeHttps(url)) continue
                 add(CinemaNativeSource(
                     o.optString("id"),
@@ -124,7 +143,7 @@ internal object CinemaNativeSources {
             val title = name.trim().take(64)
             require(url.isNotBlank()) { "Вставьте URL источника." }
             if (isLampaPluginUrl(url)) {
-                require(CinemaLampaBridge.allowedPluginUrl(url)) {
+                require(isValidLampaReference(url)) {
                     "Недопустимый адрес JS-плагина."
                 }
                 return@withContext CinemaNativeSource(
