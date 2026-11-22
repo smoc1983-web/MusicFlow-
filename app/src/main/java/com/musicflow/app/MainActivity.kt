@@ -168,7 +168,8 @@ class MainActivity : ComponentActivity() {
                                     .putString("ui_theme", selected.name).apply()
                             }
                         )
-                        // No automatic official APK updates inside a separate Cinema TEST package.
+                        // Update manager stays off for this differently signed test package.
+                        if (packageName == "com.musicflow.preview") MusicFlowAutoUpdate()
                         }
                     }
                 }
