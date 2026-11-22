@@ -109,8 +109,10 @@ internal object CinemaEpisodeAudit {
         } else emptyList()
         val expected = if (listed.isNotEmpty()) listed else inferred
         val foundNumbers = matches.mapNotNull { it.episodeNumber }.toSet()
+        val today = java.time.LocalDate.now().toString()
         return CinemaSeasonCoverage(expected, matches,
-            expected.map { it.number }.filterNot { it in foundNumbers },
+            expected.filter { it.airDate == null || it.airDate <= today }
+                .map { it.number }.filterNot { it in foundNumbers },
             listed.isNotEmpty())
     }
 
