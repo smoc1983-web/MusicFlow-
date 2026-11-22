@@ -44,6 +44,15 @@ internal object TvHubLibrary {
     fun channelKey(sourceId: String, channel: TvChannel): String =
         sourceId + "|" + channel.id
 
+    /** TV favorites are scoped to the currently loaded playlist, not another source. */
+    fun favoritesForSource(
+        sourceId: String,
+        channels: List<TvChannel>,
+        favoriteKeys: Set<String>
+    ): List<TvChannel> = channels.filter {
+        channelKey(sourceId, it) in favoriteKeys
+    }
+
     fun channelMatchesGenre(channel: TvChannel, genre: String): Boolean =
         genre == "Все" || (genre == "Музыка" && channel.isMusic) ||
             channel.group.contains(genre, ignoreCase = true) ||
