@@ -41,7 +41,7 @@ jobs:
           assert 'DefaultHttpDataSource.Factory()' in service
           assert 'setReadTimeoutMs(TvPlaybackTuning.READ_TIMEOUT_MS)' in service
           assert 'setConnectTimeoutMs(TvPlaybackTuning.CONNECT_TIMEOUT_MS)' in service
-          assert 'setBufferDurationsMsForStreaming(' in service
+          assert 'setBufferDurationsMs(' in service
           assert 'setLoadControl(streamingLoadControl)' in service
           assert '65_000L' in retry and '30_000L' in retry
           assert 'MAX_RETRIES = 2' in retry
