@@ -85,6 +85,26 @@ internal object CinemaRutubeSeries {
             }.getOrNull()
         }
 
+    /** Official RUTUBE source API supports exact season+episode lookup. */
+    fun episodeUrl(showId: Int, season: Int, number: Int): String {
+        require(showId > 0 && season in 1..30 && number in 1..300)
+        return "https://rutube.ru/api/metainfo/tv/" + showId +
+            "/video?season=" + season + "&episode=" + number
+    }
+
+    suspend fun loadExactEpisode(
+        showId: Int, season: Int, number: Int, sourceId: String
+    ): List<CinemaTitle> = withContext(Dispatchers.IO) {
+        val data = CinemaRutubeCatalog.get(episodeUrl(showId, season, number))
+        parseEpisodes(data, sourceId).filter { item ->
+            (item.seasonNumber == null || item.seasonNumber == season) &&
+                (item.episodeNumber == null || item.episodeNumber == number) &&
+                (item.tvShowId == null || item.tvShowId == showId)
+        }.map {
+            it.copy(seasonNumber = season, episodeNumber = number, tvShowId = showId)
+        }
+    }
+
     suspend fun loadEpisodes(
         showId: Int, season: Int, sourceId: String
     ): List<CinemaTitle> = withContext(Dispatchers.IO) {
