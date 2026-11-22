@@ -6,56 +6,67 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CinemaNativeSourcesTest {
-    @Test fun m3uPlaylistLoadsNativeMedia3Videos() {
-        val m3u = """
-            #EXTM3U
-            #EXTINF:-1 group-title="Фильмы" tvg-logo="https://example.org/a.jpg",Тестовый фильм
-            https://example.org/video.mp4
-            #EXTINF:-1 group-title="Сериалы",Серия № 1
-            https://example.org/series/one.m3u8
-            #EXTINF:-1,Плохой адрес
-            http://localhost/private.mp4
+    @Test fun userPageIsInitialSourceAndIsNotMisclassifiedAsStream() {
+        assertEquals(
+            "https://ff.sanfilm2.link/69359-zavodchica-2026.html",
+            CinemaNativeSources.FIRST_PAGE
+        )
+        assertEquals(CinemaSourceFormat.WEB_PAGE,
+            CinemaNativeSources.chooseFormat(CinemaNativeSources.FIRST_PAGE))
+        assertEquals(CinemaSourceFormat.DIRECT_MEDIA,
+            CinemaNativeSources.chooseFormat("https://example.org/film.mp4"))
+        assertEquals(CinemaSourceFormat.DIRECT_MEDIA,
+            CinemaNativeSources.chooseFormat("https://example.org/a.m3u8?key=abc"))
+        assertEquals(CinemaSourceFormat.M3U_PLAYLIST,
+            CinemaNativeSources.chooseFormat("https://example.org/playlist.m3u"))
+        assertEquals(CinemaSourceFormat.CINEMA_JSON,
+            CinemaNativeSources.chooseFormat("https://example.org/catalog.json"))
+    }
+
+    @Test fun htmlOpenGraphVideoMetadataIsParsedButIframeIsNotTreatedAsMedia() {
+        val url = "https://films.example.org/film-2026.html"
+        val html = """
+            <html><head><title>Fallback title</title>
+            <meta property="og:title" content="Фильм 2026" />
+            <meta property="og:image" content="/cover.jpg" />
+            <meta property="og:description" content="Краткое описание" />
+            </head><body><video controls>
+            <source src="/stream/film.mp4" type="video/mp4" />
+            </video></body></html>
         """.trimIndent()
-        val titles = CinemaNativeSources.parseM3u(m3u, "source-1")
-        assertEquals(2, titles.size)
-        assertEquals("Тестовый фильм", titles[0].title)
-        assertEquals("Фильмы", titles[0].genre)
-        assertEquals("https://example.org/a.jpg", titles[0].poster)
-        assertEquals("source-1", titles[1].sourceId)
-        assertEquals("https://example.org/series/one.m3u8", titles[1].streamUrl)
-        assertTrue(titles.all { it.hasPlayback })
+        val title = CinemaNativeSources.parseHtml(html, url, "id-1", "Мой фильм")
+        assertEquals("Фильм 2026", title.title)
+        assertEquals("https://films.example.org/cover.jpg", title.poster)
+        assertEquals("https://films.example.org/stream/film.mp4", title.streamUrl)
+        assertTrue(title.hasPlayback)
+        val iframe = """<html><title>Другое кино</title>
+            <iframe src="https://player.example.org/embed"></iframe></html>"""
+        val unavailable = CinemaNativeSources.parseHtml(iframe, url, "id-2", "Другое")
+        assertFalse(unavailable.hasPlayback)
     }
 
-    @Test fun directMediaFormatsAndExternalHostsAreStrict() {
-        assertTrue(CinemaNativeSources.isVideoUrl("https://example.org/video.mp4"))
-        assertTrue(CinemaNativeSources.isVideoUrl("https://example.org/live.m3u8?token=123"))
-        assertTrue(CinemaNativeSources.isVideoUrl("https://example.org/manifest.mpd"))
-        assertFalse(CinemaNativeSources.isVideoUrl("http://example.org/video.mp4"))
-        assertFalse(CinemaNativeSources.isVideoUrl("https://127.0.0.1/live.m3u8"))
-        assertFalse(CinemaNativeSources.isVideoUrl("https://example.org/catalog.json"))
+    @Test fun sourceUrlValidationDoesNotAcceptScriptsOrInternalHosts() {
+        assertTrue(CinemaNativeSources.register("", CinemaNativeSources.FIRST_PAGE).name.isNotBlank())
+        assertTrue(runCatching {
+            CinemaNativeSources.register("", "http://example.org/movie.html")
+        }.isFailure)
+        assertTrue(runCatching {
+            CinemaNativeSources.register("", "https://example.org/plugin.js")
+        }.isFailure)
+        assertTrue(runCatching {
+            CinemaNativeSources.register("", "https://192.168.1.2/film.mp4")
+        }.isFailure)
     }
 
-    @Test fun lampaPluginReferencesAreRecognizedButNotExecuted() {
-        assertTrue(CinemaNativeSources.isLampaPluginUrl("http://bwa.ad/rc"))
-        assertTrue(CinemaNativeSources.isLampaPluginUrl("https://bwa.ad/rc"))
-        assertTrue(CinemaNativeSources.isLampaPluginUrl("https://example.org/online.js"))
-        assertTrue(CinemaNativeSources.isValidLampaReference("http://bwa.ad/rc"))
-        assertFalse(CinemaNativeSources.isValidLampaReference("http://localhost/rc"))
-        assertFalse(CinemaNativeSources.isValidLampaReference(
-            "https://user:password@example.org/online.js"))
-        assertFalse(CinemaNativeSources.isValidLampaReference("javascript:alert(1)"))
-        assertFalse(CinemaSourceFormat.LAMPA_REFERENCE.let {
-            CinemaNativeSource("id", "BwaRC", "https://bwa.ad/rc", it).playable
-        })
-    }
-
-    @Test fun emptyAndUnsafeM3uEntriesDoNotBecomeFilms() {
-        val playlist = """
-            #EXTM3U
-            #EXTINF:-1,Unsafe private URL
-            http://192.168.1.5/movie.mp4
-            #EXTINF:-1,Missing URL
-        """.trimIndent()
-        assertTrue(CinemaNativeSources.parseM3u(playlist, "s").isEmpty())
+    @Test fun m3uVideosStillUseNativeMedia3Urls() {
+        val source = """#EXTM3U
+            #EXTINF:-1 group-title="Фильмы",Видео
+            https://example.org/films/test.mp4
+            #EXTINF:-1,Недопустимая ссылка
+            http://localhost/test.mp4""".trimIndent()
+        val items = CinemaNativeSources.parseM3u(source, "my-source")
+        assertEquals(1, items.size)
+        assertEquals("Видео", items[0].title)
+        assertEquals("https://example.org/films/test.mp4", items[0].streamUrl)
     }
 }
