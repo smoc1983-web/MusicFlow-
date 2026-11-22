@@ -256,9 +256,12 @@ internal object CinemaSeriesSearch {
         val show = if (videoId == null) null
             else CinemaRutubeSeries.loadShowFor(videoId)
         // Reference metadata comes before any missing-episode search.
-        val guide = CinemaEpisodeAudit.lookup(
-            show?.name ?: family(episode.title), episode.title
-        )
+        val guide = if (show != null || looksLikeEpisode(episode)) {
+            CinemaEpisodeAudit.lookup(
+                show?.originalName ?: show?.name ?: family(episode.title),
+                episode.title
+            )
+        } else null
         if (show != null) {
             return CinemaSeriesLookup(
                 show = show, episodes = emptyList(), completeSeasons = guide != null,
