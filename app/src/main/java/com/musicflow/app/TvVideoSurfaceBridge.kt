@@ -33,6 +33,15 @@ internal object TvVideoSurfaceBridge {
     private var full: WeakReference<PlayerView>? = null
     private var mainIsResumed = false
     private var fullscreenRequested = false
+    // A fullscreen Activity may change the parent orientation as it exits.
+    // Ignore that synthetic rotation instead of opening a second Activity.
+    private var suppressRotationLaunch = false
+
+    fun allowRotationLaunch(rotatedToLandscape: Boolean, portrait: Boolean): Boolean {
+        if (portrait) suppressRotationLaunch = false
+        return rotatedToLandscape && !suppressRotationLaunch &&
+            !fullscreenRequested && full?.get() == null
+    }
 
     fun onMainResume() {
         mainIsResumed = true
@@ -64,10 +73,12 @@ internal object TvVideoSurfaceBridge {
         }
     }
 
-    fun requestFullscreen() {
+    fun requestFullscreen(): Boolean {
+        if (fullscreenRequested || full?.get() != null) return false
         fullscreenRequested = true
-        // Detach before launching the second Activity; it uses a new controller.
+        // Detach before starting the fullscreen Activity.
         mini?.get()?.player = null
+        return true
     }
 
     fun cancelFullscreenRequest() {
@@ -101,6 +112,7 @@ internal object TvVideoSurfaceBridge {
         full?.get()?.player = null
         full = null
         fullscreenRequested = false
+        suppressRotationLaunch = true
         restoreMini()
     }
 
