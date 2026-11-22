@@ -8,7 +8,7 @@ import org.junit.Test
 class CinemaNativeSourcesTest {
     @Test fun userPageIsInitialSourceAndIsNotMisclassifiedAsStream() {
         assertEquals(
-            "https://ff.sanfilm2.link/69359-zavodchica-2026.html",
+            "https://ff.sanfilm2.link/",
             CinemaNativeSources.FIRST_PAGE
         )
         assertEquals(CinemaSourceFormat.WEB_PAGE,
@@ -69,4 +69,34 @@ class CinemaNativeSourcesTest {
         assertEquals("Видео", items[0].title)
         assertEquals("https://example.org/films/test.mp4", items[0].streamUrl)
     }
+
+    @Test fun homepageLinksBecomeMovieCardsInsteadOfOneFakePlayableFilm() {
+        val base = "https://ff.sanfilm2.link/"
+        val home = """
+          <html><head><title>Кино онлайн</title></head><body>
+          <div class="shortstory"><a href="/69359-zavodchica-2026.html">
+          <img src="/uploads/zavodchica.jpg" alt="Заводчица (2026)" /></a></div>
+          <a href="/contact.html">Контакты</a>
+          <a href="https://other.example.org/12345-movie.html">Посторонний сайт</a>
+          <a href="javascript:alert('unsafe')">Небезопасная ссылка</a>
+          </body></html>
+        """.trimIndent()
+        val entries = CinemaNativeSources.parseSiteIndex(home, base, "starter-site")
+        assertEquals(1, entries.size)
+        assertEquals("Заводчица (2026)", entries[0].title)
+        assertEquals("https://ff.sanfilm2.link/uploads/zavodchica.jpg",
+            entries[0].poster)
+        assertEquals("https://ff.sanfilm2.link/69359-zavodchica-2026.html",
+            entries[0].pageUrl)
+        assertFalse(entries[0].hasPlayback)
+        assertEquals("starter-site", entries[0].sourceId)
+    }
+
+    @Test fun homepageWithoutMovieCardsStaysEmpty() {
+        val result = CinemaNativeSources.parseSiteIndex(
+            "<html><title>Каталог</title><a href='/login'>Вход</a></html>",
+            CinemaNativeSources.FIRST_PAGE, "starter-site")
+        assertTrue(result.isEmpty())
+    }
+
 }
