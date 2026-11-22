@@ -53,7 +53,11 @@ jobs:
           assert "musicFlowGlass(choice, radius = 11.dp" in main
           assert "Brush.verticalGradient" in glass
           assert "musicFlowPalette(MusicFlowStyle.DEFAULT)" in appearance
-          print("Identity, existing features and five-theme Liquid Glass migration checked")
+          assert "val oldKey = preferences.getString(\"ui_theme\", null)" in main
+          assert "if (oldKey != selected.name)" in main
+          assert "alpha = if (palette.isLight) 0.58f else 0.64f" in main
+          assert appearance.count("MusicFlowStyle.") >= 5
+          print("Identity, migrated Obsidian default and five Liquid Glass themes checked")
           PY
       # Re-run after Kotlin latestRelease smart cast and additional PCM processor regression.
       - name: Regression tests and production release compilation
