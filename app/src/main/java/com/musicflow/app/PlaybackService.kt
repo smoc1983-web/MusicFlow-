@@ -146,6 +146,8 @@ class PlaybackService : MediaSessionService() {
             }
         }
         player.addListener(MusicPlaybackRecovery(player, recoveryScope))
+        // Live TV needs its own bounded recovery; audio/music rules are unrelated.
+        player.addListener(TvStreamRecovery(player, recoveryScope))
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 val kind = player.currentMediaItem?.mediaMetadata?.extras?.getString(MUSIC_SOURCE) ?: "other"
