@@ -145,7 +145,7 @@ class PlaybackService : MediaSessionService() {
         eqPreferences = eqPrefs
         eqPreferenceListener = eqListener
         val streamingLoadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMsForStreaming(
+            .setBufferDurationsMs(
                 TvPlaybackTuning.MIN_BUFFER_MS,
                 TvPlaybackTuning.MAX_BUFFER_MS,
                 TvPlaybackTuning.START_BUFFER_MS,
