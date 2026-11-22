@@ -86,6 +86,7 @@ internal fun FullPlayerDialog(
     val palette = LocalMusicFlowPalette.current
     val resolvedArtwork by rememberCoverArt(artist, title, artwork)
     val albumHint = player.currentMediaItem?.mediaMetadata?.albumTitle?.toString()
+    val isRadio = player.currentMediaItem?.mediaId?.startsWith("radio:") == true
     val scope = rememberCoroutineScope()
     var page by remember { mutableStateOf(PlayerPage.NOW_PLAYING) }
     var immersive by remember { mutableStateOf(false) }
@@ -101,6 +102,12 @@ internal fun FullPlayerDialog(
     var sliderDragging by remember { mutableStateOf(false) }
     var seekPending by remember { mutableStateOf(false) }
     var sliderPositionMs by remember { mutableLongStateOf(positionMs.coerceAtLeast(0L)) }
+    LaunchedEffect(isRadio) {
+        if (isRadio) {
+            page = PlayerPage.NOW_PLAYING
+            immersive = false
+        }
+    }
 
     LaunchedEffect(player) {
         while (true) {
@@ -339,6 +346,7 @@ internal fun FullPlayerDialog(
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                             color = palette.foreground
                         )
+                        if (!isRadio) {
                         IconButton(modifier = Modifier.size(38.dp),
                             onClick = { page = if (page == PlayerPage.ALBUM)
                                 PlayerPage.NOW_PLAYING else PlayerPage.ALBUM }) {
@@ -349,7 +357,7 @@ internal fun FullPlayerDialog(
                                 PlayerPage.NOW_PLAYING else PlayerPage.QUEUE }) {
                             Icon(Icons.Filled.QueueMusic, "Очередь", tint = palette.accent)
                         }
-                        if (!player.currentMediaItem?.mediaId.orEmpty().startsWith("radio:")) {
+                        if (!isRadio) {
                             IconButton(modifier = Modifier.size(38.dp),
                                 onClick = { page = if (page == PlayerPage.LYRICS)
                                     PlayerPage.NOW_PLAYING else PlayerPage.LYRICS }) {
@@ -370,6 +378,7 @@ internal fun FullPlayerDialog(
                         IconButton(modifier = Modifier.size(38.dp),
                             onClick = onStop) {
                             Icon(Icons.Filled.Close, "Выключить музыку", tint = palette.foreground)
+                        }
                         }
                     }
                     playbackStatus?.let {
@@ -536,6 +545,7 @@ internal fun FullPlayerDialog(
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 2, overflow = TextOverflow.Ellipsis
                                     )
+                                    if (!isRadio) {
                                     Text(artist, color = palette.muted,
                                         style = MaterialTheme.typography.bodyMedium,
                                         maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -547,6 +557,7 @@ internal fun FullPlayerDialog(
                                             maxLines = 1, overflow = TextOverflow.Ellipsis
                                         )
                                     }
+                                    }
                                 }
                             }
                         }
@@ -554,6 +565,48 @@ internal fun FullPlayerDialog(
 
                     // Transport controls stay outside every scrollable list, even
                     // with TalkBack, larger fonts and a small phone display.
+                    if (isRadio) {
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .background(Color(0xFF161A29))
+                                .padding(vertical = 14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(32.dp,
+                                Alignment.CenterHorizontally),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            FilledIconButton(
+                                onClick = {
+                                    if (playing) player.pause()
+                                    else {
+                                        if (player.playbackState == Player.STATE_IDLE ||
+                                            player.playbackState == Player.STATE_ENDED ||
+                                            player.playerError != null) player.prepare()
+                                        player.play()
+                                    }
+                                },
+                                modifier = Modifier.size(64.dp),
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = palette.accent,
+                                    contentColor = Color(0xFF170E25)
+                                )
+                            ) {
+                                Icon(
+                                    if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                    if (playing) "Пауза" else "Воспроизвести",
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+                            IconButton(onClick = onFavorite, modifier = Modifier.size(58.dp)) {
+                                Icon(
+                                    if (favorite) Icons.Filled.Favorite
+                                    else Icons.Filled.FavoriteBorder,
+                                    "Радиостанция в избранном",
+                                    tint = if (favorite) palette.accent else palette.muted,
+                                    modifier = Modifier.size(30.dp)
+                                )
+                            }
+                        }
+                    } else {
                     Column(
                         Modifier.fillMaxWidth()
                             .background(
@@ -687,6 +740,7 @@ internal fun FullPlayerDialog(
                             Text(albumMessage.orEmpty(), color = Color(0xFFFFC0B2),
                                 maxLines = 2, style = MaterialTheme.typography.labelSmall)
                         }
+                    }
                     }
                 }
             }
