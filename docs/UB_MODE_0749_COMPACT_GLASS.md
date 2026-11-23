@@ -27,5 +27,10 @@
 - Hardware playback, stream availability and in-app Android install flow require final device confirmation; JVM tests do not substitute for manual UI checks.
 - CRAP / Dryer / Mutator tooling is not available for Kotlin in this repo; no unsupported scores claimed.
 
-## Final checks
-- Update with successful CI id, APK hash and official release URL only after verification.
+## Final checks — verified
+- CI `45116005390` succeeded on app commit `d079cf05f5ba8afc2fd57db89fb162d4fbf7fae3`: 34 Kotlin/JUnit suites, `:app:assembleRelease`, zipalign and `aapt` identity checks.
+- Original-key signing completed locally with no keystore or passwords in the repository. Android APK signatures v2 and v3 verify, signer digest `c461ee635d5b295ef6c765e1ae533d0079dc6e53cb2632a11a1b445773752410`.
+- SHA-256 of official APK: `b01c993c2971dd0cedabcbf574ee9142314a65d1d1feab1500372bc42730242e`. Public signed-byte delta independently reconstructs identical APK bytes from the CI artifact.
+- Official publication GitHub Actions `45116607903` succeeded. Latest GitHub release: `https://github.com/smoc1983-web/MusicFlow-/releases/tag/v0.7.49`, includes APK and SHA256SUMS, source `com.musicflow.preview` versionCode 749, not a beta build.
+- In-app update feed `releases/latest` confirmed `v0.7.49`. Manual verification on Samsung S24 still recommended for the new radio dialog, Bluetooth EQ and stream-backed dubbing.
+- The preliminary CI run failed only because a static assertion searched a 250-character excerpt instead of the full invocation; that check was corrected before the successful build.
