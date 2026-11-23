@@ -1,0 +1,100 @@
+name: MusicFlow 0.7.49 Compact Glass release verification
+on:
+  push:
+    branches: ["feature/musicflow-v0749-compact-radio-official"]
+    paths:
+      - ".github/workflows/musicflow-v0749-verify.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" ||
+            test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Source contract for Compact Glass and all 0.7.48 fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path("app/src/main/java/com/musicflow/app")
+          read=lambda f:(root/f).read_text(encoding="utf-8")
+          compact=read("CompactGlassRadioDialog.kt")
+          full=read("FullPlayerDialog.kt")
+          policy=read("RadioCompactGlassPolicy.kt")
+          eq=read("PlayerEqualizerButton.kt")
+          cinema=read("CinemaNativeInlinePlayer.kt")
+          app=read("MainActivity.kt")
+          g=Path("app/build.gradle.kts").read_text()
+          manifest=Path("app/src/main/AndroidManifest.xml").read_text()
+          assert "if (isRadio) {" in full and "CompactGlassRadioDialog(" in full
+          assert "return" in full.split("CompactGlassRadioDialog(",1)[1][:250]
+          assert "RadioStationArtwork(" in compact
+          assert "musicFlowGlass(palette, radius = 26.dp" in compact
+          assert "PlayerEqualizerButton" in compact
+          assert "onFavorite = onFavorite" in full
+          assert "onClose = onClose" in full
+          assert "Icons.Filled.Close" in compact
+          assert "seek" not in compact.lower() and "skipnext" not in compact.lower()
+          assert "play_pause" in policy and "favorite" in policy
+          assert "RadioStationArtwork(" in read("RussianRadio.kt")
+          assert "RadioStationArtwork(" in app
+          assert "PcmEqAudioProcessor(AudioEqSettings.load(context))" in cinema
+          assert "CinemaAudioPickerPolicy.status(audioOptions.size)" in cinema
+          assert "TrackSelectionOverride(" in cinema
+          assert "key(catalogScrollIdentity)" in read("CinemaLabScreen.kt")
+          assert "MusicFlowEqualizerDialog" in eq
+          assert "PcmEqAudioProcessor" in read("PlaybackService.kt")
+          assert "versionCode = 749" in g and 'versionName = "0.7.49"' in g
+          assert 'applicationId = "com.musicflow.preview"' in g
+          assert 'android:label="MusicFlow"' in manifest
+          print("PASS: Compact Glass, 0.7.48 feature preservation, official app identity")
+          PY
+      - name: Run all Kotlin regressions and compile production release
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
+      - name: Align and verify unsigned release; stage local signer tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          suites=list(Path("app/build/test-results/testDebugUnitTest").glob("TEST-*.xml"))
+          names="\n".join(x.name for x in suites)
+          for item in ("RadioCompactGlassPolicyTest","RadioStationArtworkFallbackTest",
+                       "CinemaAudioPickerPolicyTest","CinemaCatalogScrollPolicyTest",
+                       "PcmEqAudioProcessorTest","MusicFlowLiquidGlassThemesTest"):
+            assert item in names, (item, names)
+          print("PASS Kotlin/JUnit suites:",len(suites))
+          PY
+          TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          APK=app/build/outputs/apk/release/app-release-unsigned.apk
+          test -s "$APK"
+          mkdir -p out/android-tools/lib
+          "$TOOLS/zipalign" -p -f 4 "$APK" out/MusicFlow_0.7.49-aligned-unsigned.apk
+          "$TOOLS/zipalign" -c -p 4 out/MusicFlow_0.7.49-aligned-unsigned.apk
+          "$TOOLS/aapt" dump badging out/MusicFlow_0.7.49-aligned-unsigned.apk |
+            grep -F "name='com.musicflow.preview' versionCode='749' versionName='0.7.49'"
+          cp "$TOOLS/apksigner" out/android-tools/apksigner
+          cp "$TOOLS/lib/apksigner.jar" out/android-tools/lib/apksigner.jar
+          chmod +x out/android-tools/apksigner
+          sha256sum out/MusicFlow_0.7.49-aligned-unsigned.apk > out/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.49-unsigned-and-signing-tools
+          path: out/
+          retention-days: 30
+          if-no-files-found: error
