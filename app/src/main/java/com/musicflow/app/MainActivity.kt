@@ -963,6 +963,14 @@ private fun MusicScreen(
                                 .background(palette.surface),
                             contentAlignment = Alignment.Center
                         ) {
+                            if (isRadio) {
+                                RadioStationArtwork(
+                                    name = trackTitle,
+                                    logo = miniCover,
+                                    modifier = Modifier.fillMaxSize(),
+                                    radius = 12.dp
+                                )
+                            } else {
                             Icon(Icons.Filled.MusicNote, contentDescription = null,
                                 tint = palette.accent.copy(alpha = 0.6f),
                                 modifier = Modifier.size(26.dp))
@@ -973,6 +981,7 @@ private fun MusicScreen(
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()
                                 )
+                            }
                             }
                         }
                         Spacer(Modifier.width(10.dp))
