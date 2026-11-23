@@ -83,10 +83,23 @@ internal fun FullPlayerDialog(
     onPlayAlbumTrack: (Track) -> Unit,
     onClose: () -> Unit
 ) {
+    val isRadio = player.currentMediaItem?.mediaId?.startsWith("radio:") == true
+    if (isRadio) {
+        CompactGlassRadioDialog(
+            player = player,
+            title = title,
+            artwork = artwork,
+            playing = playing,
+            favorite = favorite,
+            onFavorite = onFavorite,
+            onStop = onStop,
+            onClose = onClose
+        )
+        return
+    }
     val palette = LocalMusicFlowPalette.current
     val resolvedArtwork by rememberCoverArt(artist, title, artwork)
     val albumHint = player.currentMediaItem?.mediaMetadata?.albumTitle?.toString()
-    val isRadio = player.currentMediaItem?.mediaId?.startsWith("radio:") == true
     val scope = rememberCoroutineScope()
     var page by remember { mutableStateOf(PlayerPage.NOW_PLAYING) }
     var immersive by remember { mutableStateOf(false) }
