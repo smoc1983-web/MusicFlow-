@@ -505,6 +505,10 @@ internal fun TvPlayerDialog(
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            PlayerEqualizerButton(
+                                modifier = Modifier.size(40.dp),
+                                tint = TvAccent
+                            )
                             TextButton(onClick = { showSizing = true }) {
                                 Text("Размер: " + sizeMode.title)
                             }
