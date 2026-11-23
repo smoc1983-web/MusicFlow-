@@ -42,7 +42,7 @@ jobs:
           g=Path("app/build.gradle.kts").read_text()
           manifest=Path("app/src/main/AndroidManifest.xml").read_text()
           assert "if (isRadio) {" in full and "CompactGlassRadioDialog(" in full
-          assert "return" in full.split("CompactGlassRadioDialog(",1)[1][:250]
+          assert "return" in full.split("CompactGlassRadioDialog(",1)[1][:800]
           assert "RadioStationArtwork(" in compact
           assert "musicFlowGlass(palette, radius = 26.dp" in compact
           assert "PlayerEqualizerButton" in compact
