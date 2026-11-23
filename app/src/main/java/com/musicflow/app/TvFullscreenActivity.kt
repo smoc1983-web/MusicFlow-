@@ -296,6 +296,7 @@ private fun FullscreenTvContent(player: MediaController, initial: TvHandoff,
                     modifier=Modifier.weight(1f), color=Color.White)
                 TextButton(onClick={showSize=true}) { Text("Размер") }
                 TextButton(onClick={showQuality=true}) { Text("Качество") }
+                PlayerEqualizerButton(tint = Color.White)
                 TextButton(onClick={showList=true}) { Text("Каналы") }
             }
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
