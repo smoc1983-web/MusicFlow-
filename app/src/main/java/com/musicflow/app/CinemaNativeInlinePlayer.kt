@@ -2,6 +2,8 @@ package com.musicflow.app
 
 import android.app.Activity
 import android.content.Intent
+import android.content.Context
+import android.content.SharedPreferences
 import android.net.Uri
 import android.content.pm.ActivityInfo
 import android.view.View
@@ -47,6 +49,10 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -99,11 +105,26 @@ internal fun CinemaNativeInlinePlayer(
     var selectedAudio by remember(sourceKey, streamUrl) { mutableStateOf("Авто") }
     var tracksVersion by remember { mutableIntStateOf(0) }
 
+    // Independent cinema ExoPlayer must use the same user-selected PCM EQ as
+    // PlaybackService (music, radio and TV), without pausing during edits.
+    val cinemaEq = remember(sourceKey, streamUrl, pageUrl) {
+        PcmEqAudioProcessor(AudioEqSettings.load(context))
+    }
     val player = remember(sourceKey, streamUrl, pageUrl) {
+        val renderers = object : DefaultRenderersFactory(context) {
+            override fun buildAudioSink(
+                context: Context, enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean
+            ): AudioSink = DefaultAudioSink.Builder(context)
+                .setAudioProcessors(arrayOf<AudioProcessor>(cinemaEq))
+                .setEnableFloatOutput(false)
+                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                .build()
+        }
         val page = pageUrl?.takeIf(CinemaLabSources::isSafeHttps)
         val http = DefaultHttpDataSource.Factory()
         if (page != null) http.setDefaultRequestProperties(mapOf("Referer" to page))
-        ExoPlayer.Builder(context)
+        ExoPlayer.Builder(context, renderers)
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(DefaultDataSource.Factory(context, http))
             )
@@ -117,6 +138,16 @@ internal fun CinemaNativeInlinePlayer(
     }
 
     DisposableEffect(player, sourceKey) {
+        val preferences = context.getSharedPreferences(AudioEqSettings.PREFS,
+            Context.MODE_PRIVATE)
+        val eqListener = SharedPreferences.OnSharedPreferenceChangeListener { _, changed ->
+            if (changed == "enabled" || changed == "preset" ||
+                changed?.startsWith("gain_") == true ||
+                changed == "boost_enabled" || changed == "boost_db") {
+                cinemaEq.update(AudioEqSettings.load(context))
+            }
+        }
+        preferences.registerOnSharedPreferenceChangeListener(eqListener)
         val listener = object : Player.Listener {
             override fun onTracksChanged(tracks: Tracks) { tracksVersion++ }
             override fun onPlayerError(error: PlaybackException) {
@@ -132,6 +163,7 @@ internal fun CinemaNativeInlinePlayer(
         onDispose {
             CinemaLabSources.saveProgress(context, sourceKey,
                 player.currentPosition.coerceAtLeast(0L))
+            preferences.unregisterOnSharedPreferenceChangeListener(eqListener)
             player.removeListener(listener)
             player.release()
         }
@@ -258,7 +290,7 @@ internal fun CinemaNativeInlinePlayer(
         Box {
             TextButton(
                 onClick = { audioOpen = true },
-                enabled = audioOptions.size > 1
+                enabled = CinemaAudioPickerPolicy.canOpen(audioOptions.size)
             ) {
                 Text(
                     "Озвучка: " + when {
@@ -269,9 +301,14 @@ internal fun CinemaNativeInlinePlayer(
                 )
             }
             DropdownMenu(
-                expanded = audioOpen && audioOptions.size > 1,
+                expanded = audioOpen,
                 onDismissRequest = { audioOpen = false }
             ) {
+                Text(
+                    CinemaAudioPickerPolicy.status(audioOptions.size),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.labelSmall
+                )
                 DropdownMenuItem(
                     text = { Text("Автоматически") },
                     onClick = { selectAudio(null) }
@@ -325,6 +362,7 @@ internal fun CinemaNativeInlinePlayer(
                     }
                 }
                 AudioPicker()
+                PlayerEqualizerButton(tint = Color(0xFFBCA2FF))
             }
             CinemaPlayerView(player, Modifier.fillMaxWidth().height(218.dp)) {
                 controllerVisible = it
@@ -409,6 +447,7 @@ internal fun CinemaNativeInlinePlayer(
                             }
                         }
                         AudioPicker()
+                        PlayerEqualizerButton(tint = Color.White)
                         IconButton(onClick = ::collapseVideo) {
                             Icon(Icons.Filled.FullscreenExit, "Мини-плеер",
                                 tint = Color.White)
