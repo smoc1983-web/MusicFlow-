@@ -1,0 +1,96 @@
+name: MusicFlow Radio Cinema EQ TEST 0.7.48
+on:
+  push:
+    branches: ["feature/musicflow-v0748-radio-eq-cinema-audio-test"]
+    paths:
+      - ".github/workflows/musicflow-v0748-radio-cinema-eq-test.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install Android build tools
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" ||
+            test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Assert new player paths and isolated package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          base=Path("app/src/main/java/com/musicflow/app")
+          read=lambda name:(base/name).read_text()
+          assert 'RadioStationArtwork(' in read("RussianRadio.kt")
+          assert 'RadioStationArtwork(' in read("FullPlayerDialog.kt")
+          assert 'RadioStationArtwork(' in read("MainActivity.kt")
+          assert 'SubcomposeAsyncImage' in read("RadioStationArtwork.kt")
+          assert 'RadioStationArtworkFallback.initials' in read("RadioStationArtwork.kt")
+          full=read("FullPlayerDialog.kt")
+          music=read("MainActivity.kt")
+          assert "PlayerEqualizerButton" in full
+          assert "PlayerEqualizerButton" in music
+          assert "PlayerEqualizerButton" in read("TvMiniPlayer.kt")
+          assert "PlayerEqualizerButton" in read("TvFullscreenActivity.kt")
+          assert "PlayerEqualizerButton" in read("TvPlayerDialog.kt")
+          cinema=read("CinemaNativeInlinePlayer.kt")
+          assert "PlayerEqualizerButton" in cinema
+          assert 'PcmEqAudioProcessor(AudioEqSettings.load(context))' in cinema
+          assert 'ExoPlayer.Builder(context, renderers)' in cinema
+          assert 'preferences.registerOnSharedPreferenceChangeListener(eqListener)' in cinema
+          assert 'preferences.unregisterOnSharedPreferenceChangeListener(eqListener)' in cinema
+          assert 'CinemaAudioPickerPolicy.canOpen(audioOptions.size)' in cinema
+          assert 'CinemaAudioPickerPolicy.status(audioOptions.size)' in cinema
+          assert 'TrackSelectionOverride(' in cinema
+          assert 'showEqualizerDialog = true' not in music
+          gradle=Path("app/build.gradle.kts").read_text()
+          assert 'applicationId = "com.musicflow.preview"' in gradle
+          assert 'applicationIdSuffix = ".radiocinemaeqtest48"' in gradle
+          assert 'versionCode = 748' in gradle
+          manifest=Path("app/src/main/AndroidManifest.xml").read_text()
+          assert 'MusicFlow TEST 0.7.48' in manifest
+          print("PASS: EQ in all players, cinema PCM, honest audio selection, radio art and isolated debug package")
+          PY
+      - name: Run all Kotlin/JUnit regressions and build debug APK
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Verify behavioral tests, APK package and signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          suites=list(Path("app/build/test-results/testDebugUnitTest").glob("TEST-*.xml"))
+          names="\n".join(p.name for p in suites)
+          for test in ("RadioStationArtworkFallbackTest", "CinemaAudioPickerPolicyTest",
+                       "CinemaCatalogScrollPolicyTest", "PcmEqAudioProcessorTest",
+                       "MusicFlowLiquidGlassThemesTest"):
+              assert test in names, (test,names)
+          print("PASS: Kotlin/JUnit suites:",len(suites))
+          PY
+          TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$TOOLS/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview.radiocinemaeqtest48' versionCode='748'"
+          "$TOOLS/apksigner" verify --verbose "$APK"
+          mkdir -p out
+          cp "$APK" out/MusicFlow-Radio-Cinema-EQ-TEST-0.7.48.apk
+          sha256sum out/MusicFlow-Radio-Cinema-EQ-TEST-0.7.48.apk > out/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-Radio-Cinema-EQ-TEST-v0748-apk
+          path: out/
+          retention-days: 30
+          if-no-files-found: error
