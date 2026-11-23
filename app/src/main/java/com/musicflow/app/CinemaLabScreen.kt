@@ -90,11 +90,6 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
     var playerAuditMessage by remember { mutableStateOf("") }
     var playerError by remember { mutableStateOf<String?>(null) }
     var favorites by remember { mutableStateOf(CinemaLabSources.favoriteKeys(context)) }
-    val catalogListState = rememberLazyListState()
-    LaunchedEffect(query, section, selectedShelf?.url, selectedSource, refresh) {
-        catalogListState.scrollToItem(0)
-    }
-
     val firstSource = sources.firstOrNull {
         it.format == CinemaSourceFormat.RUTUBE_FEED
     }
@@ -181,7 +176,6 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                     else if (it.title.startsWith(text, true)) 1
                     else 2
                 }.thenBy { it.title.lowercase() })
-            catalogListState.scrollToItem(0)
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (e: Exception) {
@@ -449,6 +443,23 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
     val groupingEnabled = section == "Сериалы" &&
         selectedShelf == null && query.isBlank()
 
+    // Initial/empty lists often contain only the keyed footer. When RUTUBE
+    // shelves or search results arrive, Compose would otherwise preserve that
+    // footer anchor and visually jump to the END of the populated catalogue.
+    val isHomeCatalog = section == "Главная" && query.isBlank() &&
+        selectedShelf == null && selectedSource == "all" && displayMedia
+    val hasVisibleContent = if (isHomeCatalog) {
+        shelves.any { shelfCache[it.url]?.films?.isNotEmpty() == true }
+    } else categoryTitles.isNotEmpty()
+    val catalogScrollIdentity = CinemaCatalogScrollPolicy.identity(
+        query = query,
+        section = section,
+        sourceId = selectedSource,
+        shelfUrl = selectedShelf?.url,
+        hasVisibleContent = hasVisibleContent,
+        searching = searchBusy && query.trim().length >= 2
+    )
+
     Column(modifier.fillMaxWidth().background(CinemaDark)) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp, top = 10.dp),
             verticalAlignment = Alignment.CenterVertically) {
@@ -552,6 +563,11 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
             modifier = Modifier.padding(horizontal = 15.dp, vertical = 5.dp),
             style = MaterialTheme.typography.bodySmall, color = Color(0xFFFFB4B4)) }
 
+        // A fresh LazyListState is created before first layout for each new
+        // query, section, source or empty→loaded phase. Unchanged keys preserve
+        // the user's position during ordinary pagination/scrolling.
+        key(catalogScrollIdentity) {
+        val catalogListState = rememberLazyListState()
         LazyColumn(
             state = catalogListState,
             modifier = Modifier.weight(1f),
@@ -672,6 +688,7 @@ internal fun CinemaLabScreen(modifier: Modifier = Modifier) {
                     color = CinemaTextMuted,
                     style = MaterialTheme.typography.labelSmall)
             }
+        }
         }
     }
 
