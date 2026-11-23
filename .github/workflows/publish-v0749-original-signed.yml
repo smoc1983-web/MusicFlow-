@@ -1,7 +1,7 @@
 name: Publish MusicFlow 0.7.49 original-key Compact Glass update
 on:
   push:
-    branches: ["feature/musicflow-v0749-tv-hls-buffer-resilience"]
+    branches: ["feature/musicflow-v0749-compact-radio-official"]
     paths:
       - ".github/release-assets/v0749/signed-delta.doublezstd.b64"
 permissions:
@@ -34,7 +34,7 @@ jobs:
           gh run download 45116005390 -R "$GITHUB_REPOSITORY" \
             -n MusicFlow-0.7.49-unsigned-and-signing-tools \
             --dir "$RUNNER_TEMP/unsigned"
-          UNSIGNED="$RUNNER_TEMP/unsigned/MusicFlow_0.7.49-unsigned.apk"
+          UNSIGNED="$RUNNER_TEMP/unsigned/MusicFlow_0.7.49-aligned-unsigned.apk"
           echo "$UNSIGNED_SHA  $UNSIGNED" | sha256sum -c -
           SOURCE=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/45116005390" \
             --jq '.head_sha')
@@ -47,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           source .github/release-assets/v0749/checksums.env
-          UNSIGNED="$RUNNER_TEMP/unsigned/MusicFlow_0.7.49-unsigned.apk"
+          UNSIGNED="$RUNNER_TEMP/unsigned/MusicFlow_0.7.49-aligned-unsigned.apk"
           OUTER="$RUNNER_TEMP/signed-delta.doublezstd"
           PATCH="$RUNNER_TEMP/unsigned-to-signed.patch.zst"
           base64 -d .github/release-assets/v0749/signed-delta.doublezstd.b64 > "$OUTER"
