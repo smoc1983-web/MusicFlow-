@@ -211,15 +211,12 @@ internal fun RussianRadioScreen(
                             .padding(9.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (logo != null) {
-                            Image(rememberAsyncImagePainter(logo),
-                                contentDescription = null,
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier.size(42.dp).clip(RoundedCornerShape(8.dp)))
-                        } else {
-                            Icon(Icons.Filled.Radio, contentDescription = null,
-                                tint = palette.accent, modifier = Modifier.size(42.dp))
-                        }
+                        RadioStationArtwork(
+                            name = station.name,
+                            logo = logo,
+                            modifier = Modifier.size(44.dp),
+                            radius = 10.dp
+                        )
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(station.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
