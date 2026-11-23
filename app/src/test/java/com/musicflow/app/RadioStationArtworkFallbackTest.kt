@@ -11,6 +11,6 @@ class RadioStationArtworkFallbackTest {
  }
  @Test fun excessSymbolsAreIgnoredAndLettersStayDeterministic() {
   assertEquals("КП", RadioStationArtworkFallback.initials("«Комсомольская Правда»"))
-  assertEquals("М", RadioStationArtworkFallback.initials("  Music..."))
+  assertEquals("M", RadioStationArtworkFallback.initials("  Music..."))
  }
 }
