@@ -20,5 +20,7 @@ Baseline: officially signed v0.7.46. The test is a **separate debug package** `c
 - Required verification: source wiring assertions; full `:app:testDebugUnitTest` including `CinemaCatalogScrollPolicyTest`; `:app:assembleDebug`; Android `aapt` package name and version; `apksigner verify`.
 - Debug APK is labeled `MusicFlow Кино TEST 0.7.47`, with versionCode 747; installed production package remains `com.musicflow.preview` (v0.7.46).
 - Actual scrolling with an Android display requires device testing; JVM tests verify state-transition policy, not pixel location. Test on launch, entering cinema from another tab, typing a title, receiving results, clearing search, and paging within an already populated result set.
+- **Verified:** GitHub Actions run `45109164894` succeeded for app-source commit `7c56a6d39cda4c60741dc9627c909c83abfded1e`: 31 Kotlin/JUnit suites, successful debug compilation, `aapt` verified isolated package `com.musicflow.preview.cinemascrolltest47` versionCode 747, and Android `apksigner verify` succeeded.
+- Downloaded the CI artifact and independently matched APK SHA-256 `4558780ae5dfbb9520c5cbd4da3fadb96664ffe59451c7cce758373fb79457da`. Distributed only the signed debug test APK, not a production release.
 - CRAP, Dryer and Mutator tooling does not support Kotlin in this repository; not run and no fabricated metrics.
 - No GitHub Release or signed production update is authorized in this request.
