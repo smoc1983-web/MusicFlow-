@@ -346,6 +346,10 @@ internal fun FullPlayerDialog(
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                             color = palette.foreground
                         )
+                        PlayerEqualizerButton(
+                            modifier = Modifier.size(38.dp),
+                            tint = palette.accent
+                        )
                         if (!isRadio) {
                         IconButton(modifier = Modifier.size(38.dp),
                             onClick = { page = if (page == PlayerPage.ALBUM)
