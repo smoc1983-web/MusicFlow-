@@ -14,8 +14,8 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 
 /**
- * Five user-friendly controls map onto the device's actual audio effect bands.
- * Some devices or output routes may not support Android audio effects.
+ * Five user-friendly bands are processed directly in the MusicFlow PCM output.
+ * The same saved settings now affect music, radio, TV and the cinema player.
  */
 @Composable
 internal fun MusicFlowEqualizerDialog(onDismiss: () -> Unit) {
@@ -112,9 +112,8 @@ internal fun MusicFlowEqualizerDialog(onDismiss: () -> Unit) {
                         style = MaterialTheme.typography.labelMedium)
                 }
                 Text(
-                    "Работает только в плеере MusicFlow. Доступность эффектов " +
-                        "зависит от устройства. При прослушивании в наушниках " +
-                        "используйте умеренную громкость.",
+                    "Настройки действуют в плеерах музыки, радио, ТВ и кино. " +
+                        "При прослушивании в наушниках используйте умеренную громкость.",
                     style = MaterialTheme.typography.bodySmall, color = palette.muted
                 )
             }
