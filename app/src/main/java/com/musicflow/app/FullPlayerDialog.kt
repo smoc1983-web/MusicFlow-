@@ -531,6 +531,14 @@ internal fun FullPlayerDialog(
                                                     .background(palette.surface),
                                                 contentAlignment = Alignment.Center
                                             ) {
+                                                if (isRadio) {
+                                                    RadioStationArtwork(
+                                                        name = title,
+                                                        logo = resolvedArtwork,
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        radius = 22.dp
+                                                    )
+                                                } else {
                                                 Icon(
                                                     Icons.Filled.MusicNote,
                                                     contentDescription = null,
@@ -544,6 +552,7 @@ internal fun FullPlayerDialog(
                                                         contentScale = ContentScale.Crop,
                                                         modifier = Modifier.fillMaxSize()
                                                     )
+                                                }
                                                 }
                                             }
                                         }
