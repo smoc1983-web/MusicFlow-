@@ -24,4 +24,6 @@ Target: a separate debug package `com.musicflow.preview.radiocinemaeqtest48`. No
 - New regressions: `RadioStationArtworkFallbackTest`, `CinemaAudioPickerPolicyTest`; pre-existing cinema scroll and PCM processor regression suites.
 - **Limitations:** real RUTUBE HLS/dubbing availability and Bluetooth DSP output cannot be verified by JVM tests; test on Samsung S24. Stream with one audio track cannot magically expose an alternative dubbing.
 - CRAP, Dryer and Mutator repository gates do not support Kotlin here; no invented metrics.
+- **Verified**: GitHub Actions run `45111271474` succeeded on source revision `6880a4a490c1e4aec0ad929d8bb45f59ce7d76d3`: `testDebugUnitTest` (33 test suites), `assembleDebug`, strict `aapt` check for `com.musicflow.preview.radiocinemaeqtest48` versionCode 748 and `apksigner verify`.
+- ZIP artifact ID `14790195692`, downloaded and APK checksum independently checked against CI SHA256SUMS: `9d45ff1c1c697a65ad56da0482f3fe67bdb3377e488c643a9f32986c51580b8d`.
 - Publication gate: no official APK or GitHub Release, user requested test only.
