@@ -31,12 +31,12 @@ jobs:
           set -euo pipefail
           source .github/release-assets/v0749/checksums.env
           mkdir -p "$RUNNER_TEMP/unsigned" out
-          gh run download 45115881021 -R "$GITHUB_REPOSITORY" \
+          gh run download 45116005390 -R "$GITHUB_REPOSITORY" \
             -n MusicFlow-0.7.49-unsigned-and-signing-tools \
             --dir "$RUNNER_TEMP/unsigned"
           UNSIGNED="$RUNNER_TEMP/unsigned/MusicFlow_0.7.49-unsigned.apk"
           echo "$UNSIGNED_SHA  $UNSIGNED" | sha256sum -c -
-          SOURCE=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/45115881021" \
+          SOURCE=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/45116005390" \
             --jq '.head_sha')
           test "$SOURCE" = "$SOURCE_SHA" || {
             echo "::error::Signed APK source mismatch."
