@@ -131,6 +131,10 @@ internal fun TvMiniPlayer(
                             maxLines = 1,
                             style = MaterialTheme.typography.labelSmall)
                     }
+                    PlayerEqualizerButton(
+                        modifier = Modifier.size(38.dp),
+                        tint = palette.accent
+                    )
                     IconButton(onClick = { expanded = true }, modifier = Modifier.size(38.dp)) {
                         Icon(Icons.Filled.Fullscreen,
                             contentDescription = "Развернуть мини-плеер",
@@ -219,6 +223,10 @@ internal fun TvMiniPlayer(
                             contentDescription = "Пауза или воспроизведение",
                             tint = palette.foreground)
                     }
+                    PlayerEqualizerButton(
+                        modifier = Modifier.size(42.dp),
+                        tint = palette.accent
+                    )
                     IconButton(onClick = onExpand, modifier = Modifier.size(42.dp)) {
                         Icon(Icons.Filled.Fullscreen,
                             contentDescription = "Полный экран", tint = palette.foreground)
