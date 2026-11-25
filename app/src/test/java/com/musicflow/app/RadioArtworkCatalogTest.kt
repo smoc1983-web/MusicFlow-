@@ -16,6 +16,36 @@ class RadioArtworkCatalogTest {
         assertNull(RadioArtworkCatalog.findExactLogo(response,"Радио Ваня FM 2"))
     }
 
+
+    @Test fun preservesMultipleExactStationArtworkCandidates() {
+        val response = """
+          [{"name":"Радио Волна","favicon":"https://cdn.example.org/dead.png"},
+           {"name":"Радио Волна 2","favicon":"https://cdn.example.org/wrong.png"},
+           {"name":"РАДИО ВОЛНА","favicon":"https://cdn.example.org/good.webp"},
+           {"name":"Радио Волна","favicon":"https://cdn.example.org/dead.png"},
+           {"name":"Радио Волна","favicon":"http://insecure.example.org/logo.png"}]
+        """.trimIndent()
+        assertEquals(
+            listOf("https://cdn.example.org/dead.png",
+                   "https://cdn.example.org/good.webp"),
+            RadioArtworkCatalog.candidateLogos(response, "Радио Волна")
+        )
+    }
+
+    @Test fun rejectsHtmlErrorPagesAsLogosButAllowsSupportedImageHeaders() {
+        val html = "<html>not an image</html>".toByteArray()
+        assertFalse(RadioArtworkCatalog.isSupportedImage(html, html.size))
+        val png = byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0)
+        val jpg = byteArrayOf(255.toByte(), 216.toByte(), 255.toByte(), 224.toByte())
+        val webp = "RIFF1234WEBP".toByteArray()
+        val gif = "GIF89a".toByteArray()
+        assertTrue(RadioArtworkCatalog.isSupportedImage(png, png.size))
+        assertTrue(RadioArtworkCatalog.isSupportedImage(jpg, jpg.size))
+        assertTrue(RadioArtworkCatalog.isSupportedImage(webp, webp.size))
+        assertTrue(RadioArtworkCatalog.isSupportedImage(gif, gif.size))
+        assertFalse(RadioArtworkCatalog.isSupportedImage(png, 2))
+    }
+
     @Test fun blocksInsecureOrLocalImageAddresses() {
         assertNull(RadioArtworkCatalog.findExactLogo(
             """[{"name":"Радио Ваня","favicon":"http://192.168.1.1/icon.png"}]""", "Радио Ваня"))
