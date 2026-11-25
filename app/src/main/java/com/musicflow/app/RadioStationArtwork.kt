@@ -16,11 +16,18 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import java.util.Locale
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 
 /** Stable, clearly non-official fallback; never pretend a made-up tile is a station logo. */
 internal object RadioStationArtworkFallback {
+    /** A reproducible visual identity when the station has no usable logo. */
+    fun hue(name: String): Float {
+        val seed = name.trim().lowercase(Locale.ROOT).hashCode().toLong() and 0x7fff_ffffL
+        return (seed % 360).toFloat()
+    }
+
     fun initials(name: String): String {
         val words = name.split(Regex("""[^\p{L}\p{N}]+"""))
             .filter { it.isNotBlank() }
@@ -47,19 +54,19 @@ internal fun RadioStationArtwork(
     val palette = LocalMusicFlowPalette.current
     val shape = RoundedCornerShape(radius)
     val placeholder: @Composable () -> Unit = {
+        val hue = RadioStationArtworkFallback.hue(name)
         Box(
             Modifier.fillMaxSize().background(
                 Brush.linearGradient(listOf(
-                    palette.gradientTop,
-                    palette.accent.copy(alpha = 0.45f),
-                    palette.gradientBottom
+                    Color.hsv(hue, 0.64f, 0.56f),
+                    Color.hsv((hue + 34f) % 360f, 0.73f, 0.29f)
                 ))
             ),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 RadioStationArtworkFallback.initials(name),
-                color = palette.foreground,
+                color = Color.White,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1
