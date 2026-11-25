@@ -1,0 +1,94 @@
+name: MusicFlow 0.7.51 official unsigned preflight
+on:
+  push:
+    branches: ["feature/musicflow-v0751-radio-cover-recovery"]
+    paths:
+      - ".github/workflows/musicflow-v0751-official-preflight.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android build tools
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" ||
+            test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Guard official identity and radio artwork fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path("app/src/main/java/com/musicflow/app")
+          app=Path("app/build.gradle.kts").read_text()
+          radio=(root/"RadioArtworkCatalog.kt").read_text()
+          art=(root/"RadioStationArtwork.kt").read_text()
+          compact=(root/"CompactGlassRadioDialog.kt").read_text()
+          cinema=(root/"CinemaLabScreen.kt").read_text()
+          assert 'versionName = "0.7.51"' in app and 'versionCode = 751' in app
+          assert 'applicationId = "com.musicflow.preview"' in app
+          assert 'applicationIdSuffix = ".dev"' in app
+          for key in ("isSupportedImage(", "candidateLogos(", "imageExists(",
+                      "firstWorking(", "musicflow_radio_artwork_v2"):
+              assert key in radio, key
+          assert "Color.hsv(" in art
+          assert "RadioStationArtwork(" in compact
+          assert "key(catalogScrollIdentity)" in cinema
+          assert "PlayerEqualizerButton(" in compact
+          assert "PcmEqAudioProcessor" in (root/"PlaybackService.kt").read_text()
+          updater=(root/"MusicFlowUpdates.kt").read_text()
+          cached=(root/"MusicFlowBackgroundUpdates.kt").read_text()
+          assert "if (!isOfficialTag(tag)) continue" in updater
+          assert 'release.optBoolean("prerelease", false)' in updater
+          assert "isOfficialApkName(tag, name)" in updater
+          assert "isOfficialSavedRelease(version, url)" in cached
+          assert "isOfficialSavedRelease(" in cached
+          print("PASS: production release identity; test releases excluded; radio logo recovery and previous features")
+          PY
+      - name: Run Kotlin/JUnit tests and compile production release
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
+      - name: Check regression suites, alignment and APK version
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          suites=list(Path("app/build/test-results/testDebugUnitTest").glob("TEST-*.xml"))
+          names="\n".join(x.name for x in suites)
+          for required in ("RadioArtworkCatalogTest", "RadioStationArtworkFallbackTest",
+                           "RadioCompactGlassPolicyTest","CinemaCatalogScrollPolicyTest",
+                           "CinemaAudioPickerPolicyTest","PcmEqAudioProcessorTest",
+                           "MusicFlowOfficialUpdateChannelTest"):
+              assert required in names,required
+          print("PASS Kotlin/JUnit suites:",len(suites))
+          PY
+          TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          APK=app/build/outputs/apk/release/app-release-unsigned.apk
+          test -s "$APK"
+          mkdir -p out/android-tools/lib
+          "$TOOLS/zipalign" -p -f 4 "$APK" out/MusicFlow_0.7.51-aligned-unsigned.apk
+          "$TOOLS/zipalign" -c -p 4 out/MusicFlow_0.7.51-aligned-unsigned.apk
+          "$TOOLS/aapt" dump badging out/MusicFlow_0.7.51-aligned-unsigned.apk |
+            grep -F "name='com.musicflow.preview' versionCode='751' versionName='0.7.51'"
+          cp "$TOOLS/apksigner" out/android-tools/apksigner
+          cp "$TOOLS/lib/apksigner.jar" out/android-tools/lib/apksigner.jar
+          chmod +x out/android-tools/apksigner
+          sha256sum out/MusicFlow_0.7.51-aligned-unsigned.apk > out/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.51-official-unsigned-and-tools
+          path: out/
+          retention-days: 30
+          if-no-files-found: error
