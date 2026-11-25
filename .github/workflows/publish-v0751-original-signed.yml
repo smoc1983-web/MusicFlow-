@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - ".github/release-assets/v0751/signed-delta.doublezstd.b64"
+      - ".github/workflows/publish-v0751-original-signed.yml"
+  workflow_dispatch:
 permissions:
   contents: write
   actions: read
@@ -30,6 +32,17 @@ jobs:
         run: |
           set -euo pipefail
           source .github/release-assets/v0751/checksums.env
+          test "$SOURCE_SHA" = "c54b7b4ed2e8227390d7715da5915814ad2028a8"
+          # Signed bytes refer to one exact, previously tested app source. Documentation edits are allowed.
+          git diff --quiet "$SOURCE_SHA" HEAD -- app/ || {
+            echo "::error::App sources changed since signed preflight; rebuild and sign again."
+            exit 1
+          }
+          PREFLIGHT_STATUS=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/45679777474" --jq '.conclusion')
+          test "$PREFLIGHT_STATUS" = "success" || {
+            echo "::error::Official 0.7.51 preflight did not pass."
+            exit 1
+          }
           mkdir -p "$RUNNER_TEMP/unsigned" out
           gh run download 45679777474 -R "$GITHUB_REPOSITORY" \
             -n MusicFlow-0.7.51-official-unsigned-and-tools \
@@ -92,8 +105,9 @@ jobs:
           - Android v2/v3 подписи исходным сертификатом MusicFlow, контроль сертификата и SHA256 в GitHub Actions.
 
           NOTES
+          source .github/release-assets/v0751/checksums.env
           gh release create v0.7.51 out/MusicFlow_0.7.51.apk out/SHA256SUMS.txt \
-            -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest \
+            -R "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --latest \
             --title "MusicFlow 0.7.51 · исправление обновления и обложек радио" \
             --notes-file out/RELEASE_NOTES.md
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.7.51" \
