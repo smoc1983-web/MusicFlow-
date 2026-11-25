@@ -71,7 +71,7 @@ internal object MusicFlowUpdates {
 
     /** Production releases have a strictly numeric tag; previews cannot be installed in-place. */
     internal fun isOfficialTag(tag: String): Boolean =
-        Regex("""^v\\d+\\.\\d+\\.\\d+$""").matches(tag)
+        Regex("""^v\d+\.\d+\.\d+$""").matches(tag)
 
     internal fun isOfficialApkName(tag: String, name: String): Boolean =
         isOfficialTag(tag) && name == "MusicFlow_${tag.removePrefix("v")}.apk"
@@ -90,7 +90,7 @@ internal object MusicFlowUpdates {
                 release.optBoolean("prerelease", false)) continue
             val tag = release.optString("tag_name")
             if (!isOfficialTag(tag)) continue
-            val match = Regex("""^v(\\d+)\\.(\\d+)\\.(\\d+)$""")
+            val match = Regex("""^v(\d+)\.(\d+)\.(\d+)$""")
                 .matchEntire(tag) ?: continue
             val major = match.groupValues[1].toLongOrNull() ?: continue
             val minor = match.groupValues[2].toLongOrNull() ?: continue
