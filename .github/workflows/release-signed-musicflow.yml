@@ -10,7 +10,7 @@ on:
         description: "Git ref with MusicFlow source (versionName/versionCode in app/build.gradle.kts)"
         required: false
         type: string
-        default: "feature/musicflow-v0.7.27-reliable-updates"
+        default: "main"
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
       - name: Check out selected application source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || (github.ref_type == 'tag' && github.ref_name || 'feature/musicflow-v0.7.27-reliable-updates') }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || (github.ref_type == 'tag' && github.ref_name || github.sha) }}
           persist-credentials: true
 
       - name: Verify version, package ID and release tag
@@ -114,8 +114,8 @@ jobs:
           echo "MUSICFLOW_SIGNING_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
           echo "MUSICFLOW_SIGNING_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
 
-      - name: Compile official signed release APK
-        run: gradle --no-daemon :app:assembleRelease
+      - name: Run Kotlin tests and compile official signed release APK
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
 
       - name: Verify APK signer matches stable 0.7.25 and package/version are compatible
         shell: bash
@@ -150,7 +150,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "$RELEASE_TAG" "out/MusicFlow_$RELEASE_VERSION.apk" out/SHA256SUMS.txt \
-            -R "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" \
+            -R "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --latest \
             --title "MusicFlow $RELEASE_VERSION" \
             --notes "Официальный совместимый APK с постоянным ключом подписи. MusicFlow автоматически проверяет GitHub Releases при запуске и позволяет скачать и установить обновление из интерфейса приложения через системный установщик Android."
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
