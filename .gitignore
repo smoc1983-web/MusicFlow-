@@ -5,3 +5,9 @@
 *.iml
 *.apk
 *.aab
+
+# Keep Android release signing keys out of source control
+*.jks
+*.keystore
+*.p12
+*.pfx

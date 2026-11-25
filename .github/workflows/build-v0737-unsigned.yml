@@ -1,0 +1,54 @@
+name: Build MusicFlow 0.7.37 unsigned release for original-key signing
+on:
+  push:
+    branches: ["feature/musicflow-v0.7.37-chart-queue"]
+    paths: [".github/workflows/build-v0737-unsigned.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unsigned:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Ensure Android 36
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -x "$ANDROID_HOME/build-tools/36.0.0/zipalign"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Verify 0.7.37 and compile unsigned release
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_v0737.py
+          python3 scripts/verify_v0735.py
+          python3 scripts/verify_v0736.py
+          # Chart queue, match safety, journal restoration and player regressions run before release compilation.
+          python3 scripts/verify_v0734.py
+          python3 scripts/verify_v0730.py
+          grep -F 'applicationId = "com.musicflow.preview"' app/build.gradle.kts
+          gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
+          test -s app/build/outputs/apk/release/app-release-unsigned.apk
+      - name: Prepare zip-aligned APK and apksigner
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          APK=app/build/outputs/apk/release/app-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "name='com.musicflow.preview' versionCode='737' versionName='0.7.37'"
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$APK" dist/MusicFlow_0.7.37-aligned-unsigned.apk
+          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" dist/apksigner.jar
+          sha256sum dist/MusicFlow_0.7.37-aligned-unsigned.apk > dist/UNSIGNED_SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.37-aligned-unsigned
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error

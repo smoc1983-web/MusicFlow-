@@ -1,0 +1,83 @@
+name: Verify MusicFlow 0.7.44 production release
+on:
+  push:
+    branches: ["feature/musicflow-v0744-radio-update-bluetooth-eq"]
+    paths: [".github/workflows/musicflow-v0744-release-build.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" ||
+            test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Check update, radio and audio fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path("app/src/main/java/com/musicflow/app")
+          load=lambda name:(root/name).read_text(encoding="utf-8")
+          gradle=Path("app/build.gradle.kts").read_text()
+          assert 'versionCode = 744' in gradle
+          assert 'versionName = "0.7.44"' in gradle
+          assert 'applicationId = "com.musicflow.preview"' in gradle
+          auto=load("MusicFlowAutoUpdate.kt")
+          bg=load("MusicFlowBackgroundUpdates.kt")
+          assert "MusicFlowUpdatePolicy.shouldShow" in auto
+          assert "MusicFlowBackgroundUpdates.enqueue(context, update)" in auto
+          assert "hidden = true" in auto
+          assert "code <= MusicFlowUpdates.currentCode(context)" in bg
+          radio=load("RussianRadio.kt")
+          full=load("FullPlayerDialog.kt")
+          main=load("MainActivity.kt")
+          assert 'artist = ""' in radio
+          assert 'if (isRadio)' in full
+          assert 'if (!isRadio) LinearProgressIndicator' in main
+          assert 'isCurrentRadioFavorite()' in main
+          assert 'RussianRadioDirectory.saveFavorites(context, updated)' in main
+          service=load("PlaybackService.kt")
+          effects=load("NativeAudioEqualizer.kt")
+          assert "AUDIO_OFFLOAD_MODE_DISABLED" in service
+          assert "onDeviceInfoChanged" in effects
+          assert "mainHandler.postDelayed(scheduledApply, 160L)" in effects
+          print("Source checks passed: installed-version guard, radio transport, Bluetooth PCM EQ")
+          PY
+      # Build after fixing the missing radio favorite icon imports.
+      - name: Kotlin tests and production APK compilation
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
+      - name: Align unsigned production package and verify version
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          APK=app/build/outputs/apk/release/app-release-unsigned.apk
+          test -s "$APK"
+          mkdir -p out
+          "$TOOLS/zipalign" -p -f 4 "$APK" out/MusicFlow_0.7.44-aligned-unsigned.apk
+          "$TOOLS/zipalign" -c -p 4 out/MusicFlow_0.7.44-aligned-unsigned.apk
+          "$TOOLS/aapt" dump badging out/MusicFlow_0.7.44-aligned-unsigned.apk |
+            grep -F "name='com.musicflow.preview' versionCode='744' versionName='0.7.44'"
+          sha256sum out/MusicFlow_0.7.44-aligned-unsigned.apk > out/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.44-aligned-unsigned-for-original-signature
+          path: out/
+          retention-days: 30
+          if-no-files-found: error

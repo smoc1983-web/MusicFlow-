@@ -1,0 +1,72 @@
+name: Build Cinema TEST v10 fullscreen and grouped series
+on:
+  push:
+    branches: ["feature/musicflow-cinema-fullscreen-series-v10"]
+    paths: [".github/workflows/cinema-fullscreen-series-build-v10.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Prepare SDK
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Verify fullscreen orientation and serial grouping architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path("app/src/main/java/com/musicflow/app")
+          player=(root/"CinemaNativeInlinePlayer.kt").read_text()
+          screen=(root/"CinemaLabScreen.kt").read_text()
+          groups=(root/"CinemaSeriesGrouping.kt").read_text()
+          config=Path("app/build.gradle.kts").read_text()
+          manifest=Path("app/src/main/AndroidManifest.xml").read_text()
+          assert 'applicationIdSuffix = ".cinematest10"' in config
+          assert 'MusicFlow Кино TEST v10' in manifest
+          assert 'SCREEN_ORIENTATION_PORTRAIT' in player
+          assert 'SCREEN_ORIENTATION_SENSOR_LANDSCAPE' in player
+          assert 'BackHandler(enabled = fullScreen)' in player
+          assert 'onDismissRequest = ::collapseVideo' in player
+          assert 'CinemaPlayerSeasonsDialog(' in player
+          assert 'VideoControls(Modifier.fillMaxSize()' not in player
+          assert 'CinemaPlayerView(player, Modifier.fillMaxSize())' in player
+          assert 'onEpisodeSelected = ::choosePlayerEpisode' in screen
+          assert 'CinemaSeriesGrouping.group(categoryTitles)' in screen
+          assert 'CinemaSeriesGroupRow(' in screen
+          assert 'episodesIn' in groups
+          print("PASS: portrait reset, video-only fullscreen, in-player season picker, series grouping")
+          PY
+      - name: Kotlin unit tests and APK
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Check debug signing and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview.cinematest10'"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          mkdir -p dist
+          cp "$APK" dist/MusicFlow-Cinema-TEST-v10.apk
+          sha256sum dist/MusicFlow-Cinema-TEST-v10.apk > dist/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-Cinema-TEST-v10-apk
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error

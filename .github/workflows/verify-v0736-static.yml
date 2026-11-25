@@ -1,0 +1,33 @@
+name: Verify 0.7.36 complete legacy static suite
+on:
+  push:
+    branches: ["feature/musicflow-v0.7.36-home-charts-ru"]
+    paths: [".github/workflows/verify-v0736-static.yml", "scripts/verify_v0721.py"]
+permissions:
+  contents: read
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run all legacy verification scripts and collect every failure
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import re,subprocess
+          from pathlib import Path
+          workflow=Path('.github/workflows/android-apk.yml').read_text()
+          paths=re.findall(r'run: python3 (scripts/verify_v\w+\.py)',workflow)
+          failed=[]
+          for path in paths:
+              result=subprocess.run(['python3',path],text=True,capture_output=True)
+              if result.returncode:
+                  failed.append(path)
+                  print('FAIL',path)
+                  print(result.stderr[-1200:])
+              else:
+                  print('PASS',path)
+          print('TOTAL',len(paths),'FAILED',len(failed),','.join(failed))
+          if failed: raise SystemExit(1)
+          PY

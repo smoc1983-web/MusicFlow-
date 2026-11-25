@@ -1,0 +1,303 @@
+package com.musicflow.app
+
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+@Composable
+internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val palette = LocalMusicFlowPalette.current
+    val scope = rememberCoroutineScope()
+    var update by remember { mutableStateOf<MusicFlowUpdate?>(null) }
+    var checking by remember { mutableStateOf(false) }
+    var downloading by remember { mutableStateOf(false) }
+    var transfer by remember {
+        mutableStateOf(MusicFlowBackgroundUpdates.Snapshot(
+            MusicFlowBackgroundUpdates.Phase.IDLE))
+    }
+    var message by remember {
+        mutableStateOf(MusicFlowUpdates.updateChannelMessage(context))
+    }
+    val currentVersion = remember { MusicFlowUpdates.currentVersion(context) }
+    val officialUpdateChannel = remember { MusicFlowUpdates.supportsOfficialUpdates(context) }
+
+    val localApkLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            if (!MusicFlowUpdates.canInstall(context)) {
+                message = "Для установки APK разрешите установки из MusicFlow и выберите файл повторно."
+                runCatching {
+                    context.startActivity(MusicFlowUpdates.allowInstallIntent(context))
+                }
+            } else {
+                downloading = true
+                message = "Проверяем выбранный APK и подпись…"
+                scope.launch {
+                    try {
+                        val imported = MusicFlowUpdates.importVerified(context, uri)
+                        downloading = false
+                        message = "Подтвердите установку в Android."
+                        context.startActivity(MusicFlowUpdates.installerIntent(imported))
+                    } catch (error: Exception) {
+                        message = "Не удалось обновить приложение: " +
+                            (error.message ?: "неподходящий APK")
+                    } finally {
+                        downloading = false
+                    }
+                }
+            }
+        }
+    }
+
+    fun openLink(url: String) {
+        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+            .onFailure { message = "Невозможно открыть ссылку: " + (it.message ?: "") }
+    }
+
+    LaunchedEffect(Unit) {
+        if (!officialUpdateChannel) return@LaunchedEffect
+        MusicFlowBackgroundUpdates.savedRelease(context)?.let { update = it }
+        checking = true
+        try {
+            val candidate = MusicFlowUpdates.latestRelease()
+            if (candidate == null) {
+                message = "Подписанные APK-выпуски пока не опубликованы. Для дальнейших обновлений их необходимо публиковать в GitHub Releases."
+            } else if (candidate.versionCode > MusicFlowUpdates.currentCode(context)) {
+                update = candidate
+                message = "Доступна версия " + candidate.version + ". Размер: " +
+                    (candidate.bytes / 1_048_576) + " МБ."
+            } else {
+                message = "Установлена актуальная версия."
+            }
+        } catch (error: Exception) {
+            message = "Не удалось проверить обновления: " +
+                (error.message ?: "ошибка подключения")
+        } finally {
+            checking = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (!officialUpdateChannel) return@LaunchedEffect
+        while (true) {
+            try {
+                transfer = MusicFlowBackgroundUpdates.snapshot(context)
+                val saved = MusicFlowBackgroundUpdates.savedRelease(context)
+                if (update == null && saved != null) update = saved
+            } catch (failure: Exception) {
+                AppDiagnostics.failure("Updates", "About background download status", failure)
+            }
+            delay(1000L)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = { if (!downloading) onDismiss() },
+        containerColor = palette.surface,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        title = { Text("О приложении MusicFlow", color = palette.foreground) },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                Text("Версия " + currentVersion,
+                    color = palette.accent,
+                    style = MaterialTheme.typography.labelLarge)
+                Text(message, color = palette.muted,
+                    style = MaterialTheme.typography.bodySmall)
+                if (checking || downloading) {
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth(), color = palette.accent)
+                }
+                if (transfer.phase in setOf(
+                        MusicFlowBackgroundUpdates.Phase.WAITING,
+                        MusicFlowBackgroundUpdates.Phase.RUNNING
+                    )) {
+                    LinearProgressIndicator(
+                        progress = { transfer.progress / 100f },
+                        modifier = Modifier.fillMaxWidth(), color = palette.accent)
+                    Text("Скачивание в фоне: " + transfer.progress + "% · можно свернуть MusicFlow",
+                        color = palette.foreground, style = MaterialTheme.typography.labelSmall)
+                } else if (transfer.phase == MusicFlowBackgroundUpdates.Phase.DOWNLOADED) {
+                    Text("APK скачан. Нажмите «Проверить и установить» — подпись будет проверена.",
+                        color = palette.accent, style = MaterialTheme.typography.bodySmall)
+                } else if (transfer.phase == MusicFlowBackgroundUpdates.Phase.FAILED) {
+                    Text(transfer.error.orEmpty(),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                Button(
+                    enabled = officialUpdateChannel && !checking && !downloading,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        checking = true
+                        update = null
+                        message = "Проверяем выпуски MusicFlow…"
+                        scope.launch {
+                            try {
+                                val candidate = MusicFlowUpdates.latestRelease()
+                                if (candidate == null) {
+                                    message = "Подписанные APK-выпуски ещё не опубликованы."
+                                } else if (candidate.versionCode > MusicFlowUpdates.currentCode(context)) {
+                                    update = candidate
+                                    message = "Доступна версия " + candidate.version +
+                                        ". Размер: " + (candidate.bytes / 1_048_576) + " МБ."
+                                } else {
+                                    message = "Установлена актуальная версия."
+                                }
+                            } catch (error: Exception) {
+                                message = "Проверка не выполнена: " +
+                                    (error.message ?: "нет подключения")
+                            } finally {
+                                checking = false
+                            }
+                        }
+                    }
+                ) {
+                    Icon(Icons.Filled.Download, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Проверить обновления")
+                }
+                update?.let { release ->
+                    val sameDownload = MusicFlowBackgroundUpdates.savedRelease(context)
+                        ?.versionCode == release.versionCode
+                    val inProgress = sameDownload && transfer.phase in setOf(
+                        MusicFlowBackgroundUpdates.Phase.WAITING,
+                        MusicFlowBackgroundUpdates.Phase.RUNNING)
+                    val finished = sameDownload &&
+                        transfer.phase == MusicFlowBackgroundUpdates.Phase.DOWNLOADED
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !downloading && !checking && !inProgress,
+                        onClick = {
+                            downloading = true
+                            scope.launch {
+                                try {
+                                    if (finished) {
+                                        val uri = MusicFlowBackgroundUpdates.verifiedInstallUri(context)
+                                        if (!MusicFlowUpdates.canInstall(context)) {
+                                            message = "Разрешите MusicFlow установку APK и повторите установку."
+                                            context.startActivity(MusicFlowUpdates.allowInstallIntent(context))
+                                        } else {
+                                            message = "Подтвердите установку в системном окне Android."
+                                            context.startActivity(MusicFlowUpdates.installerIntent(uri))
+                                        }
+                                    } else {
+                                        MusicFlowBackgroundUpdates.enqueue(context, release)
+                                        transfer = MusicFlowBackgroundUpdates.snapshot(context)
+                                        message = "Загрузка передана Android. Можно свернуть приложение."
+                                    }
+                                } catch (failure: Exception) {
+                                    message = "Ошибка обновления: " +
+                                        (failure.message ?: "не удалось загрузить или проверить APK")
+                                } finally {
+                                    downloading = false
+                                }
+                            }
+                        }
+                    ) {
+                        Text(when {
+                            inProgress -> "Загружается " + transfer.progress + "%"
+                            finished -> "Проверить и установить " + release.version
+                            else -> "Скачать " + release.version + " в фоне"
+                        })
+                    }
+                }
+                OutlinedButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !checking && !downloading,
+                    onClick = { localApkLauncher.launch(arrayOf(
+                        "application/vnd.android.package-archive",
+                        "application/octet-stream",
+                        "application/zip"
+                    )) }
+                ) {
+                    Icon(Icons.Filled.Download, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Установить APK из памяти")
+                }
+                Text(MusicFlowUpdates.updateChannelMessage(context),
+                    color = palette.muted, style = MaterialTheme.typography.labelSmall)
+                HorizontalDivider(color = palette.accent.copy(alpha = 0.18f))
+                Text("Поддержать разработчика", fontWeight = FontWeight.SemiBold,
+                    color = palette.foreground)
+                Text("Перевод через СБП по номеру +7 912 858-06-80. Выберите банк — номер скопируется, а перевод подтвердите самостоятельно в банковском приложении.",
+                    color = palette.muted, style = MaterialTheme.typography.bodySmall)
+                MusicFlowBank.entries.forEach { bank ->
+                    OutlinedButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            try {
+                                val installed = MusicFlowBankSupport.open(context, bank)
+                                message = if (installed) {
+                                    "Номер скопирован. В ${bank.title} выберите перевод по номеру телефона и проверьте получателя."
+                                } else {
+                                    "Номер скопирован. Открыта официальная страница ${bank.title} в RuStore."
+                                }
+                            } catch (error: Exception) {
+                                message = "Номер скопирован, но открыть ${bank.title} не удалось: " +
+                                    (error.message ?: "ошибка")
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Filled.OpenInNew, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Поддержать через " + bank.title)
+                    }
+                }
+                TextButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        MusicFlowBankSupport.copyPhone(context)
+                        message = "Номер " + MusicFlowUpdates.SUPPORT_NUMBER + " скопирован."
+                    }
+                ) {
+                    Icon(Icons.Filled.ContentCopy, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Только скопировать номер")
+                }
+                OutlinedButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { openLink(MusicFlowUpdates.TELEGRAM_URL) }
+                ) {
+                    Icon(Icons.Filled.OpenInNew, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Вступить в Telegram-канал MusicFlow")
+                }
+                Text("Приглашение в канал. Новые пользователи могут присоединиться через Telegram, если ссылка активна.",
+                    color = palette.muted,
+                    style = MaterialTheme.typography.labelSmall)
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !downloading,
+                onClick = onDismiss
+            ) { Text("Закрыть", color = palette.accent) }
+        }
+    )
+}

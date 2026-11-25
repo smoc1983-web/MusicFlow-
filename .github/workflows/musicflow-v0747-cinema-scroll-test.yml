@@ -1,0 +1,82 @@
+name: MusicFlow Cinema scroll TEST 0.7.47
+on:
+  push:
+    branches: ["feature/musicflow-v0747-cinema-scroll-test"]
+    paths:
+      - ".github/workflows/musicflow-v0747-cinema-scroll-test.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" ||
+            test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Static regression and isolated test identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path("app/src/main/java/com/musicflow/app/CinemaLabScreen.kt").read_text()
+          policy=Path("app/src/main/java/com/musicflow/app/CinemaCatalogScrollPolicy.kt").read_text()
+          tests=Path("app/src/test/java/com/musicflow/app/CinemaCatalogScrollPolicyTest.kt").read_text()
+          gradle=Path("app/build.gradle.kts").read_text()
+          manifest=Path("app/src/main/AndroidManifest.xml").read_text()
+          assert "key(catalogScrollIdentity) {" in src
+          assert "val catalogListState = rememberLazyListState()" in src
+          assert src.index("key(catalogScrollIdentity) {") < src.index("val catalogListState = rememberLazyListState()") < src.index("LazyColumn(")
+          assert "shelves.any { shelfCache[it.url]?.films?.isNotEmpty() == true }" in src
+          assert "searching = searchBusy && query.trim().length >= 2" in src
+          assert 'catalogListState.scrollToItem(0)' not in src
+          assert "phase = when" in policy and 'hasVisibleContent -> "ready"' in policy
+          assert "fun openingCinemaResetsWhenHomeRowsArriveAsynchronously" in tests
+          assert "fun searchResetsWhenQueryIsTypedAndWhenResultsArrive" in tests
+          assert "fun stableResultsAndPaginationDoNotMoveUserBackToTop" in tests
+          assert 'applicationId = "com.musicflow.preview"' in gradle
+          assert 'applicationIdSuffix = ".cinemascrolltest47"' in gradle
+          assert 'versionCode = 747' in gradle
+          assert 'MusicFlow Кино TEST 0.7.47' in manifest
+          print("PASS: reset-to-top on first catalog/results; pagination stable; production install isolated")
+          PY
+      - name: Kotlin regressions and assemble separate debug test APK
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Verify signed debug APK and upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          suites=list(Path("app/build/test-results/testDebugUnitTest").glob("TEST-*.xml"))
+          suite_names="\n".join(p.name for p in suites)
+          assert "CinemaCatalogScrollPolicyTest" in suite_names
+          print("PASS: Kotlin/JUnit suites =",len(suites))
+          PY
+          TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$TOOLS/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview.cinemascrolltest47' versionCode='747'"
+          "$TOOLS/apksigner" verify --verbose "$APK"
+          mkdir -p out
+          cp "$APK" out/MusicFlow-Cinema-Scroll-TEST-0.7.47.apk
+          sha256sum out/MusicFlow-Cinema-Scroll-TEST-0.7.47.apk > out/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-Cinema-Scroll-TEST-v0747-apk
+          path: out/
+          retention-days: 30
+          if-no-files-found: error

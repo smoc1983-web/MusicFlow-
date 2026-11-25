@@ -1,0 +1,89 @@
+name: Verify MusicFlow 0.7.45 update, PCM EQ and radio art
+on:
+  push:
+    branches: ["feature/musicflow-v0745-update-eq-radio-artwork"]
+    paths: [".github/workflows/musicflow-v0745-verify.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" ||
+            test -x "$ANDROID_HOME/build-tools/36.0.0/aapt"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Verify Liquid Glass themes and production identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path("app/src/main/java/com/musicflow/app")
+          main=(root/"MainActivity.kt").read_text()
+          svc=(root/"PlaybackService.kt").read_text()
+          auto=(root/"MusicFlowAutoUpdate.kt").read_text()
+          assert "PcmEqAudioProcessor" in svc
+          assert "NativeAudioEqualizer" not in svc
+          assert "pcmEq.update(AudioEqSettings.load(this))" in svc
+          assert "UpdateDialogGate.onConfirm" in auto
+          assert "hidden = nextState.dismissed" in auto
+          assert "RadioArtworkCatalog.resolve" in (root/"RussianRadio.kt").read_text()
+          assert 'contentDescription = "Закрыть радио-плеер"' in main
+          gradle=Path("app/build.gradle.kts").read_text()
+          assert 'versionCode = 745' in gradle
+          assert 'versionName = "0.7.45"' in gradle
+          assert 'applicationId = "com.musicflow.preview"' in gradle
+          appearance=(root/"MusicFlowAppearance.kt").read_text()
+          glass=(root/"MusicFlowGlass.kt").read_text()
+          assert "val DEFAULT: MusicFlowStyle = OBSIDIAN_GLASS" in appearance
+          assert 'getString("ui_theme", null)' in main
+          assert "MusicFlowStyle.entries.forEach" in main
+          assert "musicFlowGlass(choice, radius = 11.dp" in main
+          assert "Brush.verticalGradient" in glass
+          assert "musicFlowPalette(MusicFlowStyle.DEFAULT)" in appearance
+          assert "val oldKey = preferences.getString(\"ui_theme\", null)" in main
+          assert "if (oldKey != selected.name)" in main
+          assert "alpha = if (palette.isLight) 0.58f else 0.64f" in main
+          assert appearance.count("MusicFlowStyle.") >= 5
+          print("Identity, migrated Obsidian default and five Liquid Glass themes checked")
+          PY
+      # Re-run after Kotlin latestRelease smart cast and additional PCM processor regression.
+      - name: Regression tests and production release compilation
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
+      - name: Confirm tested regressions and unsigned release
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          tests=list(Path("app/build/test-results/testDebugUnitTest").glob("TEST-*.xml"))
+          names="\n".join(p.name for p in tests)
+          for required in ("PcmEqEngineTest", "PcmEqAudioProcessorTest", "UpdateDialogGateTest", "RadioArtworkCatalogTest", "MusicFlowLiquidGlassThemesTest"):
+              assert required in names, (required, names)
+          print("Regression classes executed:", len(tests))
+          PY
+          APK=app/build/outputs/apk/release/app-release-unsigned.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview' versionCode='745' versionName='0.7.45'"
+          mkdir -p out
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -p -f 4 "$APK"             out/MusicFlow_0.7.45-unsigned.apk
+          sha256sum out/MusicFlow_0.7.45-unsigned.apk > out/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.45-unsigned-validation-only
+          path: out/
+          retention-days: 14
+          if-no-files-found: error

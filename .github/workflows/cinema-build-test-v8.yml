@@ -1,0 +1,82 @@
+name: Build MusicFlow Cinema TEST v8 APK
+# Retest with verified Media3 TrackSelectionParameters API
+
+on:
+  push:
+    branches: ["feature/musicflow-cinema-rutube-discovery-v8"]
+    paths: [".github/workflows/cinema-build-test-v8.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Validate cinema UI, seasons, genres, quality selection and separate identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          app=Path("app/src/main/java/com/musicflow/app")
+          screen=(app/"CinemaLabScreen.kt").read_text()
+          player=(app/"CinemaNativeInlinePlayer.kt").read_text()
+          series=(app/"CinemaRutubeSeries.kt").read_text()
+          catalog=(app/"CinemaRutubeCatalog.kt").read_text()
+          source=(app/"CinemaNativeSources.kt").read_text()
+          gradle=Path("app/build.gradle.kts").read_text()
+          manifest=Path("app/src/main/AndroidManifest.xml").read_text()
+          assert 'applicationIdSuffix = ".cinematest8"' in gradle
+          assert 'android:label="MusicFlow Кино TEST v8"' in manifest
+          assert 'private const val FIRST_NAME = "Кино и сериалы"' in source
+          assert 'FF.SANFILM' not in source.upper()
+          assert 'CinemaRutubeCatalog.search(' in screen
+          assert 'CinemaPosterRail(' in screen
+          assert 'CinemaHeroCard(' in screen
+          assert 'По годам' in screen and 'Жанры' in screen
+          assert 'CinemaRutubeSeries.loadEpisodes' in screen
+          assert 'CinemaRutubeSeries.loadShowFor' in screen
+          assert 'FullscreenExit' in player and 'SCREEN_ORIENTATION_SENSOR_LANDSCAPE' in player
+          assert 'TrackSelectionOverride' in player
+          assert 'Авто' in player and 'Качество:' in player
+          assert 'video_balancer' in (app/"CinemaRutubeSource.kt").read_text()
+          assert 'shelves()' in catalog and 'parseShelves(' in catalog
+          assert 'Lampa' not in screen and 'Плагин' not in screen
+          assert not any(text in screen for text in ['Text("RUTUBE', 'Text("Rutube', 'Text("Рутуб'])
+          print("PASS: new cinema screen, unbranded captions, actual category API, series, fullscreen, quality")
+          PY
+      - name: Test Kotlin API parsers and compile debug APK
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Verify APK signing and package and prepare artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview.cinematest8'"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          mkdir -p dist
+          cp "$APK" dist/MusicFlow-Cinema-TEST-v8.apk
+          sha256sum dist/MusicFlow-Cinema-TEST-v8.apk > dist/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-Cinema-TEST-v8-apk
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error

@@ -1,0 +1,17 @@
+name: Probe Zaycev Public API
+on:
+  push:
+    branches: ["feature/**"]
+    paths:
+      - scripts/probe_zaycev_endpoints.py
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Zaycev public Next.js endpoints
+        run: python3 scripts/probe_zaycev_endpoints.py

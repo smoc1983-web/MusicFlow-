@@ -1,0 +1,54 @@
+name: Build MusicFlow 0.7.39 aligned unsigned APK for local original-key signing
+on:
+  push:
+    branches: ["feature/musicflow-v0.7.39-radio-catalog-recovery"]
+    paths: [".github/workflows/build-v0739-unsigned-for-local-signing.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unsigned:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Ensure Android build tools
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Verify branch identity, radio recovery and compile unsigned release
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fx '        applicationId = "com.musicflow.preview"' app/build.gradle.kts
+          grep -Fx '        versionCode = 739' app/build.gradle.kts
+          grep -Fx '        versionName = "0.7.39"' app/build.gradle.kts
+          python3 scripts/verify_v0739_radio.py
+          python3 scripts/verify_v0730.py
+          gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
+          test -s app/build/outputs/apk/release/app-release-unsigned.apk
+      - name: Zipalign and identify exactly reproducible unsigned APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          INPUT=app/build/outputs/apk/release/app-release-unsigned.apk
+          APK=dist/MusicFlow_0.7.39-aligned-unsigned.apk
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$INPUT" "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -p 4 "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "name='com.musicflow.preview' versionCode='739' versionName='0.7.39'"
+          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" dist/apksigner.jar
+          sha256sum "$APK" > dist/UNSIGNED_SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.39-aligned-unsigned
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30

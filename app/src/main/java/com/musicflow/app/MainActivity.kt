@@ -1,6 +1,7 @@
 package com.musicflow.app
 
 import android.content.ComponentName
+import android.content.res.Configuration
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -8,55 +9,73 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import coil.compose.rememberAsyncImagePainter
 import com.google.common.util.concurrent.ListenableFuture
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.net.UnknownHostException
-import java.net.SocketTimeoutException
-import java.io.IOException
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
-private val Violet = Color(0xFFAC80FF)
-private val Panel = Color(0xFF201B2C)
+private val Violet = Color(0xFFB99CFF)
+private val Panel = Color(0xFF1D2130)
 
-private data class Track(
+internal data class Track(
     val id: String,
     val title: String,
     val artist: String,
     val artwork: String?,
     val stream: String,
-    val durationSec: Long
+    val durationSec: Long,
+    val collectionTitle: String? = null,
+    val alternatives: List<MusicStream> = emptyList()
 )
 
 class MainActivity : ComponentActivity() {
@@ -65,33 +84,118 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppDiagnostics.initialize(this)
+        // Erase credentials used by the retired provider; this release does
+        // not retain account tokens or related Android Keystore entries.
+        runCatching { deleteSharedPreferences("musicflow_vk_private") }
+        runCatching {
+            java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+                .deleteEntry("com.musicflow.app.vk.audio.credentials.v1")
+        }
+        val appVersion = runCatching {
+            packageManager.getPackageInfo(packageName, 0).versionName
+        }.getOrNull().orEmpty()
+        AppDiagnostics.info("App", "MusicFlow " + appVersion +
+            " launched; package=" + packageName + "; Android SDK=" + android.os.Build.VERSION.SDK_INT)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync().also { future ->
             future.addListener({
-                runCatching { playerState.value = future.get() }
+                runCatching {
+                    playerState.value = future.get().also {
+                        TvVideoSurfaceBridge.registerMainController(it)
+                    }
+                    AppDiagnostics.info("Player", "controller connected")
+                }.onFailure { AppDiagnostics.failure("Player", "connect", it) }
             }, ContextCompat.getMainExecutor(this))
         }
         setContent {
-            val scheme = darkColorScheme(
-                primary = Violet,
-                background = Color(0xFF110F18),
-                surface = Panel,
-                onBackground = Color.White,
-                onSurface = Color.White
+            var themeStyle by remember {
+                val preferences = getSharedPreferences("musicflow", MODE_PRIVATE)
+                val oldKey = preferences.getString("ui_theme", null)
+                val selected = MusicFlowStyle.fromSaved(oldKey)
+                // One-time canonical migration. Legacy theme names never leak back
+                // into the new picker and Obsidian is the default for old installs.
+                if (oldKey != selected.name) {
+                    preferences.edit().putString("ui_theme", selected.name).apply()
+                }
+                mutableStateOf(selected)
+            }
+            val palette = musicFlowPalette(themeStyle)
+            // Material3 DropdownMenu/AlertDialog use surfaceContainer, not surface.
+            // Override the container family so popups match the AudioBook theme.
+            val scheme = if (palette.isLight) lightColorScheme(
+                primary = palette.accent,
+                onPrimary = palette.background,
+                secondary = palette.accent,
+                background = palette.background,
+                surface = palette.surface,
+                surfaceContainer = palette.surface,
+                surfaceContainerLow = palette.surface,
+                surfaceContainerHigh = palette.surface,
+                surfaceContainerHighest = palette.surface,
+                surfaceVariant = palette.surface,
+                onBackground = palette.foreground,
+                onSurface = palette.foreground,
+                onSurfaceVariant = palette.foreground,
+                outline = palette.muted
+            ) else darkColorScheme(
+                primary = palette.accent,
+                onPrimary = palette.background,
+                secondary = palette.accent,
+                background = palette.background,
+                surface = palette.surface,
+                surfaceContainer = palette.surface,
+                surfaceContainerLow = palette.surface,
+                surfaceContainerHigh = palette.surface,
+                surfaceContainerHighest = palette.surface,
+                surfaceVariant = palette.surface,
+                onBackground = palette.foreground,
+                onSurface = palette.foreground,
+                onSurfaceVariant = palette.foreground,
+                outline = palette.muted
             )
+            SideEffect {
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = palette.isLight
+                    isAppearanceLightNavigationBars = palette.isLight
+                }
+            }
             MaterialTheme(colorScheme = scheme) {
-                Surface(color = scheme.background) {
-                MusicScreen(
-                    player = playerState.value,
-                    saved = { loadFavorites() },
-                    save = { saveFavorites(it) }
-                )
+                CompositionLocalProvider(LocalMusicFlowPalette provides palette) {
+                    Surface(color = palette.background) {
+                        Box(Modifier.fillMaxSize()) {
+                        MusicScreen(
+                            player = playerState.value,
+                            saved = { loadFavorites() },
+                            save = { saveFavorites(it) },
+                            themeStyle = themeStyle,
+                            onThemeSelect = { selected ->
+                                themeStyle = selected
+                                getSharedPreferences("musicflow", MODE_PRIVATE).edit()
+                                    .putString("ui_theme", selected.name).apply()
+                            }
+                        )
+                        // Update manager stays off for this differently signed test package.
+                        if (packageName == "com.musicflow.preview") MusicFlowAutoUpdate()
+                        }
+                    }
                 }
             }
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        TvVideoSurfaceBridge.onMainResume()
+    }
+
+    override fun onPause() {
+        TvVideoSurfaceBridge.onMainPause()
+        super.onPause()
+    }
+
     override fun onDestroy() {
+        TvVideoSurfaceBridge.unregisterMainController(playerState.value)
         controllerFuture?.let { MediaController.releaseFuture(it) }
         super.onDestroy()
     }
@@ -103,12 +207,29 @@ class MainActivity : ComponentActivity() {
             val obj = array.optJSONObject(index) ?: return@mapNotNull null
             val id = obj.optString("id")
             val stream = obj.optString("stream")
-            if (id.isBlank() || !stream.startsWith("https://")) null
-            else Track(
-                id, obj.optString("title"), obj.optString("artist"),
-                obj.optString("artwork").takeIf { it.startsWith("https://") },
-                stream, obj.optLong("durationSec")
-            )
+            if (id.isBlank() || id.startsWith("archive:") ||
+                stream.contains("api.audius.co", ignoreCase = true) ||
+                stream.contains("discoveryprovider.audius.co", ignoreCase = true) ||
+                !(stream.startsWith("https://") ||
+                    (id.startsWith("zaycev:") &&
+                        Regex("zaycev://track/[0-9]{1,16}").matches(stream)))) null
+            else {
+                // Keep a favorite only when a usable non-retired stream exists.
+                val alternatives = decodeStreams(obj.optString("alternatives"))
+                val retired = id.startsWith("vk:")
+                val fallback = if (retired) alternatives.firstOrNull() else null
+                if (retired && fallback == null) null
+                else Track(
+                    fallback?.id ?: id,
+                    obj.optString("title"),
+                    obj.optString("artist"),
+                    obj.optString("artwork").takeIf { it.startsWith("https://") },
+                    fallback?.uri ?: stream,
+                    obj.optLong("durationSec"),
+                    obj.optString("collectionTitle").takeIf { it.isNotBlank() },
+                    if (retired) alternatives.drop(1) else alternatives
+                )
+            }
         }
     }.getOrDefault(emptyList())
 
@@ -122,6 +243,8 @@ class MainActivity : ComponentActivity() {
                 put("artwork", t.artwork ?: "")
                 put("stream", t.stream)
                 put("durationSec", t.durationSec)
+                put("collectionTitle", t.collectionTitle ?: "")
+                put("alternatives", encodeStreams(t.alternatives))
             })
         }
         getSharedPreferences("musicflow", MODE_PRIVATE)
@@ -133,39 +256,216 @@ class MainActivity : ComponentActivity() {
 private fun MusicScreen(
     player: MediaController?,
     saved: () -> List<Track>,
-    save: (List<Track>) -> Unit
+    save: (List<Track>) -> Unit,
+    themeStyle: MusicFlowStyle,
+    onThemeSelect: (MusicFlowStyle) -> Unit
 ) {
+    val palette = LocalMusicFlowPalette.current
     val scope = rememberCoroutineScope()
+    val resultListState = rememberLazyListState()
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    var searchJob by remember { mutableStateOf<Job?>(null) }
+    val homeSequence = remember { AtomicInteger(0) }
+    var pendingHomeSong by remember { mutableStateOf<String?>(null) }
+    var homePlaybackMessage by remember { mutableStateOf<String?>(null) }
     val favorites = remember { mutableStateListOf<Track>().also { it.addAll(saved()) } }
+    var radioFavoritesRevision by remember { mutableIntStateOf(0) }
     var tracks by remember { mutableStateOf<List<Track>>(emptyList()) }
     var search by remember { mutableStateOf("") }
+    var appliedSearch by remember { mutableStateOf("") }
+    var searchMode by remember { mutableStateOf(SearchMode.ALL) }
+    var sortMode by remember { mutableStateOf(SortMode.RELEVANCE) }
+    // Unified MusicFlow opens the usual music home. Cinema TEST v12 is available as "Кино".
     var tab by remember { mutableIntStateOf(0) }
-    var busy by remember { mutableStateOf(true) }
+    var sectionMenu by remember { mutableStateOf(false) }
+    var showAppearanceMenu by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
+    var showSleepTimerDialog by remember { mutableStateOf(false) }
+    var showThemePicker by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
+    var expandedPlayer by remember { mutableStateOf(false) }
+    var queueCatalog by remember { mutableStateOf<List<Track>>(emptyList()) }
+    var playbackStatus by remember { mutableStateOf<String?>(null) }
     var playing by remember { mutableStateOf(false) }
+    var currentArtwork by remember { mutableStateOf<String?>(null) }
+    var currentMediaId by remember { mutableStateOf("") }
     var trackTitle by remember { mutableStateOf("") }
     var trackArtist by remember { mutableStateOf("") }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
 
     fun fetch(query: String = "") {
-        scope.launch {
-            busy = true
-            problem = null
-            try {
-                tracks = audiusTracks(query)
-            } catch (e: Exception) {
-                problem = "Не удалось загрузить каталог. " + (e.message ?: "Проверьте интернет и DNS")
-            } finally {
-                busy = false
+        val requested = query.trim()
+        searchJob?.cancel()
+        // Reset the next LazyColumn measurement, not only the old list layout.
+        resultListState.requestScrollToItem(0)
+        tracks = emptyList()
+        appliedSearch = requested
+        problem = null
+        busy = requested.isNotEmpty()
+        if (!busy) return
+        searchJob = scope.launch {
+            if (tab == 1) resultListState.scrollToItem(0)
+            var failures = 0
+            AppDiagnostics.info("Search", "request started")
+            searchMusic(requested) { source, found, error ->
+                if (error != null) {
+                    failures++
+                    AppDiagnostics.failure("Search", "source=$source", error)
+                } else {
+                    // Results arrive independently from different providers and
+                    // can insert new album groups above the first visible item.
+                    resultListState.requestScrollToItem(0)
+                    tracks = combineMusicTracks(tracks, found.orEmpty())
+                    AppDiagnostics.info("Search", "source=$source matches=" + found.orEmpty().size)
+                }
+            }
+            busy = false
+            if (failures > 0) {
+                problem = if (tracks.isEmpty()) "Результаты недоступны. Проверьте подключение и повторите поиск."
+                else "Часть источников временно недоступна."
+            }
+            if (tracks.isNotEmpty()) {
+                val batch = tracks
+                try {
+                    val enriched = AlbumCatalog.enrichTracks(context, batch, requested)
+                    resultListState.requestScrollToItem(0)
+                    tracks = combineMusicTracks(tracks, enriched)
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (failure: Exception) {
+                    AppDiagnostics.failure("Album", "enrich search results", failure)
+                }
             }
         }
     }
-    LaunchedEffect(Unit) { fetch() }
+    LaunchedEffect(Unit) { AppDiagnostics.info("Search", "Awaiting music search input") }
+
+    // Back-fill album tags for favorites saved by older versions, but do not
+    // request metadata for every song separately.
+    LaunchedEffect(tab, favorites.size) {
+        if (tab != 2 || favorites.isEmpty()) return@LaunchedEffect
+        val pending = favorites.toList().filter { it.collectionTitle.isNullOrBlank() }
+        val artistGroups = pending.groupBy { it.artist.trim() }.entries.take(4)
+        for ((artist, items) in artistGroups) {
+            val updates = runCatching {
+                AlbumCatalog.enrichTracks(context, items, artist)
+            }.getOrElse {
+                AppDiagnostics.failure("Album", "enrich saved tracks", it)
+                emptyList()
+            }
+            if (tab != 2) return@LaunchedEffect
+            if (updates.isNotEmpty()) {
+                val byId = updates.filter { !it.collectionTitle.isNullOrBlank() }
+                    .associateBy { it.id }
+                if (byId.isNotEmpty()) {
+                    val refreshed = favorites.map { byId[it.id] ?: it }
+                    favorites.clear()
+                    favorites.addAll(refreshed)
+                    save(refreshed)
+                }
+            }
+        }
+    }
+    fun openTvFullscreen() {
+        if (TvPlaybackHandoff.snapshot() == null) return
+        if (!TvVideoSurfaceBridge.requestFullscreen()) return
+        try {
+            context.startActivity(Intent(context, TvFullscreenActivity::class.java))
+        } catch (error: Exception) {
+            TvVideoSurfaceBridge.cancelFullscreenRequest()
+            AppDiagnostics.failure("TV", "open fullscreen", error)
+        }
+    }
+
+    // Expand TV on a rotation into landscape only, never on return from fullscreen.
+    val orientation = LocalConfiguration.current.orientation
+    var previousOrientation by remember { mutableIntStateOf(orientation) }
+    LaunchedEffect(orientation) {
+        val rotatedToLandscape = previousOrientation != orientation &&
+            orientation == Configuration.ORIENTATION_LANDSCAPE
+        previousOrientation = orientation
+        if (TvVideoSurfaceBridge.allowRotationLaunch(
+                rotatedToLandscape,
+                portrait = orientation == Configuration.ORIENTATION_PORTRAIT
+            ) &&
+            player?.currentMediaItem?.mediaId?.startsWith("ruvideo:") == true &&
+            TvPlaybackHandoff.snapshot() != null) {
+            openTvFullscreen()
+        }
+    }
+
+    fun updateActiveMedia(item: MediaItem?) {
+        // React to Media3 transitions immediately. The old polling-only path
+        // could display the previous title/cover for up to 650 ms.
+        currentMediaId = item?.mediaId.orEmpty()
+        currentArtwork = item?.mediaMetadata?.artworkUri?.toString()
+        trackTitle = item?.mediaMetadata?.title?.toString().orEmpty()
+        trackArtist = item?.mediaMetadata?.artist?.toString().orEmpty()
+    }
+
+    DisposableEffect(player) {
+        val active = player
+        if (active == null) {
+            onDispose { }
+        } else {
+            val listener = object : androidx.media3.common.Player.Listener {
+                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    updateActiveMedia(mediaItem)
+                }
+                override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
+                    updateActiveMedia(active.currentMediaItem)
+                }
+            }
+            active.addListener(listener)
+            updateActiveMedia(active.currentMediaItem)
+            onDispose { active.removeListener(listener) }
+        }
+    }
+
+    // Preload images for the next chart entries while this song is playing.
+    // CoverLookup uses a bounded IO semaphore and a persistent positive cache.
+    // No audio streams are requested here.
+    LaunchedEffect(player, currentMediaId) {
+        val active = player ?: return@LaunchedEffect
+        if (currentMediaId.isBlank() ||
+            active.currentMediaItem?.mediaMetadata?.extras
+                ?.getBoolean(MUSIC_CHART_PLAYLIST, false) != true) return@LaunchedEffect
+        val next = active.currentMediaItemIndex
+        for (index in (next + 1)..minOf(next + 2, active.mediaItemCount - 1)) {
+            val neighbor = active.getMediaItemAt(index).mediaMetadata
+            val nextArtist = neighbor.artist?.toString().orEmpty()
+            val nextTitle = neighbor.title?.toString().orEmpty()
+            val provided = neighbor.artworkUri?.toString()
+            if (nextArtist.isNotBlank() && nextTitle.isNotBlank()) {
+                launch {
+                    runCatching {
+                        CoverLookup.resolve(context, nextArtist, nextTitle, provided)
+                    }.onFailure {
+                        if (it !is CancellationException) {
+                            AppDiagnostics.failure("Cover", "prefetch next chart artwork", it)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     LaunchedEffect(player) {
         while (player != null) {
             playing = player.isPlaying
+            playbackStatus = when {
+                player.playerError != null -> "Поток недоступен"
+                player.playbackState == androidx.media3.common.Player.STATE_BUFFERING -> "Подключение…"
+                player.isPlaying -> "Сейчас играет"
+                player.playbackState == androidx.media3.common.Player.STATE_ENDED -> "Воспроизведение завершено"
+                !player.playWhenReady -> "На паузе"
+                else -> null
+            }
+            currentMediaId = player.currentMediaItem?.mediaId.orEmpty()
+            currentArtwork = player.currentMediaItem?.mediaMetadata?.artworkUri?.toString()
             trackTitle = player.currentMediaItem?.mediaMetadata?.title?.toString() ?: ""
             trackArtist = player.currentMediaItem?.mediaMetadata?.artist?.toString() ?: ""
             positionMs = player.currentPosition.coerceAtLeast(0)
@@ -174,11 +474,17 @@ private fun MusicScreen(
         }
     }
 
-    fun queueAndPlay(list: List<Track>, index: Int) {
+    fun queueAndPlay(list: List<Track>, index: Int, homePlaylist: Boolean = false, chartPlaylist: Boolean = false) {
         val p = player ?: run {
             problem = "Плеер подключается. Повторите попытку."
+            AppDiagnostics.warning("Player", "play requested before connection")
             return
         }
+        homeSequence.incrementAndGet()
+        pendingHomeSong = null
+        homePlaybackMessage = null
+        queueCatalog = list.toList()
+        AppDiagnostics.info("Player", "queue size=" + list.size + "; index=" + index)
         p.setMediaItems(list.map { t ->
             MediaItem.Builder()
                 .setMediaId(t.id)
@@ -187,96 +493,408 @@ private fun MusicScreen(
                     MediaMetadata.Builder()
                         .setTitle(t.title)
                         .setArtist(t.artist)
+                        .setAlbumTitle(t.collectionTitle)
+                        .setExtras(Bundle().apply {
+                            putString(MUSIC_STREAMS, encodeStreams(t.streams()))
+                            putString(MUSIC_SOURCE, t.id.substringBefore(':'))
+                            putLong(MUSIC_DURATION_SECONDS, t.durationSec)
+                            putBoolean(MUSIC_HOME_PLAYLIST, homePlaylist)
+                            putBoolean(MUSIC_CHART_PLAYLIST, chartPlaylist)
+                        })
                         .setArtworkUri(t.artwork?.let(Uri::parse))
                         .build()
                 ).build()
-        }, index, 0L)
+        }, index, PlaybackJournal.resumePosition(
+            context, list[index].id, list[index].durationSec
+        ))
         p.prepare()
         p.play()
     }
 
-    val visible = if (tab == 2) favorites.toList() else tracks
-    Column(
-        Modifier.fillMaxSize().background(Color(0xFF110F18))
-            .padding(horizontal = 16.dp)
-    ) {
-        Spacer(Modifier.height(20.dp))
-        Text("MusicFlow", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-        Text("Музыка онлайн · Audius", color = Color.LightGray)
-        Spacer(Modifier.height(18.dp))
+    fun stopMusic() {
+        val controller = player ?: return
+        controller.stop()
+        controller.clearMediaItems()
+        queueCatalog = emptyList()
+        expandedPlayer = false
+        pendingHomeSong = null
+        homeSequence.incrementAndGet()
+        AppDiagnostics.info("Player", "Music stopped and playback queue cleared by user")
+    }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Главная", "Поиск", "Избранное").forEachIndexed { index, title ->
-                FilterChip(
-                    selected = tab == index,
-                    onClick = { tab = index },
-                    label = { Text(title) }
-                )
+    fun playHomeSong(song: HomeSong, section: List<HomeSong>) {
+        val request = homeSequence.incrementAndGet()
+        pendingHomeSong = song.id
+        homePlaybackMessage = "Подключение: " + song.title
+        scope.launch {
+            // Resolve only the selected entry upfront. The remaining Zaycev links
+            // are resolved lazily by Media3 as playback advances through the queue.
+            val candidate = resolveRecommendedTrack(song.artist, song.title)
+            if (request != homeSequence.get()) return@launch
+            pendingHomeSong = null
+            val queue = buildHomePlaylistQueue(song, section, candidate)
+            if (queue == null) {
+                homePlaybackMessage = "Для этой записи не найден доступный поток. Попробуй другую композицию."
+                AppDiagnostics.warning("Home", "Selected song has no playable queue entry")
+            } else {
+                homePlaybackMessage = null
+                queueAndPlay(queue.tracks, queue.selectedIndex, homePlaylist = true)
+                AppDiagnostics.info("Home", "collection queue size=" + queue.tracks.size +
+                    "; chosen=" + queue.selectedIndex)
             }
         }
+    }
+
+    fun playChartSong(song: TopSong, chartSection: List<TopSong>) {
+        val request = homeSequence.incrementAndGet()
+        pendingHomeSong = "chart:" + musicKey(song.artist) + ":" + musicKey(song.title)
+        homePlaybackMessage = "Поиск записи: " + song.artist + " — " + song.title
+        scope.launch {
+            val candidate = try {
+                findRecording(song.artist, song.title).firstOrNull()
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (failure: Exception) {
+                AppDiagnostics.failure("Charts", "play selection", failure)
+                null
+            }
+            if (request != homeSequence.get()) return@launch
+            pendingHomeSong = null
+            val chartQueue = ChartPlaylistQueue.build(song, chartSection, candidate)
+            if (chartQueue != null) {
+                queueAndPlay(chartQueue.tracks, chartQueue.selectedIndex,
+                    homePlaylist = true, chartPlaylist = true)
+                AppDiagnostics.info("Charts", "queue=" + chartQueue.tracks.size +
+                    "; selected=" + chartQueue.selectedIndex)
+            } else {
+                homePlaybackMessage = "Запись не найдена: " + song.artist + " — " + song.title
+            }
+        }
+    }
+
+    fun isCurrentRadioFavorite(): Boolean {
+        radioFavoritesRevision // trigger refresh after saving the radio favorite
+        return RussianRadioDirectory.favorites(context).any {
+            it.mediaId == currentMediaId
+        }
+    }
+
+    fun toggleCurrentFavorite() {
+        val item = player?.currentMediaItem ?: return
+        val id = item.mediaId
+        if (id.startsWith("radio:")) {
+            val uuid = id.removePrefix("radio:")
+            val savedStations = RussianRadioDirectory.favorites(context)
+            val updated = if (savedStations.any { it.uuid == uuid }) {
+                savedStations.filterNot { it.uuid == uuid }
+            } else {
+                val stream = item.localConfiguration?.uri?.toString().orEmpty()
+                if (!RussianRadioDirectory.isPublicStream(stream)) return
+                val station = RussianRadioStation(
+                    uuid = uuid,
+                    name = item.mediaMetadata.title?.toString().orEmpty()
+                        .ifBlank { "Радиостанция" },
+                    stream = stream,
+                    favicon = item.mediaMetadata.artworkUri?.toString()
+                        ?.takeIf { it.startsWith("https://") },
+                    tags = "", codec = "", bitrate = 0
+                )
+                (listOf(station) + savedStations).take(100)
+            }
+            RussianRadioDirectory.saveFavorites(context, updated)
+            radioFavoritesRevision++
+            return
+        }
+        if (favorites.any { it.id == id }) {
+            favorites.removeAll { it.id == id }
+        } else {
+            val existing = queueCatalog.firstOrNull { it.id == id }
+                ?: tracks.firstOrNull { it.id == id }
+            val currentTrack = existing ?: item.localConfiguration?.uri?.toString()?.let { uri ->
+                Track(
+                    id = id,
+                    title = item.mediaMetadata.title?.toString() ?: "Без названия",
+                    artist = item.mediaMetadata.artist?.toString() ?: "Неизвестный исполнитель",
+                    artwork = item.mediaMetadata.artworkUri?.toString(),
+                    stream = uri,
+                    durationSec = player.duration.coerceAtLeast(0) / 1000
+                )
+            }
+            if (currentTrack != null) favorites.add(0, currentTrack)
+        }
+        save(favorites.toList())
+    }
+
+    val visible = when (tab) {
+        2 -> favorites.toList()
+        1 -> filterAndSortTracks(tracks, appliedSearch, searchMode, sortMode)
+        else -> tracks
+    }
+    LaunchedEffect(tab, appliedSearch, searchMode, sortMode, tracks) {
         if (tab == 1) {
+            resultListState.requestScrollToItem(0)
+            resultListState.scrollToItem(0)
+        } else if (tab == 2) resultListState.scrollToItem(0)
+    }
+    // Android 15+ draws behind status and navigation bars by default.
+    // Insets belong to the whole screen, including header actions and floating TV.
+    Box(
+        Modifier.fillMaxSize()
+            .background(Brush.verticalGradient(
+                listOf(palette.gradientTop, palette.background, palette.gradientBottom)
+            ))
+            .statusBarsPadding()
+            .navigationBarsPadding()
+    ) {
+    Column(
+        Modifier.fillMaxSize()
+            .background(palette.background.copy(
+                alpha = if (palette.isLight) 0.58f else 0.64f
+            ))
+            .padding(horizontal = 12.dp)
+    ) {
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("MusicFlow", style = MaterialTheme.typography.titleLarge,
+                color = palette.foreground, fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f))
+            if (PlayerMinimizePolicy.canShowNowPlaying(
+                    hasTrack = trackTitle.isNotBlank(),
+                    isTelevision = currentMediaId.startsWith("ruvideo:")
+                )) {
+                TextButton(
+                    onClick = { expandedPlayer = true },
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                ) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = null,
+                        modifier = Modifier.size(16.dp))
+                    Text("Сейчас играет", style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1)
+                }
+            }
+            IconButton(onClick = {
+                tab = 1
+                if (search.isNotBlank()) fetch(search)
+            }) { Icon(Icons.Filled.Search, contentDescription = "Поиск", tint = palette.foreground) }
+            Box {
+                IconButton(onClick = { showAppearanceMenu = true }) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "Настройки",
+                        tint = palette.muted)
+                }
+                DropdownMenu(expanded = showAppearanceMenu,
+                    onDismissRequest = { showAppearanceMenu = false },
+                    modifier = Modifier.musicFlowMenuSurface(palette),
+                    containerColor = palette.surface,
+                    shadowElevation = 14.dp) {
+                    DropdownMenuItem(text = { Text("Оформление") }, onClick = {
+                        showAppearanceMenu = false
+                        showThemePicker = true
+                    })
+                    DropdownMenuItem(text = { Text("Таймер сна") }, onClick = {
+                        showAppearanceMenu = false
+                        showSleepTimerDialog = true
+                    })
+                    DropdownMenuItem(text = { Text("История прослушивания") }, onClick = {
+                        showAppearanceMenu = false
+                        tab = 5
+                    })
+                    DropdownMenuItem(text = { Text("Диагностика") }, onClick = {
+                        showAppearanceMenu = false
+                        tab = 4
+                    })
+                    DropdownMenuItem(text = { Text("О приложении · обновления") }, onClick = {
+                        showAppearanceMenu = false
+                        showAboutDialog = true
+                    })
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box {
+                OutlinedButton(onClick = { sectionMenu = true },
+                    modifier = Modifier.height(42.dp),
+                    shape = RoundedCornerShape(12.dp)) {
+                    Text(when (tab) {
+                        2 -> "Избранное"
+                        3 -> "ТВ"
+                        7 -> "Кино"
+                        6 -> "Радио"
+                        5 -> "История"
+                        else -> "Музыка"
+                    })
+                    Spacer(Modifier.width(6.dp))
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null,
+                        modifier = Modifier.size(18.dp))
+                }
+                DropdownMenu(expanded = sectionMenu,
+                    onDismissRequest = { sectionMenu = false },
+                    modifier = Modifier.musicFlowMenuSurface(palette),
+                    containerColor = palette.surface,
+                    shadowElevation = 14.dp) {
+                    listOf(0 to "Музыка", 2 to "Избранное", 6 to "Радио",
+                        5 to "История", 3 to "ТВ", 7 to "Кино")
+                        .forEach { (index, label) ->
+                            DropdownMenuItem(text = { Text(label) },
+                                onClick = {
+                                    tab = index
+                                    sectionMenu = false
+                                })
+                        }
+                }
+            }
+            if (tab == 1 || tab == 4) {
+                Spacer(Modifier.width(12.dp))
+                Text(if (tab == 1) "Поиск музыки" else "Диагностика",
+                    color = palette.accent, style = MaterialTheme.typography.labelLarge)
+            }
+        }
+        Spacer(Modifier.height(5.dp))
+        if (tab == 0) {
+            MusicHomeScreen(
+                onSearch = { suggested ->
+                    tab = 1
+                    search = suggested
+                    if (suggested.isNotBlank()) fetch(suggested)
+                },
+                onPlay = { song, section -> playHomeSong(song, section) },
+                onPlayChart = { song, section -> playChartSong(song, section) },
+                pendingSongId = pendingHomeSong,
+                playbackMessage = homePlaybackMessage,
+                modifier = Modifier.weight(1f)
+            )
+        } else if (tab == 3) {
+            RuVideoHubTvScreen(player = player, modifier = Modifier.weight(1f))
+        } else if (tab == 7) {
+            CinemaLabScreen(modifier = Modifier.weight(1f))
+        } else if (tab == 4) {
+            DiagnosticsScreen(modifier = Modifier.weight(1f))
+        } else if (tab == 6) {
+            RussianRadioScreen(
+                activeId = currentMediaId,
+                playing = playing,
+                onPlay = { station -> queueAndPlay(listOf(station.toTrack()), 0) },
+                onStop = { stopMusic() },
+                modifier = Modifier.weight(1f)
+            )
+        } else if (tab == 5) {
+            MusicPlaybackHistoryScreen(
+                activeId = currentMediaId,
+                onPlay = { track -> queueAndPlay(listOf(track), 0) },
+                modifier = Modifier.weight(1f)
+            )
+        } else {
+        if (tab == 1) {
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                SearchMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = searchMode == mode,
+                        onClick = { searchMode = mode },
+                        label = { Text(mode.label) }
+                    )
+                }
+            }
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
                 value = search,
                 onValueChange = { search = it },
-                label = { Text("Исполнитель или название") },
+                label = { Text("Исполнитель или название песни") },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = {
+                    fetch(search)
+                    focusManager.clearFocus()
+                }),
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(6.dp))
             Button(
                 onClick = { fetch(search) },
-                enabled = !busy,
+                enabled = !busy && search.isNotBlank(),
                 modifier = Modifier.fillMaxWidth()
-            ) { Text("Найти музыку") }
+            ) {
+                Text("Искать")
+            }
+            Spacer(Modifier.height(6.dp))
+            Text("Сортировка", color = palette.muted, style = MaterialTheme.typography.labelMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                SortMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = sortMode == mode,
+                        onClick = { sortMode = mode },
+                        label = { Text(mode.label) }
+                    )
+                }
+            }
         }
         Spacer(Modifier.height(12.dp))
 
         if (busy && tab != 2) LinearProgressIndicator(Modifier.fillMaxWidth())
         problem?.let {
             Text(it, color = Color(0xFFFFB3A8), modifier = Modifier.padding(vertical = 10.dp))
-            Text(
-                "Если ссылка открывается в браузере, но приложение не подключается, проверьте, включён ли MusicFlow в VPN или списке разрешённых приложений для сети.",
-                color = Color.LightGray,
-                style = MaterialTheme.typography.bodySmall
-            )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { fetch(if (tab == 1) search else "") }) {
+                TextButton(onClick = { fetch(search) }) {
                     Text("Повторить")
-                }
-                TextButton(onClick = {
-                    runCatching {
-                        context.startActivity(
-                            Intent(
-                                Intent.ACTION_VIEW,
-                                Uri.parse("https://api.audius.co/v1/tracks/trending?app_name=MusicFlowAndroid&limit=2")
-                            )
-                        )
-                    }
-                }) {
-                    Text("Проверить API")
                 }
             }
         }
         Text(
-            if (tab == 2) "Сохранённые треки" else if (tab == 1) "Результаты поиска" else "Популярное сейчас",
+            if (tab == 2) "Сохранённые треки" else if (tab == 1) "Результаты: " + visible.size else "Музыка онлайн",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(bottom = 8.dp)
         )
-        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(visible, key = { it.id }) { track ->
+        val albumGroups = groupTracksByAlbum(visible)
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            state = resultListState,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            albumGroups.forEach { albumGroup ->
+                item(key = "section:" + albumGroup.id) {
+                    if (albumGroup.albumTitle != null) {
+                        Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp)) {
+                            Text(
+                                "♫ " + albumGroup.albumTitle,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = palette.accent,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                albumGroup.artist.orEmpty() + " · " +
+                                    albumGroup.songs.size + " композиций",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = palette.muted
+                            )
+                        }
+                    } else if (albumGroups.size > 1) {
+                        Text("Отдельные треки", color = palette.muted,
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(top = 8.dp))
+                    }
+                }
+                items(albumGroup.songs, key = { "track:" + it.id }) { track ->
+                val cover by rememberCoverArt(track.artist, track.title, track.artwork)
                 val isFavorite = favorites.any { it.id == track.id }
+                val isActive = currentMediaId == track.id
                 Row(
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                        .background(Panel).clickable {
-                            val index = visible.indexOf(track)
-                            if (index >= 0) queueAndPlay(visible, index)
+                    modifier = Modifier.fillMaxWidth()
+                        .musicFlowGlass(palette, 12.dp, active = isActive).clickable {
+                            val albumQueue = if (albumGroup.albumTitle != null &&
+                                albumGroup.songs.size > 1) albumGroup.songs else visible
+                            val index = albumQueue.indexOfFirst { it.id == track.id }
+                            if (index >= 0) queueAndPlay(albumQueue, index)
                         }.padding(9.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Image(
-                        painter = rememberAsyncImagePainter(track.artwork),
+                        painter = rememberAsyncImagePainter(cover),
                         contentDescription = "Обложка",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.size(56.dp).clip(RoundedCornerShape(9.dp))
@@ -284,7 +902,24 @@ private fun MusicScreen(
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                        Text(track.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.LightGray)
+                        Text(track.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, color = palette.muted)
+                        if (isActive) {
+                            Text(
+                                playbackStatus.orEmpty(),
+                                color = palette.accent,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                        track.collectionTitle?.takeIf { it.isNotBlank() }?.let {
+                            Text("Альбом: " + it, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                 color = palette.muted, style = MaterialTheme.typography.labelSmall)
+                        }
+                        if (track.durationSec > 0L) {
+                            Text(
+                                formatTrackDuration(track.durationSec),
+                                color = palette.accent, style = MaterialTheme.typography.labelSmall
+                            )
+                        }
                     }
                     TextButton(onClick = {
                         if (isFavorite) favorites.removeAll { it.id == track.id }
@@ -292,147 +927,250 @@ private fun MusicScreen(
                         save(favorites.toList())
                     }) { Text(if (isFavorite) "♥" else "♡") }
                 }
+                }
             }
             if (visible.isEmpty() && !busy) item {
                 Text(
-                    if (tab == 2) "Избранного пока нет" else "Треки не найдены",
-                    color = Color.LightGray, modifier = Modifier.padding(12.dp)
+                    when {
+                        tab == 2 -> "Избранного пока нет"
+                        tab == 1 && appliedSearch.isBlank() -> "Введите название песни или исполнителя для поиска"
+                        tab == 1 && tracks.isNotEmpty() -> "Нет совпадений по выбранному полю. Попробуй режим «Везде»."
+                        else -> "Треки не найдены"
+                    },
+                    color = palette.muted, modifier = Modifier.padding(12.dp)
                 )
             }
         }
-        if (trackTitle.isNotBlank()) {
+        }
+        if (trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
+            val miniCover by rememberCoverArt(trackArtist, trackTitle, currentArtwork)
+            val isRadio = currentMediaId.startsWith("radio:")
             Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                    .background(Panel).padding(14.dp)
+                modifier = Modifier.fillMaxWidth()
+                    .musicFlowGlass(palette, radius = 18.dp)
+                    .padding(horizontal = 10.dp, vertical = 7.dp)
             ) {
-                Text(trackTitle, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(trackArtist, color = Color.LightGray, maxLines = 1)
-                val end = durationMs.coerceAtLeast(1L)
-                Slider(
-                    value = positionMs.coerceIn(0L, end).toFloat(),
-                    onValueChange = { player?.seekTo(it.toLong()) },
-                    valueRange = 0f..end.toFloat(),
-                    modifier = Modifier.fillMaxWidth()
-                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(onClick = { player?.seekToPreviousMediaItem() }) { Text("⏮") }
-                    Button(onClick = { if (playing) player?.pause() else player?.play() }) {
-                        Text(if (playing) "Пауза" else "Слушать")
+                    Row(
+                        modifier = Modifier.weight(1f).clickable { expandedPlayer = true },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
+                                .background(palette.surface),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isRadio) {
+                                RadioStationArtwork(
+                                    name = trackTitle,
+                                    logo = miniCover,
+                                    modifier = Modifier.fillMaxSize(),
+                                    radius = 12.dp
+                                )
+                            } else {
+                            Icon(Icons.Filled.MusicNote, contentDescription = null,
+                                tint = palette.accent.copy(alpha = 0.6f),
+                                modifier = Modifier.size(26.dp))
+                            if (!miniCover.isNullOrBlank()) {
+                                Image(
+                                    painter = rememberAsyncImagePainter(miniCover),
+                                    contentDescription = "Обложка текущей композиции",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                            }
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(trackTitle, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis)
+                            if (!isRadio) Text(trackArtist, color = palette.muted,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.bodySmall)
+                            Text(playbackStatus.orEmpty(), color = palette.accent,
+                                style = MaterialTheme.typography.labelSmall)
+                        }
                     }
-                    TextButton(onClick = { player?.seekToNextMediaItem() }) { Text("⏭") }
+                    IconButton(onClick = {
+                        if (player?.playWhenReady == true && player.playerError == null) player.pause()
+                        else {
+                            if (player?.playerError != null ||
+                                player?.playbackState == androidx.media3.common.Player.STATE_IDLE)
+                                player?.prepare()
+                            player?.play()
+                        }
+                    }) {
+                        Icon(
+                            if (player?.playWhenReady == true && player.playerError == null) androidx.compose.material.icons.Icons.Filled.Pause
+                            else androidx.compose.material.icons.Icons.Filled.PlayArrow,
+                            contentDescription = if (player?.playWhenReady == true && player.playerError == null) "Пауза" else "Воспроизвести",
+                            tint = palette.foreground
+                        )
+                    }
+                    PlayerEqualizerButton(
+                        modifier = Modifier.size(42.dp),
+                        tint = palette.accent
+                    )
+                    if (isRadio) {
+                        IconButton(onClick = { toggleCurrentFavorite() }) {
+                            Icon(
+                                if (isCurrentRadioFavorite())
+                                    androidx.compose.material.icons.Icons.Filled.Favorite
+                                else androidx.compose.material.icons.Icons.Filled.FavoriteBorder,
+                                contentDescription = "Радио в избранное",
+                                tint = palette.accent
+                            )
+                        }
+                        IconButton(onClick = { stopMusic() }) {
+                            Icon(
+                                androidx.compose.material.icons.Icons.Filled.Close,
+                                contentDescription = "Закрыть радио-плеер",
+                                tint = palette.foreground
+                            )
+                        }
+                    } else {
+                    IconButton(onClick = { player?.seekToNextMediaItem() }) {
+                        Icon(
+                            androidx.compose.material.icons.Icons.Filled.SkipNext,
+                            contentDescription = "Следующий трек",
+                            tint = palette.foreground
+                        )
+                    }
+                    IconButton(onClick = { stopMusic() }) {
+                        Icon(
+                            androidx.compose.material.icons.Icons.Filled.Close,
+                            contentDescription = "Выключить музыку",
+                            tint = palette.foreground
+                        )
+                    }
+                    }
                 }
+                if (!isRadio) LinearProgressIndicator(
+                    progress = { if (durationMs > 0L) {
+                        (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+                    } else 0f },
+                    modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
+                    color = palette.accent,
+                    trackColor = palette.accent.copy(alpha = 0.23f)
+                )
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(4.dp))
         }
     }
-}
-
-
-private val audiusClient: OkHttpClient = OkHttpClient.Builder()
-    .connectTimeout(10, TimeUnit.SECONDS)
-    .readTimeout(15, TimeUnit.SECONDS)
-    .callTimeout(20, TimeUnit.SECONDS)
-    .followRedirects(true)
-    .build()
-
-private fun requestAudiusOkHttp(url: String): String {
-    val request = Request.Builder()
-        .url(url)
-        .header("Accept", "application/json")
-        .header("User-Agent", "MusicFlow/0.1.3 Android")
-        .get()
-        .build()
-    return audiusClient.newCall(request).execute().use { response ->
-        if (!response.isSuccessful) {
-            throw IOException("HTTP " + response.code + " " + (response.body?.string()?.take(80) ?: ""))
-        }
-        response.body?.string() ?: throw IOException("Пустой ответ от сервера")
-    }
-}
-
-private fun requestAudiusHttpUrlConnection(url: String): String {
-    val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-        connectTimeout = 10_000
-        readTimeout = 15_000
-        instanceFollowRedirects = true
-        setRequestProperty("Accept", "application/json")
-        setRequestProperty("User-Agent", "MusicFlow/0.1.3 Android")
-    }
-    return try {
-        if (conn.responseCode !in 200..299) {
-            val msg = conn.errorStream?.bufferedReader()?.use { it.readText().take(80) } ?: ""
-            throw IOException("HTTP " + conn.responseCode + " " + msg)
-        }
-        conn.inputStream.bufferedReader().use { it.readText() }
-    } finally {
-        conn.disconnect()
-    }
-}
-
-private fun decodeAudiusTracks(json: String, host: String): List<Track> {
-    val array = JSONObject(json).optJSONArray("data") ?: throw IOException("Ответ API не содержит массива data")
-    val results = mutableListOf<Track>()
-    for (index in 0 until array.length()) {
-        val item = array.optJSONObject(index) ?: continue
-        val id = item.optString("id")
-        val title = item.optString("title")
-        if (id.isBlank() || title.isBlank() || !item.optBoolean("is_streamable", true)) continue
-        val access = item.optJSONObject("access")
-        if (access != null && !access.optBoolean("stream", true)) continue
-
-        val artist = item.optJSONObject("user")?.optString("name")
-            ?.takeIf(String::isNotBlank) ?: "Неизвестный исполнитель"
-        val art = item.optJSONObject("artwork")
-        val cover = listOf("480x480", "1000x1000", "150x150")
-            .firstNotNullOfOrNull { key ->
-                art?.optString(key)?.takeIf { it.startsWith("https://") }
+    // Floating TV controls do not occupy list height. Channel rows scroll below.
+    if (currentMediaId.startsWith("ruvideo:") && player != null) {
+        TvMiniPlayer(
+            player = player,
+            channelTitle = trackTitle,
+            onExpand = {
+                openTvFullscreen()
+            },
+            onStop = {
+                stopMusic()
+                TvPlaybackHandoff.clear()
             }
-
-        // Keep a stable public stream endpoint. Signed stream.url from list results can expire.
-        val stableStream = Uri.parse(host + "/tracks/" + Uri.encode(id) + "/stream")
-            .buildUpon().appendQueryParameter("app_name", "MusicFlowAndroid")
-            .build().toString()
-
-        results.add(Track(id, title, artist, cover, stableStream, item.optLong("duration")))
+        )
     }
-    return results.distinctBy { it.id }
-}
-
-private fun errorReason(e: Exception): String = when (e) {
-    is UnknownHostException -> "DNS: сервер не найден"
-    is SocketTimeoutException -> "тайм-аут соединения"
-    is javax.net.ssl.SSLException -> "ошибка TLS: " + (e.message ?: "сертификат")
-    is java.net.ConnectException -> "соединение отклонено"
-    else -> (e.message ?: e.javaClass.simpleName).take(150)
-}
-
-private suspend fun audiusTracks(query: String): List<Track> = withContext(Dispatchers.IO) {
-    val hosts = listOf("https://api.audius.co/v1", "https://discoveryprovider.audius.co/v1")
-    val failures = mutableListOf<String>()
-    for (host in hosts) {
-        val path = if (query.isBlank()) "/tracks/trending" else "/tracks/search"
-        val requestUrl = Uri.parse(host + path).buildUpon()
-            .appendQueryParameter("app_name", "MusicFlowAndroid")
-            .appendQueryParameter("limit", "40")
-            .apply { if (query.isNotBlank()) appendQueryParameter("query", query.trim()) }
-            .build().toString()
-        val domain = Uri.parse(host).host ?: host
-        for (transport in 0..1) {
-            val method = if (transport == 0) "OkHttp" else "Android HTTP"
-            try {
-                val json = if (transport == 0) requestAudiusOkHttp(requestUrl)
-                           else requestAudiusHttpUrlConnection(requestUrl)
-                val tracks = decodeAudiusTracks(json, host)
-                if (tracks.isNotEmpty() || query.isNotBlank()) return@withContext tracks
-                failures.add(domain + " / " + method + ": пустой каталог")
-            } catch (failure: Exception) {
-                failures.add(domain + " / " + method + ": " + errorReason(failure))
+    }
+    if (showAboutDialog) {
+        MusicFlowAboutDialog(onDismiss = { showAboutDialog = false })
+    }
+    if (showSleepTimerDialog) {
+        MusicFlowSleepTimerDialog(onDismiss = { showSleepTimerDialog = false })
+    }
+    if (showThemePicker) {
+        AlertDialog(
+            onDismissRequest = { showThemePicker = false },
+            title = { Text("Liquid Glass · оформление MusicFlow") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    MusicFlowStyle.entries.forEach { style ->
+                        val choice = musicFlowPalette(style)
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .clickable {
+                                    onThemeSelect(style)
+                                    showThemePicker = false
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                Modifier.size(34.dp)
+                                    .musicFlowGlass(choice, radius = 11.dp,
+                                        active = style == themeStyle),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Box(Modifier.size(16.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(choice.accent))
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(style.title, fontWeight = FontWeight.SemiBold)
+                                Text(style.subtitle,
+                                    style = MaterialTheme.typography.labelSmall)
+                            }
+                            if (style == themeStyle) Text("✓", color = palette.accent)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showThemePicker = false }) { Text("Закрыть") }
             }
-        }
+        )
     }
-    throw IOException(failures.joinToString("\n").ifBlank { "Нет ответа Audius" })
+    if (expandedPlayer && player != null && trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
+        FullPlayerDialog(
+            player = player,
+            title = trackTitle,
+            artist = trackArtist,
+            artwork = currentArtwork,
+            playing = playing,
+            playbackStatus = playbackStatus,
+            positionMs = positionMs,
+            durationMs = durationMs,
+            favorite = if (currentMediaId.startsWith("radio:"))
+                isCurrentRadioFavorite() else favorites.any { it.id == currentMediaId },
+            onFavorite = { toggleCurrentFavorite() },
+            onStop = { stopMusic() },
+            availableTracks = combineMusicTracks(queueCatalog, tracks + favorites.toList()),
+            onPlayAlbumTrack = { track ->
+                queueAndPlay(listOf(track), 0)
+            },
+            onClose = { expandedPlayer = false }
+        )
+    }
+}
+
+internal fun combineMusicTracks(existing: List<Track>, incoming: List<Track>): List<Track> {
+    val combined = existing.toMutableList()
+    for (track in incoming) {
+        val index = combined.indexOfFirst {
+            it.id == track.id || (track.artist != "Неизвестный исполнитель" &&
+                recordingMatches(it, track.artist, track.title, track.durationSec))
+        }
+        if (index < 0) {
+            combined.add(track)
+            continue
+        }
+        val original = combined[index]
+        // Retain the original playable source; other results stay as alternatives.
+        val primary = original
+        val secondary = track
+        combined[index] = primary.copy(
+            artwork = primary.artwork?.takeIf { it.isNotBlank() } ?: secondary.artwork,
+            collectionTitle = primary.collectionTitle?.takeIf { it.isNotBlank() }
+                ?: secondary.collectionTitle,
+            durationSec = primary.durationSec.takeIf { it > 0 } ?: secondary.durationSec,
+            alternatives = (primary.streams() + secondary.streams()).distinctBy { it.uri }
+                .drop(1).take(11)
+        )
+    }
+    return combined
 }

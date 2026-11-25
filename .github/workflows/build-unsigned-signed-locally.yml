@@ -1,0 +1,43 @@
+name: Build unsigned MusicFlow for local signing
+on:
+  push:
+    branches: ["feature/musicflow-v0.7.27-reliable-updates"]
+    paths: [".github/workflows/build-unsigned-signed-locally.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android SDK build tools
+        run: yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Build official package without signing
+        run: gradle --no-daemon :app:assembleRelease
+      - name: Zipalign output and include official apksigner
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          APK=app/build/outputs/apk/release/app-release-unsigned.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "name='com.musicflow.preview' versionCode='727' versionName='0.7.27'"
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$APK" dist/MusicFlow_0.7.27-aligned-unsigned.apk
+          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" dist/apksigner.jar
+          sha256sum dist/MusicFlow_0.7.27-aligned-unsigned.apk > dist/UNSIGNED_SHA256SUMS.txt
+          test -s dist/apksigner.jar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-v0727-unsigned-for-local-signing
+          path: dist/
+          retention-days: 14
+          if-no-files-found: error

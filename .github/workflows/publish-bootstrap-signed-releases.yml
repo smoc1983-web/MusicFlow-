@@ -1,0 +1,46 @@
+name: Publish existing MusicFlow signed bootstrap APKs
+on:
+  push:
+    branches: ["feature/musicflow-v0.7.22-stable-signing-bootstrap"]
+    paths: [".github/workflows/publish-bootstrap-signed-releases.yml"]
+permissions:
+  actions: read
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Verify GitHub Actions token
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY" --jq .full_name
+      - name: Download already signed release APKs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/signed"
+          gh run download 44875644964 -R "$GITHUB_REPOSITORY" -n MusicFlow-stable-signing-0.7.22 -D "$RUNNER_TEMP/signed"
+          test -s "$RUNNER_TEMP/signed/MusicFlow_0.7.22.apk"
+          test -s "$RUNNER_TEMP/signed/MusicFlow_0.7.23.apk"
+      - name: Publish both APKs to GitHub Releases for in-app updates
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/signed"
+          if ! gh release view v0.7.22 -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create v0.7.22 MusicFlow_0.7.22.apk -R "$GITHUB_REPOSITORY" \
+              --target beb0e16dfc6d3f16a0851df884b1cbed352ac33e --title "MusicFlow 0.7.22" \
+              --notes "Базовая официальная версия с постоянной подписью. Сохраните данные перед удалением прежней сборки, подписанной другим ключом."
+          fi
+          if ! gh release view v0.7.23 -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create v0.7.23 MusicFlow_0.7.23.apk -R "$GITHUB_REPOSITORY" \
+              --target beb0e16dfc6d3f16a0851df884b1cbed352ac33e --title "MusicFlow 0.7.23 · тест обновления" \
+              --notes "Проверка внутрипрограммного обновления с 0.7.22. APK подписан тем же постоянным ключом и имеет versionCode 723."
+          fi

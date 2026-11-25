@@ -1,0 +1,95 @@
+name: Build MusicFlow Cinema TEST v9 APK
+
+on:
+  push:
+    branches: ["feature/musicflow-cinema-redirect-fix-v9"]
+    paths: [".github/workflows/cinema-redirect-build-v9.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Check canonical catalogue URL and guarded redirect code
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          app=Path("app/src/main/java/com/musicflow/app")
+          catalog=(app/"CinemaRutubeCatalog.kt").read_text()
+          screen=(app/"CinemaLabScreen.kt").read_text()
+          gradle=Path("app/build.gradle.kts").read_text()
+          manifest=Path("app/src/main/AndroidManifest.xml").read_text()
+          assert 'https://rutube.ru/api/feeds/movies/?format=json' in catalog
+          assert 'redirectTarget(' in catalog
+          assert 'instanceFollowRedirects = false' in catalog
+          assert 'status in listOf(301, 302, 303, 307, 308)' in catalog
+          assert 'permittedApi(target)' not in catalog or 'return target' in catalog
+          assert 'applicationIdSuffix = ".cinematest9"' in gradle
+          assert 'MusicFlow Кино TEST v9' in manifest
+          assert 'CinemaPosterRail(' in screen and 'CinemaNativeInlinePlayer(' in screen
+          assert 'CinemaRutubeSeries.loadEpisodes' in screen
+          assert 'CinemaPluginsDialog' not in screen
+          print("PASS: canonical API, bounded redirects, isolated cinema test")
+          PY
+      - name: Test Kotlin and assemble standalone APK
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Live check canonical catalogue and genre API, no credentials
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,urllib.request,urllib.error
+          urls=[
+            "https://rutube.ru/api/feeds/movies/?format=json",
+            "https://rutube.ru/api/tags/video/2546/?limit=20"
+          ]
+          for url in urls:
+              try:
+                  request=urllib.request.Request(url,headers={
+                      "User-Agent":"Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36",
+                      "Referer":"https://rutube.ru/",
+                      "Accept":"application/json"
+                  })
+                  with urllib.request.urlopen(request,timeout=14) as response:
+                      body=response.read(1100000)
+                      data=json.loads(body)
+                      print("LIVE_CATALOG",response.status,"HAS_TABS",bool(data.get("tabs")),
+                            "HAS_RESULTS",bool(data.get("results")))
+              except Exception as error:
+                  print("LIVE_CATALOG_NOT_VERIFIED",type(error).__name__,str(error)[:130])
+          PY
+      - name: Verify standalone APK, Android signing and digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview.cinematest9'"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          mkdir -p dist
+          cp "$APK" dist/MusicFlow-Cinema-TEST-v9.apk
+          sha256sum dist/MusicFlow-Cinema-TEST-v9.apk > dist/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-Cinema-TEST-v9-apk
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error

@@ -1,0 +1,67 @@
+name: Diagnose RUTUBE public Cinema feed and video metadata
+on:
+  push:
+    branches: ["feature/musicflow-cinema-rutube-default-v7"]
+    paths: [".github/workflows/cinema-rutube-diagnostic-v7.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect public RUTUBE HTML and API schema without saving streams
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import urllib.request, urllib.error, re, html.parser, json
+          USER_AGENT="Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36"
+          urls=[
+            "https://rutube.ru/feeds/movies-serials/",
+            "https://rutube.ru/api/feeds/movies?format=json",
+            "https://rutube.ru/api/play/options/1dcc35d6575bc881dc2ece8c1efcdc35/?format=json",
+            "https://rutube.ru/api/video/1dcc35d6575bc881dc2ece8c1efcdc35/"
+          ]
+          class Links(html.parser.HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.video=[];self.anchors=[];self.images=[]
+              def handle_starttag(self,tag,attrs):
+                  d=dict(attrs)
+                  if tag=="a":
+                      u=d.get("href","")
+                      if "/video/" in u or "/metainfo/tv/" in u:
+                          self.video.append((u,d.get("title",""),d.get("aria-label","")))
+                      self.anchors.append(u)
+                  if tag=="img":self.images.append((d.get("src",""),d.get("alt",""),d.get("loading","")))
+          for u in urls:
+              req=urllib.request.Request(u,headers={
+                  "User-Agent":USER_AGENT,"Accept":"application/json,text/html,*/*",
+                  "Referer":"https://rutube.ru/"
+              })
+              print("PROBE",u.split("rutube.ru",1)[-1])
+              try:
+                  with urllib.request.urlopen(req,timeout=13) as r:
+                      data=r.read(1400000);code=r.status;ctype=r.headers.get("Content-Type","")
+                  print("  STATUS",code,"BYTES",len(data),"TYPE",ctype)
+                  if "json" in ctype or u.endswith("format=json") or "/api/" in u:
+                      try:
+                          j=json.loads(data)
+                          print("  JSON_KIND",type(j).__name__)
+                          if isinstance(j,dict):
+                              print("  KEYS",list(j)[:24])
+                              print("  RESULTS_COUNT",len(j.get("results",[])) if isinstance(j.get("results"),list) else "n/a")
+                              print("  VIDEO_BALANCER_KEYS",list(j.get("video_balancer",{})) if isinstance(j.get("video_balancer"),dict) else "n/a")
+                              print("  PLAYBACK_M3U8_AVAILABLE",bool(j.get("video_balancer",{}).get("m3u8")) if isinstance(j.get("video_balancer"),dict) else False)
+                      except Exception as e:print("  JSON_PARSE",str(e)[:90])
+                  else:
+                      body=data.decode("utf-8","replace")
+                      l=Links();l.feed(body)
+                      print("  VIDEO_LINKS",len(l.video),"IMG",len(l.images),"NEXT_DATA",bool("__NEXT_DATA__" in body))
+                      print("  EXAMPLES",l.video[:7])
+                      print("  IMAGE_SAMPLES",l.images[:4])
+                      print("  VIDEO_ID_STRINGS",len(re.findall(r'/video/[a-f0-9]{32}',body)))
+              except Exception as e: print("  FAILED",type(e).__name__,str(e)[:145])
+          PY

@@ -1,0 +1,85 @@
+name: Build MusicFlow Cinema Sanfilm TEST v5 APK
+on:
+  push:
+    branches: ["feature/musicflow-cinema-sanfilm-default-v5"]
+    paths:
+      - ".github/workflows/cinema-sanfilm-default-v5.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Verify URL-only Cinema, no demos or plugin UI, and separate test package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          app=Path("app/src/main/java/com/musicflow/app")
+          screen=(app/"CinemaLabScreen.kt").read_text()
+          urls=(app/"CinemaNativeSources.kt").read_text()
+          data=(app/"CinemaLabSources.kt").read_text()
+          player=(app/"CinemaNativeInlinePlayer.kt").read_text()
+          gradle=Path("app/build.gradle.kts").read_text()
+          manifest=Path("app/src/main/AndroidManifest.xml").read_text()
+          assert 'applicationIdSuffix = ".cinematest5"' in gradle
+          assert 'android:label="MusicFlow Кино Sanfilm TEST"' in manifest
+          assert 'https://ff.sanfilm2.link/' in urls
+          assert 'WEB_PAGE' in urls and 'parseHtml(' in urls
+          assert 'parseSiteIndex(' in urls
+          assert 'resolvePage(' in urls
+          assert 'Sanfilm · каталог' in urls
+          assert 'openFilm(film)' in screen
+          assert 'CinemaNativeInlinePlayer(' in screen
+          assert 'CinemaUrlAddDialog(' in screen
+          assert 'CinemaNativeSources.register' in screen
+          assert 'CinemaNativeSources.placeholder' in screen
+          assert 'CinemaNativeInlinePlayer(' in screen
+          assert 'CinemaPlugin' not in screen
+          assert 'CinemaPluginsDialog' not in screen
+          assert 'CinemaLampaWebScreen' not in screen
+          assert 'CinemaLabSources.bundled(' not in screen
+          assert 'DEMO_M3U' not in urls and 'DEMO_JSON' not in urls
+          assert 'CinemaPlugin' not in data
+          assert 'LOCAL_TEST_VIDEO' not in data and 'LOCAL_TEST_VIDEO' not in player
+          assert not (Path("app/src/main/assets")/"cinema_lab_demo.json").exists()
+          assert not (app/"CinemaNativeSourcesDialog.kt").exists()
+          print("PASS: URL-only Cinema, user Sanfilm homepage, in-page Media3, demos/plugin UI removed")
+          PY
+      - name: Run Kotlin source and HTML metadata regression tests
+        run: gradle --no-daemon :app:testDebugUnitTest
+      - name: Assemble standalone test APK
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Verify test app package and debug signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview.cinematest5'"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          mkdir -p dist
+          cp "$APK" dist/MusicFlow-Cinema-Sanfilm-TEST-v5.apk
+          sha256sum dist/MusicFlow-Cinema-Sanfilm-TEST-v5.apk > dist/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-Cinema-Sanfilm-TEST-v5-apk
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error

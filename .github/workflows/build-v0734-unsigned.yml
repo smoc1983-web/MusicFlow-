@@ -1,0 +1,50 @@
+name: Build MusicFlow 0.7.34 unsigned release for offline signing
+on:
+  push:
+    branches: ["feature/musicflow-v0.7.34-radio-label"]
+    paths: [".github/workflows/build-v0734-unsigned.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unsigned:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install Android build tools
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -x "$ANDROID_HOME/build-tools/36.0.0/zipalign"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Confirm version and build unsigned release
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'versionCode = 734' app/build.gradle.kts
+          grep -F 'versionName = "0.7.34"' app/build.gradle.kts
+          grep -F 'applicationId = "com.musicflow.preview"' app/build.gradle.kts
+          gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
+          test -s app/build/outputs/apk/release/app-release-unsigned.apk
+      - name: Zipalign release and package signer tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          APK=app/build/outputs/apk/release/app-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "name='com.musicflow.preview' versionCode='734' versionName='0.7.34'"
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$APK" dist/MusicFlow_0.7.34-aligned-unsigned.apk
+          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" dist/apksigner.jar
+          sha256sum dist/MusicFlow_0.7.34-aligned-unsigned.apk > dist/UNSIGNED_SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.34-aligned-unsigned
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30

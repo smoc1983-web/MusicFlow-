@@ -1,0 +1,118 @@
+name: Build MusicFlow Cinema RUTUBE TEST v7 APK
+# Rebuild after poster candidate parser regression fix
+
+on:
+  push:
+    branches: ["feature/musicflow-cinema-rutube-default-v7"]
+    paths: [".github/workflows/cinema-rutube-test-v7.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Prepare Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Verify Rutube default replaces previous Sanfilm catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          app=Path("app/src/main/java/com/musicflow/app")
+          sources=(app/"CinemaNativeSources.kt").read_text()
+          rutube=(app/"CinemaRutubeSource.kt").read_text()
+          screen=(app/"CinemaLabScreen.kt").read_text()
+          player=(app/"CinemaNativeInlinePlayer.kt").read_text()
+          gradle=Path("app/build.gradle.kts").read_text()
+          manifest=Path("app/src/main/AndroidManifest.xml").read_text()
+          assert 'applicationIdSuffix = ".cinematest7"' in gradle
+          assert 'MusicFlow Кино RUTUBE TEST' in manifest
+          assert 'const val FIRST_PAGE = CinemaRutubeSource.FEED_URL' in sources
+          assert 'private const val FIRST_NAME = "RUTUBE · Кино и сериалы"' in sources
+          assert 'CinemaSourceFormat.RUTUBE_FEED' in sources
+          assert 'CinemaRutubeSource.fromPlayOptions' in sources
+          assert 'CinemaRutubeSource.parseFeed' in sources
+          assert 'ff.sanfilm2.link' not in sources
+          assert 'video_balancer' in rutube
+          assert 'CinemaNativeInlinePlayer(' in screen
+          assert 'Referer' in player
+          assert 'CinemaLampaWebScreen(' not in screen
+          assert 'CinemaPluginsDialog(' not in screen
+          print("PASS: Rutube-only default, no Sanfilm, native HLS playback path")
+          PY
+      - name: Run JVM unit tests and compile debug app
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Check live Rutube feed, public HLS API and playlist accessibility
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import urllib.request, urllib.error, re, json
+          USER_AGENT="Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36"
+          def load(url, size=1300000):
+              req=urllib.request.Request(url,headers={
+                  "User-Agent":USER_AGENT,
+                  "Referer":"https://rutube.ru/",
+                  "Accept":"application/json,text/html,application/vnd.apple.mpegurl,*/*"
+              })
+              with urllib.request.urlopen(req,timeout=14) as r:
+                  data=r.read(size)
+                  return r.status,r.headers.get("Content-Type",""),data
+          try:
+              status,_,feed=load("https://rutube.ru/feeds/movies-serials/")
+              cards=len(set(re.findall(rb'/video/[a-f0-9]{32}/',feed)))
+              print("RUTUBE_FEED_HTTP",status,"VIDEO_IDS",cards,"HTML_BYTES",len(feed))
+              assert cards>0
+          except Exception as e:
+              print("RUTUBE_FEED_LIVE_CHECK_FAILED",type(e).__name__,str(e)[:100])
+          video_id="1dcc35d6575bc881dc2ece8c1efcdc35"
+          try:
+              status,_,data=load(
+                  f"https://rutube.ru/api/play/options/{video_id}/?format=json")
+              obj=json.loads(data)
+              manifest=obj.get("video_balancer",{}).get("m3u8")
+              print("PLAY_OPTIONS_HTTP",status,"HAS_HLS",bool(manifest),
+                    "PAID",obj.get("is_paid"),"HIDDEN",obj.get("is_hidden"))
+              if manifest and manifest.startswith("https://"):
+                  try:
+                      code,ctype,playlist=load(manifest,8192)
+                      print("PUBLIC_HLS_HTTP",code,"CONTENT_TYPE",ctype,
+                            "M3U8_HEADER",playlist.lstrip().startswith(b"#EXTM3U"),
+                            "BYTES_READ",len(playlist))
+                  except Exception as e:
+                      print("PUBLIC_HLS_UNVERIFIED",type(e).__name__,str(e)[:100])
+          except Exception as e:
+              print("RUTUBE_HLS_LIVE_CHECK_FAILED",type(e).__name__,str(e)[:100])
+          PY
+      - name: Verify package and test signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview.cinematest7'"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          mkdir -p dist
+          cp "$APK" dist/MusicFlow-Cinema-RUTUBE-TEST-v7.apk
+          sha256sum dist/MusicFlow-Cinema-RUTUBE-TEST-v7.apk > dist/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-Cinema-RUTUBE-TEST-v7-apk
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error

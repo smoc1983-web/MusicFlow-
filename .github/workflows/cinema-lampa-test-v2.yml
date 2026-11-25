@@ -1,0 +1,101 @@
+name: Build MusicFlow Cinema Lampa TEST v2 APK
+on:
+  push:
+    branches: ["feature/musicflow-cinema-lampa-test-v2"]
+    paths:
+      - "app/src/main/java/com/musicflow/app/CinemaLab*.kt"
+      - "app/src/main/java/com/musicflow/app/CinemaLampaWebScreen.kt"
+      - "app/src/main/java/com/musicflow/app/CinemaLabPlayer.kt"
+      - "app/src/main/AndroidManifest.xml"
+      - "app/src/main/assets/cinema_lab_demo.json"
+      - "app/build.gradle.kts"
+      - "app/src/test/java/com/musicflow/app/CinemaLampaBridgeTest.kt"
+      - ".github/workflows/cinema-lampa-test-v2.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cinema-lampa-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install Android SDK and ffmpeg
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y ffmpeg
+          fi
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Generate an ORIGINAL 8-second offline diagnostics MP4 into APK assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i 'testsrc2=size=320x180:rate=12' \
+            -f lavfi -i 'sine=frequency=440:sample_rate=44100' \
+            -t 8 -c:v libx264 -preset veryfast -crf 27 -pix_fmt yuv420p \
+            -c:a aac -b:a 64k -movflags +faststart -shortest \
+            app/src/main/assets/cinema_lab_test.mp4
+          test "$(stat -c %s app/src/main/assets/cinema_lab_test.mp4)" -gt 15000
+          ffprobe -v error -show_entries format=duration \
+            -of default=noprint_wrappers=1:nokey=1 app/src/main/assets/cinema_lab_test.mp4
+      - name: Assert separate package, origin isolation, bundled test clip and Lampa API
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          gradle=Path("app/build.gradle.kts").read_text()
+          manifest=Path("app/src/main/AndroidManifest.xml").read_text()
+          lampa=Path("app/src/main/java/com/musicflow/app/CinemaLampaWebScreen.kt").read_text()
+          cinema=Path("app/src/main/java/com/musicflow/app/CinemaLabScreen.kt").read_text()
+          player=Path("app/src/main/java/com/musicflow/app/CinemaLabPlayer.kt").read_text()
+          assets=json.loads(Path("app/src/main/assets/cinema_lab_demo.json").read_text())
+          assert 'applicationId = "com.musicflow.preview"' in gradle
+          assert 'applicationIdSuffix = ".cinematest2"' in gradle
+          assert 'MusicFlow Кино Lampa TEST' in manifest
+          assert 'Lampa.Plugins.add({url:address,status:1})' in lampa
+          assert 'https://yumata.github.io/lampa/' in lampa
+          assert 'addJavascriptInterface' not in lampa.split('internal fun CinemaLampaWebScreen')[1]
+          assert 'CinemaLampaWebScreen(' in cinema
+          assert 'if (showLampa)' in cinema
+          assert 'CinemaLabSources.LOCAL_TEST_VIDEO' in player
+          assert 'Response code: 403' in player
+          assert assets["items"][0]["stream_url"] == "asset:///cinema_lab_test.mp4"
+          assert Path("app/src/main/assets/cinema_lab_test.mp4").stat().st_size > 15000
+          print("PASS: sandboxed Lampa web runtime, explicitly approved JS plugin, built-in local MP4, test-only package")
+          PY
+      - name: Run Kotlin unit tests
+        run: gradle --no-daemon :app:testDebugUnitTest
+      - name: Compile installable debug APK
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Verify test package, Android signing and bundled MP4
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview.cinematest2'"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          unzip -Z1 "$APK" | grep -Fx 'assets/cinema_lab_test.mp4'
+          mkdir -p dist
+          cp "$APK" dist/MusicFlow-Cinema-Lampa-TEST-v2.apk
+          sha256sum dist/MusicFlow-Cinema-Lampa-TEST-v2.apk > dist/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-Cinema-Lampa-TEST-v2-apk
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30

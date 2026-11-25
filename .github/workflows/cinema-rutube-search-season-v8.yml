@@ -1,0 +1,46 @@
+name: Verify Rutube video search and TV seasons metadata
+on:
+  push:
+    branches: ["feature/musicflow-cinema-rutube-discovery-v8"]
+    paths: [".github/workflows/cinema-rutube-search-season-v8.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Search terms and series relationship
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.parse,json,re
+          base="https://rutube.ru"
+          ua="Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36"
+          def get(path):
+              url=base+path
+              h={"User-Agent":ua,"Referer":base+"/","Accept":"application/json"}
+              with urllib.request.urlopen(urllib.request.Request(url,headers=h),timeout=10) as r:
+                  return json.loads(r.read(400000))
+          for term in ["Интерны","фильм","бокс","Бывшие"]:
+              for param in ["query","text"]:
+                  path="/api/search/video/?"+param+"="+urllib.parse.quote(term)+"&page=1"
+                  try:
+                      j=get(path)
+                      result=j.get("results",[])
+                      print("SEARCH",term,param,"COUNT",len(result),"TOTAL",j.get("count"),"NEXT",bool(j.get("next")))
+                      if result:print(" SEARCH_ITEM_KEYS",list(result[0])[:35],"TITLE",result[0].get("title"))
+                  except Exception as e:print("SEARCH_FAIL",term,param,type(e).__name__,str(e)[:100])
+          for video in ["1dcc35d6575bc881dc2ece8c1efcdc35","31ef2d26dc679428b3a928b492c0e800"]:
+              try:
+                  j=get("/api/video/"+video+"/")
+                  print("VIDEO",video,"KEYS",list(j))
+                  print(" VIDEO_META", {k:v for k,v in j.items() if k in ["id","title","season","episode","tv","tv_show","tv_id","metainfo","show","playlist","is_paid","category","product_id","metadata","series","metainfo_url","genre","genres","extra_params"]})
+              except Exception as e:print("VID_ERROR",str(e)[:150])
+          for tv_id in [28]:
+              try:
+                  j=get("/api/metainfo/tv/"+str(tv_id)+"/")
+                  print("TV_SEASONS",tv_id,{k:str(v)[:800] for k,v in j.items() if k in ["seasons_count","seasons","year","type","genres","name","content"]})
+              except Exception as e:print("TV_ERROR",str(e)[:150])
+          PY

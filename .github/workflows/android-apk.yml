@@ -1,10 +1,14 @@
 name: Build MusicFlow APK
+concurrency:
+  group: musicflow-android-${{ github.ref }}
+  cancel-in-progress: true
 on:
   push:
-    branches: [main]
+    branches: [main, "feature/**"]
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,25 +27,92 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - name: Diagnose Audius API (no credentials)
+      - name: Check RuVideoHub playlist (diagnostic)
         shell: bash
         run: |
-          for base in "https://api.audius.co/v1" "https://discoveryprovider.audius.co/v1"; do
-            for params in "app_name=MusicFlowAndroid&limit=40" "limit=2"; do
-              echo "Endpoint: $base/tracks/trending?$params"
-              code=$(curl -L -sS --max-time 20 -o /tmp/audius-response.json -w "%{http_code}" "$base/tracks/trending?$params") || code="network-error"
-              echo "HTTP: $code"
-              head -c 500 /tmp/audius-response.json || true
-              echo ""
-            done
-          done
+          curl -L -sS --max-time 20 -o /tmp/ruvideo.m3u8 -w 'RuVideoHub playlist: HTTP %{http_code}\n' \
+            'https://raw.githubusercontent.com/ByteBudda/RuVideoHub/main/playlist_iptv.m3u8' || true
+          grep -c '^#EXTINF:' /tmp/ruvideo.m3u8 || true
+      - name: Verify Mail.ru Music endpoints (read-only)
+        run: python3 scripts/diagnose_mailru.py
+      - name: Verify v0.7.5 home playback and TV sizing
+        run: python3 scripts/verify_v075.py
+      - name: Verify v0.7.6 fullscreen, local IPTV and album wiring
+        run: python3 scripts/verify_v076.py
+      - name: Verify v0.7.7 album grouping and fixed player controls
+        run: python3 scripts/verify_v077.py
+      - name: Probe alternative album metadata APIs
+        run: python3 scripts/probe_album_metadata.py
+      - name: Verify v0.7.8 album enrichment and Zaycev-first UI
+        run: python3 scripts/verify_v078.py
+      - name: Verify v0.7.9 Zaycev native playback and UI fixes
+        run: python3 scripts/verify_v079.py
+      - name: Verify v0.7.10 stream fallbacks and recovery guard
+        run: python3 scripts/verify_v0710.py
+      - name: Verify v0.7.11 Zaycev collection playback queue
+        run: python3 scripts/verify_v0711.py
+      - name: Verify v0.7.12 UI, cover and TV mini-player integration
+        run: python3 scripts/verify_v0712.py
+      - name: Verify v0.7.13 TV floating player, themes and app icon
+        run: python3 scripts/verify_v0713.py
+      - name: Verify v0.7.14 TV handoff and playback status
+        run: python3 scripts/verify_v0714.py
+      - name: Verify v0.7.15 artwork, AudioBook themes, compact navigation and TV
+        run: python3 scripts/verify_v0715.py
+      - name: Verify v0.7.16 high-resolution artwork, themed menus and playback
+        run: python3 scripts/verify_v0716.py
+      - name: Verify v0.7.17 graphite launcher and themed mini-player
+        run: python3 scripts/verify_v0717.py
+      - name: Verify v0.7.18 in-app updates, donation and Telegram navigation
+        run: python3 scripts/verify_v0718.py
+      - name: Verify v0.7.19 banking support, in-app APK installer and icon
+        run: python3 scripts/verify_v0719.py
+      - name: Verify v0.7.20 in-app updates and production UI labels
+        run: python3 scripts/verify_v0720.py
+      - name: Verify v0.7.21 rounded menus and update compatibility wiring
+        run: python3 scripts/verify_v0721.py
+      - name: Verify v0.7.22 stable signing and in-app updates
+        run: python3 scripts/verify_v0722.py
+      # v0.7.24/25 used a WebView, which was intentionally removed.
+      - name: Verify reliable in-app updates and official release contract
+        run: python3 scripts/verify_v0727.py
+      - name: Verify retired-provider removal and security audit
+        run: python3 scripts/verify_v0729.py
+      - name: Verify Russian radio, lyrics and persistent playback
+        run: python3 scripts/verify_v0730.py
+      - name: Verify SimpMusic-inspired features and ub-mode wiring
+        run: python3 scripts/verify_v0731.py
+      - name: Verify listening analytics and history source wiring (ub-mode)
+        run: python3 scripts/verify_v0732.py
+      - name: Verify deferred playback, swipe minimize and screen-off background soak wiring
+        run: python3 scripts/verify_v0733.py
+      - name: Verify 0.7.34 radio label and version metadata
+        run: python3 scripts/verify_v0734.py
+      - name: Verify 0.7.37 top tracks navigation and player cleanup
+        run: python3 scripts/verify_v0735.py
+      - name: Verify 0.7.37 Russia and worldwide charts on home
+        run: python3 scripts/verify_v0736.py
+      - name: Verify 0.7.37 chart next/previous queue and safe lazy resolution
+        run: python3 scripts/verify_v0737.py
+      - name: Verify 0.7.38 Telegram invite and channel entry point
+        run: python3 scripts/verify_v0738.py
+      - name: Verify persistent background APK transfer and safe installer handoff
+        run: python3 scripts/verify_v0738_background.py
+      - name: Verify 0.7.38 artwork transitions and next-track cover prefetch
+        run: python3 scripts/verify_v0738_artwork.py
+      - name: Verify 0.7.39 Russian radio catalog recovery
+        run: python3 scripts/verify_v0739_radio.py
+      - name: Verify 0.7.40 TV layouts and external plugin schema
+        run: python3 scripts/verify_v0740_tv.py
+      - name: Run ub-mode Kotlin behavior tests
+        run: gradle --no-daemon :app:testDebugUnitTest
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: MusicFlow-debug-apk
+          name: MusicFlow-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
