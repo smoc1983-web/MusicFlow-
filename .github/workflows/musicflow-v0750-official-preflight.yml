@@ -48,7 +48,14 @@ jobs:
           assert "key(catalogScrollIdentity)" in cinema
           assert "PlayerEqualizerButton(" in compact
           assert "PcmEqAudioProcessor" in (root/"PlaybackService.kt").read_text()
-          print("PASS: official version, radio logo recovery, Compact Glass, previous fixes")
+          updater=(root/"MusicFlowUpdates.kt").read_text()
+          cached=(root/"MusicFlowBackgroundUpdates.kt").read_text()
+          assert "if (!isOfficialTag(tag)) continue" in updater
+          assert 'release.optBoolean("prerelease", false)' in updater
+          assert "isOfficialApkName(tag, name)" in updater
+          assert "isOfficialSavedRelease(version, url)" in cached
+          assert "isOfficialSavedRelease(" in cached
+          print("PASS: production release identity; test releases excluded; radio logo recovery and previous features")
           PY
       - name: Run Kotlin/JUnit tests and compile production release
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
@@ -62,7 +69,8 @@ jobs:
           names="\n".join(x.name for x in suites)
           for required in ("RadioArtworkCatalogTest", "RadioStationArtworkFallbackTest",
                            "RadioCompactGlassPolicyTest","CinemaCatalogScrollPolicyTest",
-                           "CinemaAudioPickerPolicyTest","PcmEqAudioProcessorTest"):
+                           "CinemaAudioPickerPolicyTest","PcmEqAudioProcessorTest",
+                           "MusicFlowOfficialUpdateChannelTest"):
               assert required in names,required
           print("PASS Kotlin/JUnit suites:",len(suites))
           PY
