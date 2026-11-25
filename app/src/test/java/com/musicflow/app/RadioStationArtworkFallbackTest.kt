@@ -13,4 +13,15 @@ class RadioStationArtworkFallbackTest {
   assertEquals("КП", RadioStationArtworkFallback.initials("«Комсомольская Правда»"))
   assertEquals("M", RadioStationArtworkFallback.initials("  Music..."))
  }
+ @Test fun stationVisualsUseStablePerStationColors() {
+  assertEquals(
+   RadioStationArtworkFallback.hue("Радио Песни"),
+   RadioStationArtworkFallback.hue("РАДИО ПЕСНИ")
+  )
+  assertTrue(RadioStationArtworkFallback.hue("Радио Песни") in 0f..359f)
+  assertNotEquals(
+   RadioStationArtworkFallback.hue("Радио Песни"),
+   RadioStationArtworkFallback.hue("Джаз FM")
+  )
+ }
 }
