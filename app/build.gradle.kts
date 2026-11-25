@@ -30,8 +30,8 @@ android {
     buildTypes {
         getByName("debug") {
             // Debug builds must never replace a signed production package.
-            applicationIdSuffix = ".radioarttest50"
-            versionNameSuffix = "-test"
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
         }
         getByName("release") {
             isMinifyEnabled = false
