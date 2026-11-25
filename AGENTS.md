@@ -14,6 +14,7 @@ Installed copies for Codex and other agents: `.agents/skills/ub-mode/SKILL.md` a
 7. Keep VK, Audius, and Jamendo out of MusicFlow unless the user explicitly reverses that decision.
 8. **Publication gate**: Before a new GitHub Release, show the user a summary of functionality, CI evidence, unresolved limitations and signed-package verification. Publish only when authorized.
 9. Inspect the latest project branch and release first; do not assume `main` contains the latest changes.
+10. **Mandatory permanent change journal:** Read `DEVELOPMENT_JOURNAL.md` before work, and append an entry for every meaningful code/configuration/CI/test/build/signing/release change in the same work cycle. Every entry needs date, branch/version, reason, changes, commit/PR/run links, actual test/build outcome, errors, and next step. Never mark pending tests or publications as passed; append corrections as new entries, never silently rewrite history.
 
 ## Report format
 - Behavior verified, tests run, failures found and corrected.
