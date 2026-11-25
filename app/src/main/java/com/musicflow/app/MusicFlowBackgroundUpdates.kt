@@ -59,10 +59,18 @@ internal object MusicFlowBackgroundUpdates {
         }
         val id = p.getLong(ID, -1L)
         val url = p.getString(URL, "").orEmpty()
+        val version = p.getString(VERSION, "").orEmpty()
         val bytes = p.getLong(BYTES, 0L)
-        if (id < 0L || code <= 0L || bytes !in 1_000_000L..(150L * 1024L * 1024L) ||
-            !url.startsWith(REPO_ASSET_PREFIX)) return null
-        return MusicFlowUpdate(p.getString(VERSION, "").orEmpty(), code, url, bytes, "")
+        // Older versions may have cached v0.7.50-radio-artwork-test.
+        // Never show or install a cached debug APK as an official update.
+        if (!MusicFlowUpdates.isOfficialSavedRelease(version, url)) {
+            if (id >= 0L) runCatching { manager(context).remove(id) }
+            forget(context)
+            return null
+        }
+        if (id < 0L || code <= 0L || bytes !in 1_000_000L..(150L * 1024L * 1024L))
+            return null
+        return MusicFlowUpdate(version, code, url, bytes, "")
     }
 
     private fun forget(context: Context) {
@@ -74,8 +82,8 @@ internal object MusicFlowBackgroundUpdates {
             require(MusicFlowUpdates.supportsOfficialUpdates(context)) {
                 "Это неофициальная сборка: обновление поверх неё недоступно"
             }
-            require(update.downloadUrl.startsWith(REPO_ASSET_PREFIX) &&
-                update.downloadUrl.endsWith(".apk") &&
+            require(MusicFlowUpdates.isOfficialSavedRelease(
+                update.version, update.downloadUrl) &&
                 update.versionCode > MusicFlowUpdates.currentCode(context) &&
                 update.bytes in 1_000_000L..(150L * 1024L * 1024L)) {
                 "Некорректные данные официального обновления"
