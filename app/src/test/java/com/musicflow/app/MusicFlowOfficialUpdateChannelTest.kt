@@ -63,6 +63,18 @@ class MusicFlowOfficialUpdateChannelTest {
         assertNull(MusicFlowUpdates.parseOfficialReleases(raw))
     }
 
+    @Test fun newerOfficialVersionBypassesPreviouslyCachedDebugVersionCode750() {
+        assertTrue(MusicFlowUpdatePolicy.isNewer(751, 749))
+        assertTrue(MusicFlowUpdatePolicy.isNewer(751, 750))
+        val oldTest = "v0.7.50-radio-artwork-test"
+        val oldUrl = "https://github.com/smoc1983-web/MusicFlow-/releases/download/" +
+            oldTest + "/MusicFlow-RadioArtwork-TEST-0.7.50.apk"
+        assertFalse(MusicFlowUpdates.isOfficialSavedRelease(oldTest, oldUrl))
+        val newOfficial = "https://github.com/smoc1983-web/MusicFlow-/releases/download/" +
+            "v0.7.51/MusicFlow_0.7.51.apk"
+        assertTrue(MusicFlowUpdates.isOfficialSavedRelease("v0.7.51", newOfficial))
+    }
+
     @Test fun cachedTestDownloadIsNotAccepted() {
         assertFalse(MusicFlowUpdates.isOfficialSavedRelease(
             "v0.7.50-radio-artwork-test",
