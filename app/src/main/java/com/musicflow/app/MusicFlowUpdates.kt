@@ -66,6 +66,53 @@ internal object MusicFlowUpdates {
      * Uses public GitHub Releases rather than ephemeral authenticated Actions artifacts.
      * An empty release list is a valid result until the first signed APK is published.
      */
+    private const val ASSET_PREFIX =
+        "https://github.com/smoc1983-web/MusicFlow-/releases/download/"
+
+    /** Production releases have a strictly numeric tag; previews cannot be installed in-place. */
+    internal fun isOfficialTag(tag: String): Boolean =
+        Regex("""^v\\d+\\.\\d+\\.\\d+$""").matches(tag)
+
+    internal fun isOfficialApkName(tag: String, name: String): Boolean =
+        isOfficialTag(tag) && name == "MusicFlow_${tag.removePrefix("v")}.apk"
+
+    internal fun isOfficialSavedRelease(tag: String, url: String): Boolean =
+        isOfficialTag(tag) && url ==
+            ASSET_PREFIX + tag + "/MusicFlow_${tag.removePrefix("v")}.apk"
+
+    /** Side-effect-free selection used by the updater and regression tests. */
+    internal fun parseOfficialReleases(response: String): MusicFlowUpdate? {
+        val releases = JSONArray(response)
+        val options = mutableListOf<MusicFlowUpdate>()
+        for (i in 0 until releases.length()) {
+            val release = releases.optJSONObject(i) ?: continue
+            if (release.optBoolean("draft", true) ||
+                release.optBoolean("prerelease", false)) continue
+            val tag = release.optString("tag_name")
+            if (!isOfficialTag(tag)) continue
+            val match = Regex("""^v(\\d+)\\.(\\d+)\\.(\\d+)$""")
+                .matchEntire(tag) ?: continue
+            val major = match.groupValues[1].toLongOrNull() ?: continue
+            val minor = match.groupValues[2].toLongOrNull() ?: continue
+            val patch = match.groupValues[3].toLongOrNull() ?: continue
+            if (minor !in 0L..99L || patch !in 0L..99L || major > 100_000L) continue
+            val code = major * 10_000L + minor * 100L + patch
+            val assets = release.optJSONArray("assets") ?: continue
+            for (j in 0 until assets.length()) {
+                val asset = assets.optJSONObject(j) ?: continue
+                val name = asset.optString("name")
+                val size = asset.optLong("size", 0L)
+                val url = asset.optString("browser_download_url")
+                if (!isOfficialApkName(tag, name) ||
+                    size !in 1_000_000L..MAX_SIZE ||
+                    !isOfficialSavedRelease(tag, url)) continue
+                options += MusicFlowUpdate(tag, code, url, size,
+                    release.optString("body").take(600))
+            }
+        }
+        return options.maxByOrNull { it.versionCode }
+    }
+
     suspend fun latestRelease(): MusicFlowUpdate? = withContext(Dispatchers.IO) {
         val connection = (URL(API).openConnection() as HttpURLConnection).apply {
             connectTimeout = 10_000
@@ -78,35 +125,7 @@ internal object MusicFlowUpdates {
                 throw IOException("Ошибка GitHub: HTTP " + connection.responseCode)
             }
             val response = connection.inputStream.bufferedReader().use { it.readText() }
-            val releases = JSONArray(response)
-            val options = mutableListOf<MusicFlowUpdate>()
-            for (i in 0 until releases.length()) {
-                val release = releases.optJSONObject(i) ?: continue
-                if (release.optBoolean("draft", true)) continue
-                val tag = release.optString("tag_name")
-                // Keep in-app upgrades working after version 0.7.x.
-                // Our Android versionCode convention is major*10000 + minor*100 + patch.
-                val match = Regex("""^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$""")
-                    .matchEntire(tag) ?: continue
-                val major = match.groupValues[1].toLongOrNull() ?: continue
-                val minor = match.groupValues[2].toLongOrNull() ?: continue
-                val patch = match.groupValues[3].toLongOrNull() ?: continue
-                if (minor !in 0L..99L || patch !in 0L..99L || major > 100_000L) continue
-                val code = major * 10_000L + minor * 100L + patch
-                val assets = release.optJSONArray("assets") ?: continue
-                for (j in 0 until assets.length()) {
-                    val asset = assets.optJSONObject(j) ?: continue
-                    val name = asset.optString("name")
-                    val size = asset.optLong("size", 0L)
-                    val url = asset.optString("browser_download_url")
-                    if (!name.endsWith(".apk", ignoreCase = true) ||
-                        !name.startsWith("MusicFlow", ignoreCase = true) ||
-                        size !in 1_000_000L..MAX_SIZE ||
-                        !url.startsWith("https://github.com/smoc1983-web/MusicFlow-/releases/download/")) continue
-                    options += MusicFlowUpdate(tag, code, url, size, release.optString("body").take(600))
-                }
-            }
-            options.maxByOrNull { it.versionCode }
+            parseOfficialReleases(response)
         } finally {
             connection.disconnect()
         }
