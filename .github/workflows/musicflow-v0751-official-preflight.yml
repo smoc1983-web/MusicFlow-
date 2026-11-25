@@ -1,7 +1,7 @@
 name: MusicFlow 0.7.51 official unsigned preflight
 on:
   push:
-    branches: ["feature/musicflow-v0751-radio-cover-recovery"]
+    branches: [main]
     paths:
       - ".github/workflows/musicflow-v0751-official-preflight.yml"
   workflow_dispatch:
