@@ -177,7 +177,8 @@ private fun loadDirectFiles(context: Context): List<LibraryFile.Direct> {
 @Composable
 internal fun MusicDownloadsScreen(
     onAddLink: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onBeforePlayback: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var files by remember { mutableStateOf<List<LibraryFile>>(emptyList()) }
@@ -190,9 +191,14 @@ internal fun MusicDownloadsScreen(
     fun runAction(file: LibraryFile, action: DownloadUiAction) {
         try {
             when (action) {
-                DownloadUiAction.PLAY -> selected = file
-                DownloadUiAction.OPEN_EXTERNAL -> if (file is LibraryFile.Direct)
+                DownloadUiAction.PLAY -> {
+                    onBeforePlayback()
+                    selected = file
+                }
+                DownloadUiAction.OPEN_EXTERNAL -> if (file is LibraryFile.Direct) {
+                    onBeforePlayback()
                     openInOtherPlayer(context, file.uri, file.mime)
+                }
                 DownloadUiAction.PAUSE -> if (file is LibraryFile.Cached)
                     OfflineDownloads.pause(context, file.value.request.id)
                 DownloadUiAction.RESUME -> if (file is LibraryFile.Cached)
