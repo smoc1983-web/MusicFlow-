@@ -7,7 +7,6 @@ import android.content.Intent
 import android.net.Uri
 import android.app.Activity
 import android.content.pm.ActivityInfo
-import android.view.Window
 import androidx.activity.compose.BackHandler
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.WindowInsetsCompat
@@ -693,7 +692,7 @@ private fun OfflineFilePlayer(file: LibraryFile, onDismiss: () -> Unit) {
         }
         onDispose {
             if (fullScreen && canExpand && previousOrientation != null) {
-                activity.requestedOrientation = previousOrientation
+                activity?.requestedOrientation = previousOrientation
             }
         }
     }
