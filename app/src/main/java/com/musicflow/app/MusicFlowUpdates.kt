@@ -97,7 +97,7 @@ internal object MusicFlowUpdates {
 
     /** Versioned TEST prereleases are strictly excluded from official updates. */
     internal fun isTestTag(tag: String): Boolean =
-        Regex("""^v\\d+\\.\\d+\\.\\d+-test$""").matches(tag)
+        Regex("""^v\d+\.\d+\.\d+-test$""").matches(tag)
 
     internal fun isTestApkName(tag: String, name: String): Boolean =
         isTestTag(tag) &&
@@ -157,7 +157,7 @@ internal object MusicFlowUpdates {
             if (release.optBoolean("draft", true) ||
                 !release.optBoolean("prerelease", false)) continue
             val tag = release.optString("tag_name")
-            val match = Regex("""^v(\\d+)\\.(\\d+)\\.(\\d+)-test$""")
+            val match = Regex("""^v(\d+)\.(\d+)\.(\d+)-test$""")
                 .matchEntire(tag) ?: continue
             val major = match.groupValues[1].toLongOrNull() ?: continue
             val minor = match.groupValues[2].toLongOrNull() ?: continue
