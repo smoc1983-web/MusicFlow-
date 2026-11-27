@@ -51,13 +51,15 @@ internal object MediaDownloads {
         url: String,
         title: String,
         kind: DownloadMediaKind,
-        referer: String? = null
+        referer: String? = null,
+        userAgent: String? = null,
+        hlsVariantIndex: Int? = null
     ): DownloadPlanResult {
         val route = OfflineDownloadRoute.classify(url)
         if (route == OfflineTransfer.ADAPTIVE_HLS ||
             route == OfflineTransfer.ADAPTIVE_DASH) {
             return try {
-                OfflineDownloads.enqueue(context, url, title, kind)
+                OfflineDownloads.enqueue(context, url, title, kind, hlsVariantIndex)
                 DownloadPlanResult.Accepted(MediaDownloadPlan(
                     url, "$title (офлайн Media3)", "application/octet-stream",
                     "Media3 • внутренняя библиотека"
@@ -80,6 +82,11 @@ internal object MediaDownloads {
             )
         }
         val plan = decision.value
+        val headers = try {
+            DownloadHttpHeaders.validated(referer.orEmpty(), userAgent.orEmpty())
+        } catch (error: IllegalArgumentException) {
+            return DownloadPlanResult.Rejected(error.message ?: "Некорректные заголовки")
+        }
         return try {
             val filename = plan.fileName.substringBeforeLast('.') + "-" +
                 System.currentTimeMillis().toString() + "." + plan.fileName.substringAfterLast('.')
@@ -95,9 +102,8 @@ internal object MediaDownloads {
                     Environment.DIRECTORY_DOWNLOADS,
                     plan.relativeDirectory + "/" + filename
                 )
-            if (!referer.isNullOrBlank() &&
-                referer.startsWith("https://", ignoreCase = true)) {
-                request.addRequestHeader("Referer", referer)
+            headers.forEach { (name, value) ->
+                request.addRequestHeader(name, value)
             }
             val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             val id = manager.enqueue(request)

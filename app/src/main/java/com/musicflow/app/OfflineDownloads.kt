@@ -7,6 +7,8 @@ import android.content.Context
 import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.StreamKey
+import androidx.media3.exoplayer.hls.playlist.HlsMultivariantPlaylist
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -53,7 +55,7 @@ internal object OfflineDownloads {
     }
 
     fun enqueue(context: Context, url: String, title: String,
-                kind: DownloadMediaKind): Boolean {
+                kind: DownloadMediaKind, variantIndex: Int? = null): Boolean {
         val route = OfflineDownloadRoute.classify(url)
         if (route != OfflineTransfer.ADAPTIVE_HLS &&
             route != OfflineTransfer.ADAPTIVE_DASH) return false
@@ -61,10 +63,16 @@ internal object OfflineDownloads {
         // in a private SimpleCache and DownloadIndex, NOT a shareable .mp4.
         val mime = if (route == OfflineTransfer.ADAPTIVE_HLS)
             MimeTypes.APPLICATION_M3U8 else MimeTypes.APPLICATION_MPD
-        val request = DownloadRequest.Builder(UUID.randomUUID().toString(), Uri.parse(url))
+        val builder = DownloadRequest.Builder(UUID.randomUUID().toString(), Uri.parse(url))
             .setMimeType(mime)
             .setData(("${kind.name}\n" + title.take(130)).toByteArray(Charsets.UTF_8))
-            .build()
+        if (route == OfflineTransfer.ADAPTIVE_HLS && variantIndex != null) {
+            require(variantIndex >= 0) { "Некорректное качество HLS" }
+            builder.setStreamKeys(listOf(StreamKey(
+                HlsMultivariantPlaylist.GROUP_INDEX_VARIANT, variantIndex
+            )))
+        }
+        val request = builder.build()
         manager(context)
         DownloadService.sendAddDownload(context,
             MusicFlowOfflineDownloadService::class.java, request, false)

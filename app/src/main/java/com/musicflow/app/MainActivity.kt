@@ -285,6 +285,14 @@ private fun MusicScreen(
     var showDirectDownloadDialog by remember { mutableStateOf(false) }
     var directDownloadUrl by remember { mutableStateOf("") }
     var directDownloadIsMovie by remember { mutableStateOf(false) }
+    var downloadReferer by remember { mutableStateOf("") }
+    var downloadUserAgent by remember { mutableStateOf("") }
+    var hlsQualities by remember { mutableStateOf<List<HlsQuality>>(emptyList()) }
+    var inspectedHlsUrl by remember { mutableStateOf("") }
+    var chosenHlsIndex by remember { mutableStateOf<Int?>(null) }
+    var qualityChecking by remember { mutableStateOf(false) }
+    var qualityMessage by remember { mutableStateOf("") }
+    var headerEditorOpen by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showThemePicker by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -1170,12 +1178,23 @@ private fun MusicScreen(
             }
         )
     }
+    LaunchedEffect(directDownloadUrl) {
+        if (directDownloadUrl.trim() != inspectedHlsUrl) {
+            hlsQualities = emptyList()
+            chosenHlsIndex = null
+            qualityMessage = ""
+        }
+    }
     if (showDirectDownloadDialog) {
         AlertDialog(
             onDismissRequest = { showDirectDownloadDialog = false },
             title = { Text("Скачать медиафайл · TEST") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    modifier = Modifier.heightIn(max = 480.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     Text("Обычные MP4/MP3 сохраняются в папке Загрузки. " +
                         "HLS/DASH загружаются для офлайн-просмотра в Media3. " +
                         "DRM и ограничения источников не обходятся.")
@@ -1200,6 +1219,78 @@ private fun MusicScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    if (OfflineDownloadRoute.classify(directDownloadUrl) ==
+                        OfflineTransfer.ADAPTIVE_HLS) {
+                        OutlinedButton(
+                            onClick = {
+                                qualityChecking = true
+                                qualityMessage = ""
+                                val urlToInspect = directDownloadUrl.trim()
+                                scope.launch {
+                                    try {
+                                        val headers = DownloadHttpHeaders.validated(
+                                            downloadReferer, downloadUserAgent
+                                        )
+                                        val choices = kotlinx.coroutines.withContext(
+                                            kotlinx.coroutines.Dispatchers.IO
+                                        ) { HlsQualityInspector.inspect(urlToInspect, headers) }
+                                        if (urlToInspect == directDownloadUrl.trim()) {
+                                            hlsQualities = choices
+                                            inspectedHlsUrl = urlToInspect
+                                            qualityMessage = if (choices.isEmpty())
+                                                "Это одиночный HLS-плейлист — качество определяется источником."
+                                            else "Выберите качество или оставьте «Авто»."
+                                        }
+                                    } catch (error: Exception) {
+                                        qualityMessage = error.message ?: "Проверка качества не удалась"
+                                    } finally {
+                                        qualityChecking = false
+                                    }
+                                }
+                            },
+                            enabled = !qualityChecking
+                        ) { Text(if (qualityChecking) "Проверка…" else "Проверить качество HLS") }
+                        if (qualityMessage.isNotBlank()) {
+                            Text(qualityMessage, style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (hlsQualities.isNotEmpty() &&
+                            inspectedHlsUrl == directDownloadUrl.trim()) {
+                            Text("Качество скачивания", style = MaterialTheme.typography.titleSmall)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                FilterChip(selected = chosenHlsIndex == null,
+                                    onClick = { chosenHlsIndex = null },
+                                    label = { Text("Авто") })
+                                hlsQualities.forEach { choice ->
+                                    FilterChip(
+                                        selected = chosenHlsIndex == choice.index,
+                                        onClick = { chosenHlsIndex = choice.index },
+                                        enabled = !choice.externalAudio,
+                                        label = { Text(choice.label) }
+                                    )
+                                }
+                            }
+                            if (hlsQualities.any { it.externalAudio }) {
+                                Text("Потоки с отдельными аудиодорожками доступны только в «Авто», чтобы не потерять звук.",
+                                    style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                    TextButton(onClick = { headerEditorOpen = !headerEditorOpen }) {
+                        Text(if (headerEditorOpen) "Скрыть заголовки" else "Дополнительные HTTP-заголовки")
+                    }
+                    if (headerEditorOpen) {
+                        OutlinedTextField(value = downloadReferer,
+                            onValueChange = { downloadReferer = it },
+                            label = { Text("Referer (HTTPS)") },
+                            singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = downloadUserAgent,
+                            onValueChange = { downloadUserAgent = it },
+                            label = { Text("User-Agent") },
+                            singleLine = true, modifier = Modifier.fillMaxWidth())
+                        Text("Заголовки применяются при скачивании MP3/MP4 и при проверке HLS-плейлиста. " +
+                            "Media3 пока не передаёт их сегментам HLS/DASH. Пароли и токены не вводите.",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(selected = !directDownloadIsMovie,
                             onClick = { directDownloadIsMovie = false },
@@ -1216,12 +1307,19 @@ private fun MusicScreen(
                         DownloadMediaKind.VIDEO else DownloadMediaKind.MUSIC
                     val outcome = MediaDownloads.enqueue(
                         context, directDownloadUrl,
-                        if (directDownloadIsMovie) "Фильм" else "Музыка", kind
+                        if (directDownloadIsMovie) "Фильм" else "Музыка", kind,
+                        referer = downloadReferer.ifBlank { null },
+                        userAgent = downloadUserAgent.ifBlank { null },
+                        hlsVariantIndex = chosenHlsIndex.takeIf {
+                            inspectedHlsUrl == directDownloadUrl.trim()
+                        }
                     )
                     MediaDownloads.showResult(context, outcome)
                     if (outcome is DownloadPlanResult.Accepted) {
                         showDirectDownloadDialog = false
                         directDownloadUrl = ""
+                        chosenHlsIndex = null
+                        hlsQualities = emptyList()
                     }
                 }) { Text("Скачать") }
             },

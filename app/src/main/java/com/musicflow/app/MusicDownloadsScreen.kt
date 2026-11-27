@@ -57,6 +57,8 @@ private sealed interface LibraryFile {
     val progress: Float?
     val actions: Set<DownloadUiAction>
     val isMusic: Boolean
+    val downloadedBytes: Long
+    val expectedBytes: Long?
 
     data class Cached(val value: Download) : LibraryFile {
         override val key: String get() = "cache:" + value.request.id
@@ -65,6 +67,8 @@ private sealed interface LibraryFile {
                 .substringAfter('\n', value.request.uri.lastPathSegment.orEmpty())
                 .ifBlank { value.request.uri.lastPathSegment ?: "Видео" }
         override val ready: Boolean get() = value.state == Download.STATE_COMPLETED
+        override val downloadedBytes: Long get() = value.bytesDownloaded.coerceAtLeast(0L)
+        override val expectedBytes: Long? get() = null
         override val state: DownloadUiState get() = when(value.state) {
             Download.STATE_QUEUED -> DownloadUiState.QUEUED
             Download.STATE_DOWNLOADING, Download.STATE_RESTARTING -> DownloadUiState.DOWNLOADING
@@ -102,10 +106,11 @@ private sealed interface LibraryFile {
         val mime: String,
         val status: Int,
         val sourceUrl: String,
-        val downloadedBytes: Long,
+        override val downloadedBytes: Long,
         val totalBytes: Long
     ) : LibraryFile {
         override val key: String get() = "direct:$id"
+        override val expectedBytes: Long? get() = totalBytes.takeIf { it > 0L }
         override val state: DownloadUiState get() = when (status) {
             DownloadManager.STATUS_RUNNING -> DownloadUiState.DOWNLOADING
             DownloadManager.STATUS_PENDING -> DownloadUiState.QUEUED
@@ -221,6 +226,7 @@ internal fun MusicDownloadsScreen(
     var selected by remember { mutableStateOf<LibraryFile?>(null) }
     var refresh by remember { mutableIntStateOf(0) }
     var loadError by remember { mutableStateOf<String?>(null) }
+    var transferRates by remember { mutableStateOf<Map<String, DownloadSpeedSample>>(emptyMap()) }
     var pendingRemoval by remember { mutableStateOf<CleanupPrompt?>(null) }
     var selectedFilter by remember { mutableStateOf("Все") }
     var selectionMode by remember { mutableStateOf(false) }
@@ -300,10 +306,17 @@ internal fun MusicDownloadsScreen(
         OfflineDownloads.manager(context)
         while (true) {
             try {
-                files = withContext(Dispatchers.IO) {
+                val nextFiles = withContext(Dispatchers.IO) {
                     OfflineDownloads.snapshot(context).map { LibraryFile.Cached(it) } +
                         loadDirectFiles(context)
                 }
+                val now = android.os.SystemClock.elapsedRealtime()
+                transferRates = nextFiles.associate { file ->
+                    file.key to DownloadSpeed.next(
+                        transferRates[file.key], file.downloadedBytes, now
+                    )
+                }
+                files = nextFiles
                 loadError = null
             } catch (error: Exception) {
                 AppDiagnostics.failure("Downloads", "list local media", error)
@@ -406,6 +419,19 @@ internal fun MusicDownloadsScreen(
                                     modifier = Modifier.weight(1f))
                             }
                             Text(file.subtitle, style = MaterialTheme.typography.bodySmall)
+                            if (file.state == DownloadUiState.DOWNLOADING ||
+                                file.state == DownloadUiState.PAUSED_SYSTEM ||
+                                file.state == DownloadUiState.STOPPED) {
+                                val rate = transferRates[file.key]?.bytesPerSecond ?: 0L
+                                val amount = humanBytes(file.downloadedBytes)
+                                val total = file.expectedBytes?.let { " из ${humanBytes(it)}" }.orEmpty()
+                                val speedText = if (rate > 0L) " · ${humanBytes(rate)}/с" else ""
+                                val remaining = file.expectedBytes?.let { it - file.downloadedBytes }
+                                val eta = if (rate > 0L && remaining != null && remaining > 0L)
+                                    " · осталось ~${remaining / rate} с" else ""
+                                Text(amount + total + speedText + eta,
+                                    style = MaterialTheme.typography.labelSmall)
+                            }
                             if (file.state in listOf(DownloadUiState.DOWNLOADING,
                                     DownloadUiState.STOPPED, DownloadUiState.PAUSED_SYSTEM,
                                     DownloadUiState.QUEUED)) {
