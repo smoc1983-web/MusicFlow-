@@ -1,0 +1,123 @@
+name: Publish MusicFlow 0.7.52 original-signed cinema screen awake fix
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/release-assets/v0752/signed-delta.doublezstd.b64"
+      - ".github/workflows/publish-v0752-original-signed.yml"
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: official-musicflow-v0752
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare APK signature verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v zstd || { sudo apt-get update -qq && sudo apt-get install -y zstd; }
+          yes | sdkmanager "build-tools;36.0.0" >/dev/null ||
+            test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+      - name: Download tested original unsigned APK
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source .github/release-assets/v0752/checksums.env
+          test "$SOURCE_SHA" = "47ec6608915e1662c67f7d4a517860fa3eda9b3f"
+          # Signed bytes refer to one exact, previously tested app source. Documentation edits are allowed.
+          git diff --quiet "$SOURCE_SHA" HEAD -- app/ || {
+            echo "::error::App sources changed since signed preflight; rebuild and sign again."
+            exit 1
+          }
+          PREFLIGHT_STATUS=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN" --jq '.conclusion')
+          test "$PREFLIGHT_STATUS" = "success" || {
+            echo "::error::Official 0.7.52 preflight did not pass."
+            exit 1
+          }
+          mkdir -p "$RUNNER_TEMP/unsigned" out
+          gh run download "$SOURCE_RUN" -R "$GITHUB_REPOSITORY" \
+            -n "$SOURCE_ARTIFACT" \
+            --dir "$RUNNER_TEMP/unsigned"
+          UNSIGNED="$RUNNER_TEMP/unsigned/app-release-unsigned.apk"
+          echo "$UNSIGNED_SHA  $UNSIGNED" | sha256sum -c -
+          SOURCE=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN" \
+            --jq '.head_sha')
+          test "$SOURCE" = "$SOURCE_SHA" || {
+            echo "::error::Signed APK source mismatch."
+            exit 1
+          }
+      - name: Reconstruct privately signed release from nonsecret signed-byte delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .github/release-assets/v0752/checksums.env
+          UNSIGNED="$RUNNER_TEMP/unsigned/app-release-unsigned.apk"
+          OUTER="$RUNNER_TEMP/signed-delta.doublezstd"
+          PATCH="$RUNNER_TEMP/unsigned-to-signed.patch.zst"
+          base64 -d .github/release-assets/v0752/signed-delta.doublezstd.b64 > "$OUTER"
+          echo "$OUTER_SHA  $OUTER" | sha256sum -c -
+          zstd -q -d "$OUTER" -o "$PATCH"
+          echo "$PATCH_SHA  $PATCH" | sha256sum -c -
+          zstd -q -d --patch-from="$UNSIGNED" "$PATCH" \
+            -o out/MusicFlow_0.7.52.apk
+          echo "$SIGNED_SHA  out/MusicFlow_0.7.52.apk" | sha256sum -c -
+      - name: Verify unchanged app identity and release certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=out/MusicFlow_0.7.52.apk
+          TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          "$TOOLS/zipalign" -c -p 4 "$APK"
+          "$TOOLS/apksigner" verify --verbose --min-sdk-version 26 "$APK"
+          "$TOOLS/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview' versionCode='752' versionName='0.7.52'"
+          CERT=$("$TOOLS/apksigner" verify --print-certs "$APK" |
+            sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
+          test "$CERT" = "c461ee635d5b295ef6c765e1ae533d0079dc6e53cb2632a11a1b445773752410" ||
+            { echo "::error::Wrong signing certificate"; exit 1; }
+          sha256sum "$APK" > out/SHA256SUMS.txt
+      - name: Publish official 0.7.52 GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view v0.7.52 -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::v0.7.52 already exists; refusal to overwrite"
+            exit 1
+          fi
+          cat > out/RELEASE_NOTES.md <<'NOTES'
+          MusicFlow 0.7.52 — официальный выпуск поверх 0.7.51.
+
+          - Устранено автоматическое отключение экрана при просмотре и буферизации фильма.
+          - Работает в обычном и полноэкранном режиме раздела «Кино».
+          - На паузе, после завершения или закрытия фильма экран снова использует системный таймаут.
+          - Сохранены функции музыки, радио, IPTV, кино и избранного.
+          - Подпись Android v2/v3 исходным MusicFlow сертификатом, тот же пакет com.musicflow.preview.
+          - GitHub Actions проверяет исходный прогон JUnit, SHA-256, подпись и пакет APK.
+
+          NOTES
+          source .github/release-assets/v0752/checksums.env
+          gh release create v0.7.52 out/MusicFlow_0.7.52.apk out/SHA256SUMS.txt \
+            -R "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --latest \
+            --title "MusicFlow 0.7.52 · экран не гаснет при просмотре кино" \
+            --notes-file out/RELEASE_NOTES.md
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.7.52" \
+            --jq '.assets[].name' | grep -Fx 'MusicFlow_0.7.52.apk'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.52-official-signed
+          path: |
+            out/MusicFlow_0.7.52.apk
+            out/SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error
