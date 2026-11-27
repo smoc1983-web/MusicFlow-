@@ -4,7 +4,7 @@ on:
     branches: ["feature/musicflow-download-enhancements-v0758"]
     paths:
       - "app/**"
-      - ".github/workflows/musicflow-v0758-bulk-cleanup-test.yml"
+      - ".github/workflows/musicflow-v0758-download-enhancements-test.yml"
   workflow_dispatch:
 permissions:
   contents: read
