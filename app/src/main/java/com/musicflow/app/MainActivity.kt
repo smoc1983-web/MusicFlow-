@@ -755,6 +755,7 @@ private fun MusicScreen(
                         2 -> "Избранное"
                         3 -> "ТВ"
                         7 -> "Кино"
+                        8 -> "Загрузки"
                         6 -> "Радио"
                         5 -> "История"
                         else -> "Музыка"
@@ -769,7 +770,8 @@ private fun MusicScreen(
                     containerColor = palette.surface,
                     shadowElevation = 14.dp) {
                     listOf(0 to "Музыка", 2 to "Избранное", 6 to "Радио",
-                        5 to "История", 3 to "ТВ", 7 to "Кино")
+                        5 to "История", 3 to "ТВ", 7 to "Кино",
+                        8 to "Загрузки")
                         .forEach { (index, label) ->
                             DropdownMenuItem(text = { Text(label) },
                                 onClick = {
@@ -803,6 +805,11 @@ private fun MusicScreen(
             RuVideoHubTvScreen(player = player, modifier = Modifier.weight(1f))
         } else if (tab == 7) {
             CinemaLabScreen(modifier = Modifier.weight(1f))
+        } else if (tab == 8) {
+            MusicDownloadsScreen(
+                onAddLink = { showDirectDownloadDialog = true },
+                modifier = Modifier.weight(1f)
+            )
         } else if (tab == 4) {
             DiagnosticsScreen(modifier = Modifier.weight(1f))
         } else if (tab == 6) {
@@ -1168,12 +1175,27 @@ private fun MusicScreen(
             title = { Text("Скачать медиафайл · TEST") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Поддерживаются разрешённые прямые HTTPS-файлы. " +
-                        "Плейлисты HLS/DASH и защищённые потоки не загружаются.")
+                    Text("Обычные MP4/MP3 сохраняются в папке Загрузки. " +
+                        "HLS/DASH загружаются для офлайн-просмотра в Media3. " +
+                        "DRM и ограничения источников не обходятся.")
+                    OutlinedButton(onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
+                            as android.content.ClipboardManager
+                        val raw = clipboard.primaryClip?.getItemAt(0)
+                            ?.coerceToText(context)?.toString().orEmpty()
+                        val pasted = ClipboardDownloadUrl.extract(raw)
+                        if (pasted != null) {
+                            directDownloadUrl = pasted
+                        } else {
+                            android.widget.Toast.makeText(context,
+                                "В буфере нет HTTPS-ссылки на файл",
+                                android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }) { Text("Вставить из буфера") }
                     OutlinedTextField(
                         value = directDownloadUrl,
                         onValueChange = { directDownloadUrl = it },
-                        label = { Text("Прямая ссылка на MP3 или MP4") },
+                        label = { Text("Ссылка на MP4, MP3, HLS или DASH") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
