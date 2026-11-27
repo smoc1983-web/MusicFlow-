@@ -6,6 +6,9 @@ on:
       - ".github/workflows/musicflow-v0760-macos-emulator.yml"
       - ".github/scripts/musicflow-v0760-emulator.sh"
       - "app/src/androidTest/**"
+      - "app/src/main/**"
+      - "app/build.gradle.kts"
+      - "settings.gradle.kts"
   workflow_dispatch:
 permissions:
   contents: read
