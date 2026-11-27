@@ -1,0 +1,36 @@
+name: MusicFlow TEST 0.7.58 public Android signing tool artifact
+on:
+  push:
+    branches: ["feature/musicflow-download-enhancements-v0758"]
+    paths:
+      - ".github/workflows/mf-758-signing-tool.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  toolchain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Acquire public Android signing CLI only
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager "build-tools;36.0.0" || test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          mkdir -p public-tooling
+          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" public-tooling/
+          cp "$ANDROID_HOME/build-tools/36.0.0/apksigner" public-tooling/
+          cp "$ANDROID_HOME/build-tools/36.0.0/zipalign" public-tooling/
+          sha256sum public-tooling/* > public-tooling/SHA256SUMS.txt
+          java -cp public-tooling/apksigner.jar com.android.apksigner.ApkSignerTool --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.58-public-Android-apksigner36
+          path: public-tooling/
+          retention-days: 7
+          if-no-files-found: error
