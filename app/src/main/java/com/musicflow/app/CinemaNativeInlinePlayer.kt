@@ -67,7 +67,8 @@ import coil.compose.rememberAsyncImagePainter
 private data class CinemaVideoQuality(
     val label: String,
     val mediaGroup: androidx.media3.common.TrackGroup,
-    val trackIndex: Int
+    val trackIndex: Int,
+    val estimatedBytes: Long? = null
 )
 
 private data class CinemaAudioOption(
@@ -109,6 +110,7 @@ internal fun CinemaNativeInlinePlayer(
     var downloadDashOptions by remember(streamUrl) { mutableStateOf<List<DashVideoQuality>>(emptyList()) }
     var downloadSelectedHls by remember(streamUrl) { mutableStateOf<Int?>(null) }
     var downloadSelectedDash by remember(streamUrl) { mutableStateOf<Int?>(null) }
+    var downloadDirectSize by remember(streamUrl) { mutableStateOf<Long?>(null) }
     val downloadType = remember(streamUrl) { OfflineDownloadRoute.classify(streamUrl) }
     var controllerVisible by remember { mutableStateOf(true) }
     var qualityOpen by remember { mutableStateOf(false) }
@@ -251,6 +253,14 @@ internal fun CinemaNativeInlinePlayer(
     }
 
     val qualityOptions = remember(player, tracksVersion) {
+        val audioRates = player.currentTracks.groups
+            .filter { it.type == C.TRACK_TYPE_AUDIO }
+            .mapNotNull { group ->
+                (0 until group.length).firstOrNull { group.isTrackSelected(it) }
+                    ?.let { group.getTrackFormat(it).bitrate.toLong().takeIf { rate -> rate > 0L } }
+            }
+        val durationSeconds = player.duration
+            .takeIf { it > 0 && it != C.TIME_UNSET }?.toDouble()?.div(1000.0)
         buildList {
             for (group in player.currentTracks.groups) {
                 if (group.type != C.TRACK_TYPE_VIDEO) continue
@@ -259,7 +269,10 @@ internal fun CinemaNativeInlinePlayer(
                     val format = group.getTrackFormat(i)
                     if (format.height <= 0) continue
                     add(CinemaVideoQuality(
-                        format.height.toString() + "p", group.mediaTrackGroup, i
+                        format.height.toString() + "p", group.mediaTrackGroup, i,
+                        DownloadSizeEstimate.bytes(durationSeconds,
+                            format.bitrate.toLong().takeIf { it > 0L }
+                                ?.plus(audioRates.firstOrNull() ?: 0L))
                     ))
                 }
             }
@@ -382,6 +395,15 @@ internal fun CinemaNativeInlinePlayer(
                     ) {
                         DashVideoQualityInspector.inspect(streamUrl)
                     }
+                OfflineTransfer.DIRECT_FILE ->
+                    downloadDirectSize = kotlinx.coroutines.withContext(
+                        kotlinx.coroutines.Dispatchers.IO
+                    ) {
+                        runCatching {
+                            DirectFileSizeInspector.contentLength(streamUrl,
+                                DownloadHttpHeaders.validated(pageUrl.orEmpty(), ""))
+                        }.getOrNull()
+                    }
                 else -> Unit
             }
             downloadMessage = if (
@@ -444,7 +466,8 @@ internal fun CinemaNativeInlinePlayer(
                         )
                         qualityOptions.forEach { option ->
                             DropdownMenuItem(
-                                text = { Text(option.label) },
+                                text = { Text(DownloadSizeEstimate.choice(
+                                    option.label, option.estimatedBytes)) },
                                 onClick = { selectQuality(option) }
                             )
                         }
@@ -530,7 +553,8 @@ internal fun CinemaNativeInlinePlayer(
                                 )
                                 qualityOptions.forEach { option ->
                                     DropdownMenuItem(
-                                        text = { Text(option.label) },
+                                        text = { Text(DownloadSizeEstimate.choice(
+                                        option.label, option.estimatedBytes)) },
                                         onClick = { selectQuality(option) }
                                     )
                                 }
@@ -587,7 +611,8 @@ internal fun CinemaNativeInlinePlayer(
                                 selected = downloadSelectedHls == option.index,
                                 onClick = { downloadSelectedHls = option.index },
                                 enabled = !downloadInspecting && !option.externalAudio,
-                                label = { Text(option.label +
+                                label = { Text(DownloadSizeEstimate.choice(
+                                    option.label, option.estimatedBytes) +
                                     if (option.externalAudio) " · отдельное аудио — Авто" else "") }
                             )
                         }
@@ -604,11 +629,21 @@ internal fun CinemaNativeInlinePlayer(
                                 selected = downloadSelectedDash == index,
                                 onClick = { downloadSelectedDash = index },
                                 enabled = !downloadInspecting,
-                                label = { Text(option.label) }
+                                label = { Text(DownloadSizeEstimate.choice(
+                                    option.label, option.estimatedBytes)) }
                             )
                         }
                     }
+                    if (downloadType == OfflineTransfer.ADAPTIVE_HLS ||
+                        downloadType == OfflineTransfer.ADAPTIVE_DASH) {
+                        Text("≈ — расчёт по длительности и битрейту. " +
+                            "При потоковой загрузке окончательный размер может отличаться.",
+                            style = MaterialTheme.typography.labelSmall)
+                    }
                     if (downloadType == OfflineTransfer.DIRECT_FILE) {
+                        Text("Размер файла по данным сервера: " +
+                            DownloadSizeEstimate.format(downloadDirectSize, false),
+                            style = MaterialTheme.typography.bodySmall)
                         Text("Прямой MP4/MKV уже закодирован в одном качестве. " +
                             "Выбор 360p/720p/1080p возможен только при наличии " +
                             "вариантов HLS/DASH или отдельных файлов.",
