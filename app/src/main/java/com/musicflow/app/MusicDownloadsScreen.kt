@@ -5,6 +5,12 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.app.Activity
+import android.content.pm.ActivityInfo
+import android.view.Window
+import androidx.activity.compose.BackHandler
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -22,15 +28,21 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
@@ -641,10 +653,13 @@ private fun openInOtherPlayer(context: Context, uri: Uri?, mime: String) {
 @Composable
 private fun OfflineFilePlayer(file: LibraryFile, onDismiss: () -> Unit) {
     val context = LocalContext.current
+    val activity = context as? Activity
+    // Keep the SAME player when switching compact/fullscreen. A new player
+    // would restart an offline video and may release its Media3 cache too early.
     val player = remember(file.key) {
         val sourceFactory = when (file) {
             is LibraryFile.Cached -> {
-                // Offline-only: no fallback to the network when the file is missing.
+                // Offline-only: never silently fetch the missing segments online.
                 val source = CacheDataSource.Factory()
                     .setCache(OfflineDownloads.cache(context))
                     .setUpstreamDataSourceFactory(PlaceholderDataSource.FACTORY)
@@ -665,24 +680,127 @@ private fun OfflineFilePlayer(file: LibraryFile, onDismiss: () -> Unit) {
             }
     }
     DisposableEffect(player) { onDispose { player.release() } }
-    Dialog(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
-            .padding(12.dp)) {
-            Text(file.title, style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(10.dp))
-            AndroidView(factory = { ctx ->
-                PlayerView(ctx).apply {
-                    this.player = player
-                    useController = true
-                    keepScreenOn = true
-                }
-            }, update = { it.player = player },
-                modifier = Modifier.fillMaxWidth().height(260.dp))
-            Spacer(Modifier.height(6.dp))
-            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
-                Text("Закрыть")
+    var fullScreen by remember(file.key) { mutableStateOf(false) }
+    val canExpand = !file.isMusic
+    BackHandler(enabled = fullScreen) { fullScreen = false }
+
+    // MainActivity declares configChanges for orientation/screenSize, allowing
+    // a landscape transition without restarting the one Media3 player.
+    DisposableEffect(activity, fullScreen) {
+        val previousOrientation = activity?.requestedOrientation
+        if (fullScreen && canExpand) {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
+        onDispose {
+            if (fullScreen && canExpand && previousOrientation != null) {
+                activity.requestedOrientation = previousOrientation
             }
         }
     }
+
+    Dialog(
+        onDismissRequest = { if (fullScreen) fullScreen = false else onDismiss() },
+        properties = DialogProperties(
+            usePlatformDefaultWidth = !fullScreen,
+            decorFitsSystemWindows = !fullScreen
+        )
+    ) {
+        val view = LocalView.current
+        val window = (view.parent as? DialogWindowProvider)?.window
+        DisposableEffect(window, fullScreen) {
+            if (fullScreen && window != null) {
+                WindowInsetsControllerCompat(window, window.decorView).apply {
+                    systemBarsBehavior =
+                        WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    hide(WindowInsetsCompat.Type.systemBars())
+                }
+            }
+            onDispose {
+                if (fullScreen && window != null) {
+                    WindowInsetsControllerCompat(window, window.decorView).show(
+                        WindowInsetsCompat.Type.systemBars()
+                    )
+                }
+            }
+        }
+
+        if (fullScreen) {
+            Box(Modifier.fillMaxSize().background(Color.Black)) {
+                OfflineMediaPlayerView(
+                    player = player,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Row(
+                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { fullScreen = false }) {
+                        Icon(Icons.Filled.FullscreenExit, contentDescription = "Свернуть видео",
+                            tint = Color.White)
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Filled.Close, contentDescription = "Закрыть просмотр",
+                            tint = Color.White)
+                    }
+                }
+            }
+        } else {
+            Column(
+                Modifier.fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
+                    .padding(12.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        file.title, style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f), maxLines = 3
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Filled.Close, contentDescription = "Закрыть просмотр")
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                OfflineMediaPlayerView(
+                    player = player,
+                    modifier = Modifier.fillMaxWidth().height(260.dp)
+                )
+                if (canExpand) {
+                    TextButton(
+                        onClick = { fullScreen = true },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Icon(Icons.Filled.Fullscreen, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("На весь экран")
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * One rendering policy for both direct MP4 and cached HLS/DASH.
+ * Retain player instance and seek position when moving between windows.
+ */
+@OptIn(UnstableApi::class)
+@Composable
+private fun OfflineMediaPlayerView(
+    player: ExoPlayer,
+    modifier: Modifier
+) {
+    AndroidView(
+        factory = { ctx ->
+            PlayerView(ctx).apply {
+                this.player = player
+                useController = true
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                keepScreenOn = true
+            }
+        },
+        update = { it.player = player },
+        onRelease = { it.player = null; it.keepScreenOn = false },
+        modifier = modifier.background(Color.Black)
+    )
 }
