@@ -7,6 +7,8 @@ import android.content.Intent
 import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -182,6 +184,42 @@ internal fun MusicDownloadsScreen(
     var selected by remember { mutableStateOf<LibraryFile?>(null) }
     var refresh by remember { mutableIntStateOf(0) }
     var loadError by remember { mutableStateOf<String?>(null) }
+    var pendingRemoval by remember { mutableStateOf<LibraryFile?>(null) }
+    var selectedFilter by remember { mutableStateOf("Все") }
+
+    fun runAction(file: LibraryFile, action: DownloadUiAction) {
+        try {
+            when (action) {
+                DownloadUiAction.PLAY -> selected = file
+                DownloadUiAction.OPEN_EXTERNAL -> if (file is LibraryFile.Direct)
+                    openInOtherPlayer(context, file.uri, file.mime)
+                DownloadUiAction.PAUSE -> if (file is LibraryFile.Cached)
+                    OfflineDownloads.pause(context, file.value.request.id)
+                DownloadUiAction.RESUME -> if (file is LibraryFile.Cached)
+                    OfflineDownloads.resume(context, file.value.request.id)
+                DownloadUiAction.RETRY -> when (file) {
+                    is LibraryFile.Cached -> OfflineDownloads.retry(context, file.value)
+                    is LibraryFile.Direct -> {
+                        val kind = if (file.isMusic) DownloadMediaKind.MUSIC
+                            else DownloadMediaKind.VIDEO
+                        val result = MediaDownloads.enqueue(context, file.sourceUrl,
+                            file.title, kind)
+                        MediaDownloads.showResult(context, result)
+                        if (result is DownloadPlanResult.Accepted)
+                            MediaDownloads.cancel(context, file.id)
+                    }
+                }
+                DownloadUiAction.OPEN_SYSTEM -> MediaDownloads.openDownloads(context)
+                DownloadUiAction.CANCEL, DownloadUiAction.DELETE -> pendingRemoval = file
+            }
+            refresh++
+        } catch (error: Exception) {
+            AppDiagnostics.failure("Downloads", "action " + action, error)
+            android.widget.Toast.makeText(context,
+                "Не удалось выполнить действие: ${action.name}",
+                android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
     LaunchedEffect(refresh) {
         // Media3 DownloadManager must be constructed on the main Looper; only
         // the persisted database snapshot is read on the IO dispatcher.
@@ -205,7 +243,8 @@ internal fun MusicDownloadsScreen(
         Text("Загруженные файлы", style = MaterialTheme.typography.titleLarge)
         Text("Обычные MP4/MP3 доступны другим плеерам. HLS/DASH хранятся в офлайн-кеше Media3 и воспроизводятся внутри MusicFlow.",
             style = MaterialTheme.typography.bodySmall)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onAddLink) {
                 Icon(Icons.Filled.Download, contentDescription = null)
                 Spacer(Modifier.width(5.dp))
@@ -219,46 +258,81 @@ internal fun MusicDownloadsScreen(
                 Text("Файлы Android")
             }
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("Все", "Музыка", "Видео").forEach { option ->
+                FilterChip(
+                    selected = selectedFilter == option,
+                    onClick = { selectedFilter = option },
+                    label = { Text(option) }
+                )
+            }
+        }
         if (loadError != null) Text(loadError!!, color = MaterialTheme.colorScheme.error)
-        if (files.isEmpty()) {
-            Text("Файлов пока нет. Скачай песню или фильм через кнопку «Скачать».",
+        val shownFiles = files.filter { file ->
+            selectedFilter == "Все" || (selectedFilter == "Музыка") == file.isMusic
+        }
+        if (shownFiles.isEmpty()) {
+            Text("Здесь пока нет загруженных файлов.",
                 modifier = Modifier.padding(vertical = 24.dp))
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 110.dp)) {
-                items(files, key = { it.key }) { file ->
+                contentPadding = PaddingValues(bottom = 110.dp),
+                modifier = Modifier.weight(1f)) {
+                items(shownFiles, key = { it.key }) { file ->
                     Card(shape = RoundedCornerShape(16.dp)) {
                         Column(Modifier.fillMaxWidth().padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(7.dp)) {
                             Text(file.title, style = MaterialTheme.typography.titleMedium)
                             Text(file.subtitle, style = MaterialTheme.typography.bodySmall)
-                            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                TextButton(onClick = { selected = file },
-                                    enabled = file.ready) {
-                                    Icon(Icons.Filled.PlayArrow, contentDescription = null)
-                                    Text("Смотреть")
+                            if (file.state in listOf(DownloadUiState.DOWNLOADING,
+                                    DownloadUiState.STOPPED, DownloadUiState.PAUSED_SYSTEM,
+                                    DownloadUiState.QUEUED)) {
+                                file.progress?.let { value ->
+                                    LinearProgressIndicator(
+                                        progress = { value },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
                                 }
-                                if (file is LibraryFile.Direct) {
-                                    TextButton(onClick = {
-                                        openInOtherPlayer(context, file.uri, file.mime)
-                                    }, enabled = file.ready) {
-                                        Icon(Icons.Filled.OpenInNew, contentDescription = null)
-                                        Text("Другое приложение")
+                            }
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                file.actions.forEach { action ->
+                                    val label = when (action) {
+                                        DownloadUiAction.PAUSE -> "Пауза"
+                                        DownloadUiAction.RESUME -> "Продолжить"
+                                        DownloadUiAction.CANCEL -> "Отменить"
+                                        DownloadUiAction.RETRY -> "Повторить"
+                                        DownloadUiAction.OPEN_SYSTEM -> "Загрузки Android"
+                                        DownloadUiAction.PLAY -> "Смотреть"
+                                        DownloadUiAction.OPEN_EXTERNAL -> "Другой плеер"
+                                        DownloadUiAction.DELETE -> "Удалить"
                                     }
-                                } else if (file is LibraryFile.Cached) {
-                                    TextButton(onClick = {
-                                        android.widget.Toast.makeText(context,
-                                            "HLS/DASH хранится в кеше Media3, это не отдельный MP4. Используй плеер MusicFlow.",
-                                            android.widget.Toast.LENGTH_LONG).show()
-                                    }) { Text("Почему нет внешнего плеера?") }
-                                    TextButton(onClick = {
-                                        OfflineDownloads.remove(context, file.value.request.id)
-                                        refresh++
-                                    }) {
-                                        Icon(Icons.Filled.Delete, contentDescription = null)
-                                        Text("Удалить")
+                                    TextButton(onClick = { runAction(file, action) },
+                                        contentPadding = PaddingValues(horizontal = 8.dp)) {
+                                        when (action) {
+                                            DownloadUiAction.PAUSE ->
+                                                Icon(Icons.Filled.Pause, contentDescription = null)
+                                            DownloadUiAction.RESUME, DownloadUiAction.PLAY ->
+                                                Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                                            DownloadUiAction.CANCEL ->
+                                                Icon(Icons.Filled.Close, contentDescription = null)
+                                            DownloadUiAction.DELETE ->
+                                                Icon(Icons.Filled.Delete, contentDescription = null)
+                                            DownloadUiAction.RETRY ->
+                                                Icon(Icons.Filled.RestartAlt, contentDescription = null)
+                                            DownloadUiAction.OPEN_EXTERNAL ->
+                                                Icon(Icons.Filled.OpenInNew, contentDescription = null)
+                                            else -> Unit
+                                        }
+                                        Text(label, maxLines = 1)
                                     }
                                 }
+                            }
+                            if (file is LibraryFile.Direct &&
+                                file.state == DownloadUiState.PAUSED_SYSTEM) {
+                                Text("Android продолжит загрузку при восстановлении сети. " +
+                                    "Здесь нельзя принудительно возобновить отдельный системный файл.",
+                                    style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
@@ -266,6 +340,37 @@ internal fun MusicDownloadsScreen(
             }
         }
     }
+    pendingRemoval?.let { file ->
+        AlertDialog(
+            onDismissRequest = { pendingRemoval = null },
+            title = { Text(if (file.ready) "Удалить файл?" else "Отменить загрузку?") },
+            text = {
+                Text(if (file.ready) "Файл и данные загрузки будут удалены."
+                    else "Частично скачанные данные будут удалены. Отменённую загрузку нельзя продолжить с прежнего места.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    try {
+                        when (file) {
+                            is LibraryFile.Cached ->
+                                OfflineDownloads.remove(context, file.value.request.id)
+                            is LibraryFile.Direct -> MediaDownloads.cancel(context, file.id)
+                        }
+                        if (selected?.key == file.key) selected = null
+                        refresh++
+                    } catch (error: Exception) {
+                        AppDiagnostics.failure("Downloads", "cancel/remove", error)
+                    } finally {
+                        pendingRemoval = null
+                    }
+                }) { Text(if (file.ready) "Удалить" else "Отменить загрузку") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRemoval = null }) { Text("Назад") }
+            }
+        )
+    }
+
     selected?.let { current ->
         if (current.ready) {
             OfflineFilePlayer(current, onDismiss = { selected = null })
