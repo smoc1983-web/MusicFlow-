@@ -50,6 +50,14 @@ jobs:
           assert 'if (!CinemaAudioPickerPolicy.canOpen(audioOptions.size)) return' in cinema
           assert 'fun canOpen(trackCount: Int): Boolean = trackCount > 1' in (root/'CinemaAudioPickerPolicy.kt').read_text()
           assert 'Загрузки · ход скачивания' in (root/'MusicDownloadsScreen.kt').read_text()
+          offline=(root/'MusicDownloadsScreen.kt').read_text()
+          assert 'Text("На весь экран")' in offline
+          assert 'SCREEN_ORIENTATION_SENSOR_LANDSCAPE' in offline
+          assert 'DialogProperties(' in offline and 'usePlatformDefaultWidth = !fullScreen' in offline
+          assert 'BackHandler(enabled = fullScreen)' in offline
+          assert 'FullscreenExit' in offline
+          assert 'OfflineMediaPlayerView(' in offline
+          assert 'onRelease = { it.player = null' in offline
           assert 'DownloadSizeEstimate.choice(' in mini
           assert (root/'DownloadSizeEstimate.kt').exists()
           assert (root/'DirectFileSizeInspector.kt').exists()
