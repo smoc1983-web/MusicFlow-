@@ -1,0 +1,106 @@
+name: MusicFlow 0.7.53 Downloads TEST - music and movies
+on:
+  push:
+    branches: ["feature/musicflow-downloads-test-20261127"]
+    paths:
+      - "app/**"
+      - ".github/workflows/musicflow-v0753-downloads-test.yml"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: musicflow-downloads-test-v0753
+  cancel-in-progress: true
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Verify TEST channel isolation and download UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path("app/src/main/java/com/musicflow/app")
+          m = (app / "MainActivity.kt").read_text()
+          c = (app / "CinemaNativeInlinePlayer.kt").read_text()
+          d = (app / "MediaDownloads.kt").read_text()
+          p = (app / "MediaDownloadPolicy.kt").read_text()
+          f = (app / "FullPlayerDialog.kt").read_text()
+          gradle = Path("app/build.gradle.kts").read_text()
+          assert 'applicationId = "com.musicflow.preview"' in gradle
+          assert 'applicationIdSuffix = ".dev"' in gradle
+          assert 'versionCode = 753' in gradle and 'versionName = "0.7.53"' in gradle
+          assert 'MusicFlow TEST' in Path("app/src/debug/AndroidManifest.xml").read_text()
+          assert "onDownload = { downloadCurrentSong() }" in m
+          assert "Загрузить по ссылке · TEST" in m
+          assert 'Icon(Icons.Filled.Download, "Скачать песню"' in f
+          assert c.count("onClick = ::downloadCurrentMovie") == 2
+          assert "DownloadManager.Request" in d
+          assert "VISIBILITY_VISIBLE_NOTIFY_COMPLETED" in d
+          assert "DownloadMediaKind.MUSIC" in p and "DownloadMediaKind.VIDEO" in p
+          print("PASS: TEST package isolated; download actions present in music and both cinema modes")
+          PY
+      - name: Kotlin JUnit and debug APK assembly (ub-mode)
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Verify JUnit policy suite, TEST APK signature and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          suites = list(Path("app/build/test-results/testDebugUnitTest").glob("TEST-*.xml"))
+          names = [p for p in suites if "MediaDownloadPolicyTest" in p.name]
+          assert len(names) == 1, "Download policy suite was not executed"
+          s = ET.parse(names[0]).getroot()
+          assert int(s.attrib.get("tests", "0")) >= 5
+          assert int(s.attrib.get("failures", "0")) == 0
+          assert int(s.attrib.get("errors", "0")) == 0
+          apk = Path("app/build/outputs/apk/debug/app-debug.apk")
+          assert apk.stat().st_size > 1000000
+          print("PASS: download JUnit tests and APK artifact")
+          PY
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview.dev' versionCode='753' versionName='0.7.53-dev'"
+          mkdir -p out
+          cp "$APK" out/MusicFlow-Downloads-TEST-0.7.53.apk
+          (cd out && sha256sum MusicFlow-Downloads-TEST-0.7.53.apk > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-Downloads-TEST-0.7.53
+          path: out/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Publish separate downloadable prerelease only after passing tests
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=v0.7.53-downloads-test
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::TEST release $TAG already exists; do not silently replace test APK"
+            exit 1
+          fi
+          gh release create "$TAG" out/MusicFlow-Downloads-TEST-0.7.53.apk out/SHA256SUMS.txt \
+            -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            --title "MusicFlow 0.7.53 TEST · скачивание музыки и фильмов" \
+            --notes "Отдельная тестовая сборка, пакет com.musicflow.preview.dev, не заменяет основной MusicFlow. Добавлены кнопки скачивания для музыки и кино, ввод прямой ссылки и системные загрузки Android. Разрешены только прямые HTTPS-файлы MP3/M4A/FLAC/OGG/AAC/WAV и MP4/MKV/WEBM/MOV. HLS, DASH, DRM и сайты без прямого файла пока не поддерживаются. Отладочная подпись тестового канала отличается от основной; совместимость обновления ранее установленных тестовых APK с иным ключом не гарантируется."
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.prerelease' |
+            grep -Fx true
