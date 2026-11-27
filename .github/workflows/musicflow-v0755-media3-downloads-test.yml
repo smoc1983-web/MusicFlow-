@@ -1,0 +1,89 @@
+name: MusicFlow 0.7.55 TEST Media3 offline Downloads and library
+on:
+  push:
+    branches: ["feature/musicflow-media3-download-library-v0755"]
+    paths:
+      - "app/**"
+      - ".github/workflows/musicflow-v0755-media3-downloads-test.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Assert Media3/download library wiring, TEST isolation and MIME routes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          app=Path("app/src/main/java/com/musicflow/app")
+          gradle=Path("app/build.gradle.kts").read_text()
+          manifest=Path("app/src/main/AndroidManifest.xml").read_text()
+          main=(app/"MainActivity.kt").read_text()
+          offline=(app/"OfflineDownloads.kt").read_text()
+          lib=(app/"MusicDownloadsScreen.kt").read_text()
+          downloads=(app/"MediaDownloads.kt").read_text()
+          assert 'applicationIdSuffix = ".dev"' in gradle
+          assert 'versionCode = 755' in gradle and 'versionName = "0.7.55"' in gradle
+          assert '8 to "Загрузки"' in main and "MusicDownloadsScreen(" in main
+          assert "Вставить из буфера" in main
+          assert "MusicFlowOfflineDownloadService" in manifest
+          assert "FOREGROUND_SERVICE_DATA_SYNC" in manifest
+          assert "DownloadService.sendAddDownload" in offline
+          assert "DownloadIndex" in offline or "downloadIndex.getDownloads()" in offline
+          assert "CacheDataSource.Factory()" in lib
+          assert "DummyDataSource.Factory()" in lib
+          assert "Intent.ACTION_VIEW" in lib
+          assert "FLAG_GRANT_READ_URI_PERMISSION" in lib
+          assert "OfflineDownloads.enqueue" in downloads
+          assert "DownloadManager.Request" in downloads
+          print("PASS: separate TEST 0.7.55 Media3 HLS/DASH cache + shareable direct-files UI")
+          PY
+      - name: Kotlin JUnit and TEST APK (ub-mode)
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Validate test suites, TEST package and APK signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+          folder=Path("app/build/test-results/testDebugUnitTest")
+          expected={"OfflineDownloadRouteTest":5, "ClipboardDownloadUrlTest":4,
+                    "MediaDownloadPolicyTest":5, "MusicFlowTestUpdateChannelTest":5}
+          for suite, count in expected.items():
+            results=list(folder.glob("TEST-*"+suite+".xml"))
+            assert results, "Missing JUnit suite "+suite
+            root=ET.parse(results[0]).getroot()
+            assert int(root.attrib.get("tests","0"))>=count, suite+" incomplete"
+            assert int(root.attrib.get("failures","0"))==0, suite+" failures"
+            assert int(root.attrib.get("errors","0"))==0, suite+" errors"
+          print("PASS: route, clipboard, direct-media and updater regression JUnit")
+          PY
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview.dev' versionCode='755' versionName='0.7.55-dev'"
+          mkdir -p out
+          cp "$APK" out/MusicFlow-0.7.55-preflight.apk
+          (cd out && sha256sum MusicFlow-0.7.55-preflight.apk > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.55-TEST-media3-preflight
+          path: out/
+          retention-days: 30
+          if-no-files-found: error
