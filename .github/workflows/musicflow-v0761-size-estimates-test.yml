@@ -57,6 +57,16 @@ jobs:
           assert 'BackHandler(enabled = fullScreen)' in offline
           assert 'FullscreenExit' in offline
           assert 'OfflineMediaPlayerView(' in offline
+          exporter=(root/'OfflineMp4Exporter.kt').read_text()
+          assert 'Transformer.PROGRESS_STATE_AVAILABLE' in exporter
+          assert 'transformer.getProgress(progress)' in exporter
+          assert 'OfflineMp4ExportPhase.SAVING' in exporter
+          assert 'copied += count' in exporter
+          assert 'task.cancelled.get()' in exporter
+          assert 'resolver.delete(uri, null, null)' in exporter
+          assert 'Отменить экспорт' in offline and 'Создание MP4' in offline
+          assert 'Сохранение в «Фильмы/MusicFlow»' in offline
+          assert 'OfflineMp4ProgressPolicy' in exporter
           assert 'onRelease = { it.player = null' in offline
           assert 'DownloadSizeEstimate.choice(' in mini
           assert (root/'DownloadSizeEstimate.kt').exists()
@@ -86,6 +96,7 @@ jobs:
               ("RadioQueuePolicyTest",4),
               ("HlsQualityPolicyTest",7),
               ("DownloadSizeEstimateTest",3),
+              ("OfflineMp4ProgressPolicyTest",2),
               ("CinemaAudioPickerPolicyTest",2),
               ("RadioStationArtworkFallbackTest",3),
               ("WorldChartCoversTest",6),
