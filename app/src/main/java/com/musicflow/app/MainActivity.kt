@@ -281,6 +281,9 @@ private fun MusicScreen(
     var sectionMenu by remember { mutableStateOf(false) }
     var showAppearanceMenu by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
+    var showDirectDownloadDialog by remember { mutableStateOf(false) }
+    var directDownloadUrl by remember { mutableStateOf("") }
+    var directDownloadIsMovie by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showThemePicker by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -625,6 +628,32 @@ private fun MusicScreen(
         save(favorites.toList())
     }
 
+    fun downloadCurrentSong() {
+        val current = player?.currentMediaItem
+        if (current == null || current.mediaId.startsWith("radio:")) {
+            MediaDownloads.showResult(context, DownloadPlanResult.Rejected(
+                "Сначала запустите музыкальную композицию"
+            ))
+            return
+        }
+        val source = queueCatalog.firstOrNull { it.id == current.mediaId }
+            ?: tracks.firstOrNull { it.id == current.mediaId }
+            ?: favorites.firstOrNull { it.id == current.mediaId }
+        val options = source?.streams()?.map { it.uri }.orEmpty() +
+            listOfNotNull(current.localConfiguration?.uri?.toString())
+        val title = listOf(trackArtist, trackTitle).filter(String::isNotBlank).joinToString(" — ")
+        val direct = MediaDownloads.firstDownloadable(
+            options, title, DownloadMediaKind.MUSIC
+        )
+        val outcome = when (direct) {
+            is DownloadPlanResult.Accepted -> MediaDownloads.enqueue(
+                context, direct.value.url, title, DownloadMediaKind.MUSIC
+            )
+            is DownloadPlanResult.Rejected -> direct
+        }
+        MediaDownloads.showResult(context, outcome)
+    }
+
     val visible = when (tab) {
         2 -> favorites.toList()
         1 -> filterAndSortTracks(tracks, appliedSearch, searchMode, sortMode)
@@ -697,6 +726,14 @@ private fun MusicScreen(
                     DropdownMenuItem(text = { Text("История прослушивания") }, onClick = {
                         showAppearanceMenu = false
                         tab = 5
+                    })
+                    DropdownMenuItem(text = { Text("Загрузить по ссылке · TEST") }, onClick = {
+                        showAppearanceMenu = false
+                        showDirectDownloadDialog = true
+                    })
+                    DropdownMenuItem(text = { Text("Открыть загрузки") }, onClick = {
+                        showAppearanceMenu = false
+                        MediaDownloads.openDownloads(context)
                     })
                     DropdownMenuItem(text = { Text("Диагностика") }, onClick = {
                         showAppearanceMenu = false
@@ -1125,6 +1162,53 @@ private fun MusicScreen(
             }
         )
     }
+    if (showDirectDownloadDialog) {
+        AlertDialog(
+            onDismissRequest = { showDirectDownloadDialog = false },
+            title = { Text("Скачать медиафайл · TEST") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Поддерживаются разрешённые прямые HTTPS-файлы. " +
+                        "Плейлисты HLS/DASH и защищённые потоки не загружаются.")
+                    OutlinedTextField(
+                        value = directDownloadUrl,
+                        onValueChange = { directDownloadUrl = it },
+                        label = { Text("Прямая ссылка на MP3 или MP4") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = !directDownloadIsMovie,
+                            onClick = { directDownloadIsMovie = false },
+                            label = { Text("Музыка") })
+                        FilterChip(selected = directDownloadIsMovie,
+                            onClick = { directDownloadIsMovie = true },
+                            label = { Text("Фильм") })
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val kind = if (directDownloadIsMovie)
+                        DownloadMediaKind.VIDEO else DownloadMediaKind.MUSIC
+                    val outcome = MediaDownloads.enqueue(
+                        context, directDownloadUrl,
+                        if (directDownloadIsMovie) "Фильм" else "Музыка", kind
+                    )
+                    MediaDownloads.showResult(context, outcome)
+                    if (outcome is DownloadPlanResult.Accepted) {
+                        showDirectDownloadDialog = false
+                        directDownloadUrl = ""
+                    }
+                }) { Text("Скачать") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDirectDownloadDialog = false }) {
+                    Text("Отмена")
+                }
+            }
+        )
+    }
     if (expandedPlayer && player != null && trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
         FullPlayerDialog(
             player = player,
@@ -1138,6 +1222,7 @@ private fun MusicScreen(
             favorite = if (currentMediaId.startsWith("radio:"))
                 isCurrentRadioFavorite() else favorites.any { it.id == currentMediaId },
             onFavorite = { toggleCurrentFavorite() },
+            onDownload = { downloadCurrentSong() },
             onStop = { stopMusic() },
             availableTracks = combineMusicTracks(queueCatalog, tracks + favorites.toList()),
             onPlayAlbumTrack = { track ->
