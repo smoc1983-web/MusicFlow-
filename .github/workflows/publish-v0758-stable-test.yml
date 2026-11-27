@@ -1,0 +1,106 @@
+name: Publish MusicFlow 0.7.58 stable signed TEST downloader enhancements
+on:
+  push:
+    branches: ["feature/musicflow-download-enhancements-v0758"]
+    paths:
+      - ".github/workflows/publish-v0758-stable-test.yml"
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: musicflow-stable-test-v0758-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify exact JUnit preflight, source and fresh TEST tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source .github/release-assets/v0758-test/checksums.env
+          test "$SOURCE_SHA" = "938dc5c92b0a64d526548dae45de1169e36075c2"
+          test "$SOURCE_RUN" = "45977585633"
+          test "$SOURCE_ARTIFACT" = "MusicFlow-0.7.58-TEST-enhancements-preflight"
+          test "$TEST_CERT_SHA" = "5b021afbd43d8c4fc1de501bd5e000c8d0286da573a700121ace77339f199835"
+          test "$TEST_CERT_SHA" != "c461ee635d5b295ef6c765e1ae533d0079dc6e53cb2632a11a1b445773752410"
+          RUN_STATUS=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN" --jq '.conclusion')
+          RUN_HEAD=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN" --jq '.head_sha')
+          test "$RUN_STATUS" = "success" || { echo "::error::TEST preflight did not pass"; exit 1; }
+          test "$RUN_HEAD" = "$SOURCE_SHA" || { echo "::error::Wrong source commit"; exit 1; }
+          git cat-file -e "$SOURCE_SHA^{commit}"
+          git diff --quiet "$SOURCE_SHA" HEAD -- app/ || {
+            echo "::error::App sources changed since TEST preflight"; exit 1;
+          }
+          if gh release view v0.7.58-test -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::TEST release already exists: refusing overwrite"; exit 1;
+          fi
+          echo "PASS: 0.7.58 TEST preflight success and unchanged app sources"
+      - name: Obtain the exact tested preflight APK
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source .github/release-assets/v0758-test/checksums.env
+          mkdir -p work/preflight work/signing out
+          gh run download "$SOURCE_RUN" -R "$GITHUB_REPOSITORY" -n "$SOURCE_ARTIFACT" -D work/preflight
+          test -s "work/preflight/$SOURCE_FILE"
+          echo "$UNSIGNED_SHA  work/preflight/$SOURCE_FILE" | sha256sum -c -
+      - name: Reproduce privately signed APK from non-secret byte patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .github/release-assets/v0758-test/checksums.env
+          base64 -d .github/release-assets/v0758-test/signed-delta.doublezstd.b64 > work/signing/signed-delta.doublezstd
+          echo "$OUTER_SHA  work/signing/signed-delta.doublezstd" | sha256sum -c -
+          zstd -q -d work/signing/signed-delta.doublezstd -o work/signing/signed-delta.zst
+          echo "$PATCH_SHA  work/signing/signed-delta.zst" | sha256sum -c -
+          zstd -q -d --patch-from="work/preflight/$SOURCE_FILE" work/signing/signed-delta.zst -o out/MusicFlow-TEST_0.7.58.apk
+          echo "$SIGNED_SHA  out/MusicFlow-TEST_0.7.58.apk" | sha256sum -c -
+          (cd out && sha256sum MusicFlow-TEST_0.7.58.apk > SHA256SUMS.txt)
+          echo "PASS: signed byte-for-byte reconstructed APK"
+      - name: Validate Android signing, TEST package and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .github/release-assets/v0758-test/checksums.env
+          yes | sdkmanager "build-tools;36.0.0" || test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          APK=out/MusicFlow-TEST_0.7.58.apk
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c 4 "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > work/signing/verified.txt
+          grep -F "Verified using v2 scheme (APK Signature Scheme v2): true" work/signing/verified.txt
+          grep -F "Verified using v3 scheme (APK Signature Scheme v3): true" work/signing/verified.txt
+          CERT=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' work/signing/verified.txt | head -n 1)
+          test "$CERT" = "$TEST_CERT_SHA" || { echo "::error::Wrong TEST certificate"; exit 1; }
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" \
+            | grep -F "name='com.musicflow.preview.dev' versionCode='758' versionName='0.7.58-dev'"
+          echo "PASS: stable TEST cert / v2+v3 / package 758"
+      - name: Publish distinct TEST prerelease for built-in updater
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source .github/release-assets/v0758-test/checksums.env
+          gh release create v0.7.58-test out/MusicFlow-TEST_0.7.58.apk out/SHA256SUMS.txt \
+            -R "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --prerelease \
+            --title "MusicFlow 0.7.58 TEST · качество HLS, MP4 и загрузки" \
+            --notes "TEST 0.7.58-dev (758), com.musicflow.preview.dev. Добавлено: массовое удаление загрузок и очистка кеша HLS/DASH с подтверждением; выбор качества HLS из multivariant M3U8; Referer/User-Agent для прямых файлов и проверки HLS; отображение скорости и объёма; экспериментальный HLS→MP4 экспорт из офлайн-кеша без повторной загрузки. Media3 остаётся основным движком; DRM не обходится. Заголовки пока не передаются Media3 при скачивании HLS/DASH. Сохранение MP4, отдельные аудиодорожки и работа на телефоне требуют ручной проверки. Тот же постоянный TEST сертификат, что у 0.7.56. Kotlin/JUnit, исходный APK, SHA-256, Android v2/v3 проверены."
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.7.58-test" --jq '.prerelease' | grep -Fx true
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.7.58-test" --jq '.assets[] | select(.name=="MusicFlow-TEST_0.7.58.apk") | .digest' |
+            grep -Fx "sha256:$SIGNED_SHA"
+          echo "PASS: isolated stable signed TEST 0.7.58 published and digest matched"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.58-TEST-stable-signed
+          path: out/
+          if-no-files-found: error
+          retention-days: 30
