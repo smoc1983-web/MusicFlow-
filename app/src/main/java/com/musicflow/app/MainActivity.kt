@@ -283,6 +283,9 @@ private fun MusicScreen(
     var showAppearanceMenu by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showDirectDownloadDialog by remember { mutableStateOf(false) }
+    var showTrackQualityDialog by remember { mutableStateOf(false) }
+    var trackDownloadChoices by remember { mutableStateOf<List<MusicDownloadChoice>>(emptyList()) }
+    var trackDownloadTitle by remember { mutableStateOf("") }
     var directDownloadUrl by remember { mutableStateOf("") }
     var directDownloadIsMovie by remember { mutableStateOf(false) }
     var downloadReferer by remember { mutableStateOf("") }
@@ -486,7 +489,12 @@ private fun MusicScreen(
         }
     }
 
-    fun queueAndPlay(list: List<Track>, index: Int, homePlaylist: Boolean = false, chartPlaylist: Boolean = false) {
+    fun queueAndPlay(
+        list: List<Track>, index: Int,
+        homePlaylist: Boolean = false,
+        chartPlaylist: Boolean = false,
+        radioPlaylist: Boolean = false
+    ) {
         val p = player ?: run {
             problem = "Плеер подключается. Повторите попытку."
             AppDiagnostics.warning("Player", "play requested before connection")
@@ -496,6 +504,14 @@ private fun MusicScreen(
         pendingHomeSong = null
         homePlaybackMessage = null
         queueCatalog = list.toList()
+        if (radioPlaylist) {
+            // Preserve the chosen station at its visible-list index, then allow
+            // previous/next in order or Media3 shuffle from compact radio player.
+            p.shuffleModeEnabled = false
+            p.repeatMode = androidx.media3.common.Player.REPEAT_MODE_ALL
+        } else {
+            p.repeatMode = androidx.media3.common.Player.REPEAT_MODE_OFF
+        }
         AppDiagnostics.info("Player", "queue size=" + list.size + "; index=" + index)
         p.setMediaItems(list.map { t ->
             MediaItem.Builder()
@@ -648,19 +664,22 @@ private fun MusicScreen(
         val source = queueCatalog.firstOrNull { it.id == current.mediaId }
             ?: tracks.firstOrNull { it.id == current.mediaId }
             ?: favorites.firstOrNull { it.id == current.mediaId }
-        val options = source?.streams()?.map { it.uri }.orEmpty() +
-            listOfNotNull(current.localConfiguration?.uri?.toString())
-        val title = listOf(trackArtist, trackTitle).filter(String::isNotBlank).joinToString(" — ")
-        val direct = MediaDownloads.firstDownloadable(
-            options, title, DownloadMediaKind.MUSIC
-        )
-        val outcome = when (direct) {
-            is DownloadPlanResult.Accepted -> MediaDownloads.enqueue(
-                context, direct.value.url, title, DownloadMediaKind.MUSIC
-            )
-            is DownloadPlanResult.Rejected -> direct
+        val streams = (source?.streams().orEmpty() +
+            decodeStreams(current.mediaMetadata.extras?.getString(MUSIC_STREAMS)) +
+            listOfNotNull(current.localConfiguration?.uri?.toString()?.let {
+                MusicStream(current.mediaId, it)
+            })).distinctBy { it.uri }
+        trackDownloadTitle = listOf(trackArtist, trackTitle)
+            .filter(String::isNotBlank).joinToString(" — ")
+        trackDownloadChoices = MusicDownloadChoicePolicy.choices(streams)
+        if (trackDownloadChoices.isEmpty()) {
+            MediaDownloads.showResult(context, DownloadPlanResult.Rejected(
+                "Нет прямой ссылки доступного файла для этой песни. " +
+                    "Попробуйте «Загрузить по ссылке»."
+            ))
+            return
         }
-        MediaDownloads.showResult(context, outcome)
+        showTrackQualityDialog = true
     }
 
     val visible = when (tab) {
@@ -825,7 +844,13 @@ private fun MusicScreen(
             RussianRadioScreen(
                 activeId = currentMediaId,
                 playing = playing,
-                onPlay = { station -> queueAndPlay(listOf(station.toTrack()), 0) },
+                onPlay = { station, shown ->
+                    val (ordered, index) = RadioQueuePolicy.playlist(station, shown)
+                    val tracks = ordered.map {
+                        (if (it.uuid == station.uuid) station else it).toTrack()
+                    }
+                    queueAndPlay(tracks, index, radioPlaylist = true)
+                },
                 onStop = { stopMusic() },
                 modifier = Modifier.weight(1f)
             )
@@ -1184,6 +1209,49 @@ private fun MusicScreen(
             chosenHlsIndex = null
             qualityMessage = ""
         }
+    }
+    if (showTrackQualityDialog) {
+        AlertDialog(
+            onDismissRequest = { showTrackQualityDialog = false },
+            title = { Text("Выбрать качество скачивания") },
+            text = {
+                Column(
+                    modifier = Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("MusicFlow предлагает только доступные исходные потоки. " +
+                        "Если сервер не сообщил битрейт, его качество неизвестно; " +
+                        "приложение не создаёт искусственные 320 кбит/с.",
+                        style = MaterialTheme.typography.bodySmall)
+                    trackDownloadChoices.forEach { choice ->
+                        OutlinedButton(
+                            onClick = {
+                                showTrackQualityDialog = false
+                                if (choice.isAdaptive) {
+                                    directDownloadUrl = choice.url
+                                    directDownloadIsMovie = false
+                                    showDirectDownloadDialog = true
+                                } else {
+                                    MediaDownloads.showResult(context, MediaDownloads.enqueue(
+                                        context, choice.url, trackDownloadTitle,
+                                        DownloadMediaKind.MUSIC
+                                    ))
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(choice.label) }
+                    }
+                    if (trackDownloadChoices.any { it.isAdaptive }) {
+                        Text("Для HLS после выбора откроется проверка плейлиста " +
+                            "с доступными вариантами битрейта.",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showTrackQualityDialog = false }) { Text("Закрыть") }
+            }
+        )
     }
     if (showDirectDownloadDialog) {
         AlertDialog(

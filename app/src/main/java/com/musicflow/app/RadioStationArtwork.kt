@@ -3,6 +3,11 @@ package com.musicflow.app
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -64,13 +69,18 @@ internal fun RadioStationArtwork(
             ),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                RadioStationArtworkFallback.initials(name),
-                color = Color.White,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Filled.Radio, contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.72f),
+                    modifier = Modifier.size(14.dp))
+                Text(
+                    RadioStationArtworkFallback.initials(name),
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+            }
         }
     }
     Box(modifier.clip(shape)) {

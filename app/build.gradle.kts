@@ -12,8 +12,8 @@ android {
         minSdk = 26
         targetSdk = 35
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 759
-        versionName = "0.7.59"
+        versionCode = 760
+        versionName = "0.7.60"
     }
     // Signed releases use one persistent key stored in GitHub Actions secrets.
     // Local debug builds keep working when the release key is unavailable.

@@ -24,6 +24,9 @@ internal object MusicDownloadChoicePolicy {
     fun eligible(url: String, source: String): MusicDownloadChoice? {
         val route = OfflineDownloadRoute.classify(url)
         if (route == OfflineTransfer.UNSUPPORTED) return null
+        if (route == OfflineTransfer.DIRECT_FILE &&
+            MediaDownloadPolicy.plan(url, "MusicFlow", DownloadMediaKind.MUSIC)
+                !is DownloadPlanResult.Accepted) return null
         val parsed = runCatching { URI(url) }.getOrNull() ?: return null
         val format = parsed.path.orEmpty().substringAfterLast('.', "")
             .lowercase(Locale.ROOT).uppercase(Locale.ROOT)

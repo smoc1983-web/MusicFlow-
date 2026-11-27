@@ -113,7 +113,7 @@ internal object RussianRadioDirectory {
 internal fun RussianRadioScreen(
     activeId: String,
     playing: Boolean,
-    onPlay: (RussianRadioStation) -> Unit,
+    onPlay: (RussianRadioStation, List<RussianRadioStation>) -> Unit,
     onStop: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -207,7 +207,7 @@ internal fun RussianRadioScreen(
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth()
-                            .clickable { if (active && playing) onStop() else onPlay(decorated) }
+                            .clickable { if (active && playing) onStop() else onPlay(decorated, shown) }
                             .padding(9.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
