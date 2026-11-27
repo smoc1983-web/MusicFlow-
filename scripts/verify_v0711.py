@@ -27,5 +27,13 @@ assert "ordered.size" in queue
 assert "internal const val MUSIC_HOME_PLAYLIST" in sources
 assert "player.seekTo(nextIndex, 0L)" in recovery
 assert "extras.getBoolean(MUSIC_HOME_PLAYLIST, false)" in recovery
-assert 'versionName = "0.7.40"' in gradle
+# This is a feature regression test; keep the current official release version
+# flexible while still checking that its versionCode matches the versionName.
+import re
+version = re.search(r'versionName\s*=\s*"(\d+)\.(\d+)\.(\d+)"', gradle)
+code = re.search(r'versionCode\s*=\s*(\d+)', gradle)
+assert version is not None and code is not None
+major, minor, patch = map(int, version.groups())
+assert minor < 100 and patch < 100
+assert int(code.group(1)) == major * 10000 + minor * 100 + patch
 print("MusicFlow v0.7.11 collection queue static checks PASS")
