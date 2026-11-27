@@ -17,6 +17,9 @@ import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,6 +49,10 @@ private sealed interface LibraryFile {
     val title: String
     val subtitle: String
     val ready: Boolean
+    val state: DownloadUiState
+    val progress: Float?
+    val actions: Set<DownloadUiAction>
+    val isMusic: Boolean
 
     data class Cached(val value: Download) : LibraryFile {
         override val key: String get() = "cache:" + value.request.id
@@ -54,6 +61,21 @@ private sealed interface LibraryFile {
                 .substringAfter('\n', value.request.uri.lastPathSegment.orEmpty())
                 .ifBlank { value.request.uri.lastPathSegment ?: "Видео" }
         override val ready: Boolean get() = value.state == Download.STATE_COMPLETED
+        override val state: DownloadUiState get() = when(value.state) {
+            Download.STATE_QUEUED -> DownloadUiState.QUEUED
+            Download.STATE_DOWNLOADING, Download.STATE_RESTARTING -> DownloadUiState.DOWNLOADING
+            Download.STATE_STOPPED -> DownloadUiState.STOPPED
+            Download.STATE_FAILED -> DownloadUiState.FAILED
+            Download.STATE_COMPLETED -> DownloadUiState.COMPLETED
+            Download.STATE_REMOVING -> DownloadUiState.REMOVING
+            else -> DownloadUiState.QUEUED
+        }
+        override val progress: Float? get() =
+            value.percentDownloaded.takeIf { it >= 0f }?.div(100f)?.coerceIn(0f, 1f)
+        override val actions: Set<DownloadUiAction> get() =
+            DownloadActionPolicy.forMedia3(state)
+        override val isMusic: Boolean get() =
+            String(value.request.data, Charsets.UTF_8).startsWith("MUSIC\\n")
         override val subtitle: String get() {
             val format = if (value.request.uri.toString().contains(".mpd", true))
                 "DASH" else "HLS"
@@ -74,9 +96,27 @@ private sealed interface LibraryFile {
         override val title: String,
         val uri: Uri?,
         val mime: String,
-        val status: Int
+        val status: Int,
+        val sourceUrl: String,
+        val downloadedBytes: Long,
+        val totalBytes: Long
     ) : LibraryFile {
         override val key: String get() = "direct:$id"
+        override val state: DownloadUiState get() = when (status) {
+            DownloadManager.STATUS_RUNNING -> DownloadUiState.DOWNLOADING
+            DownloadManager.STATUS_PENDING -> DownloadUiState.QUEUED
+            DownloadManager.STATUS_PAUSED -> DownloadUiState.PAUSED_SYSTEM
+            DownloadManager.STATUS_FAILED -> DownloadUiState.FAILED
+            DownloadManager.STATUS_SUCCESSFUL -> DownloadUiState.COMPLETED
+            else -> DownloadUiState.FAILED
+        }
+        override val actions: Set<DownloadUiAction> get() =
+            DownloadActionPolicy.forDirect(state)
+        override val isMusic: Boolean get() =
+            mime.startsWith("audio/", ignoreCase = true)
+        override val progress: Float? get() =
+            if (totalBytes > 0L) (downloadedBytes.toDouble() / totalBytes)
+                .toFloat().coerceIn(0f, 1f) else null
         override val ready: Boolean get() =
             status == DownloadManager.STATUS_SUCCESSFUL && uri != null
         override val subtitle: String get() = when (status) {
@@ -101,20 +141,31 @@ private fun loadDirectFiles(context: Context): List<LibraryFile.Direct> {
         val uriCol = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
         val mimeCol = cursor.getColumnIndex(DownloadManager.COLUMN_MEDIA_TYPE)
         val statusCol = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+        val descriptionCol = cursor.getColumnIndex(DownloadManager.COLUMN_DESCRIPTION)
+        val remoteCol = cursor.getColumnIndex(DownloadManager.COLUMN_URI)
+        val doneCol = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+        val totalCol = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
         if (idCol < 0 || uriCol < 0 || statusCol < 0) return@use
         while (cursor.moveToNext()) {
             val local = cursor.getString(uriCol).orEmpty()
-            // Never show APK updater downloads or other apps' files in the media library.
-            if (!local.contains("/MusicFlow/", ignoreCase = true) &&
-                !local.contains("%2FMusicFlow%2F", ignoreCase = true)) continue
             val id = cursor.getLong(idCol)
+            val description = if (descriptionCol >= 0) cursor.getString(descriptionCol).orEmpty() else ""
+            // Android may expose a content:// URI without a recognizable /MusicFlow/ path.
+            // Track our enqueued IDs and also recognize the legacy MusicFlow description.
+            val legacyPath = local.contains("/MusicFlow/", ignoreCase = true) ||
+                local.contains("%2FMusicFlow%2F", ignoreCase = true)
+            if (!MediaDownloads.isOwnFile(context, id, description) && !legacyPath) continue
             val status = cursor.getInt(statusCol)
             val uri = if (status == DownloadManager.STATUS_SUCCESSFUL)
                 manager.getUriForDownloadedFile(id) else null
             val title = if (titleCol >= 0) cursor.getString(titleCol).orEmpty() else ""
             val mime = if (mimeCol >= 0) cursor.getString(mimeCol).orEmpty() else ""
+            val remote = if (remoteCol >= 0) cursor.getString(remoteCol).orEmpty() else ""
+            val done = if (doneCol >= 0) cursor.getLong(doneCol) else 0L
+            val total = if (totalCol >= 0) cursor.getLong(totalCol) else -1L
             result += LibraryFile.Direct(id, title.ifBlank { "Медиафайл" }, uri,
-                mime.ifBlank { "application/octet-stream" }, status)
+                mime.ifBlank { "application/octet-stream" }, status,
+                remote, done, total)
         }
     }
     return result.sortedByDescending { it.id }
