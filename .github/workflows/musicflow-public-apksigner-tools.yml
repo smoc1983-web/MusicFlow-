@@ -1,0 +1,35 @@
+name: MusicFlow TEST local-signing public Android tools
+on:
+  push:
+    branches: ["feature/musicflow-download-actions-player-v0756"]
+    paths:
+      - ".github/workflows/musicflow-public-apksigner-tools.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make official Android SDK Build Tools available
+        run: |
+          set -euo pipefail
+          yes | sdkmanager "build-tools;36.0.0" || test -f "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar"
+      - name: Export only public Android SDK signing tool (no keys)
+        run: |
+          set -euo pipefail
+          SOURCE="$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar"
+          test -s "$SOURCE"
+          mkdir -p out
+          cp "$SOURCE" out/apksigner.jar
+          sha256sum out/apksigner.jar > out/SHA256SUMS.txt
+          java -jar out/apksigner.jar --version
+          echo "PASS: public Google build tool, no MusicFlow private signing material"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Official-Android-apksigner-36-tool
+          path: out/
+          retention-days: 3
+          if-no-files-found: error
