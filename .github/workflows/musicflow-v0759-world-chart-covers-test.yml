@@ -1,0 +1,72 @@
+name: MusicFlow 0.7.59 TEST World chart cover regression
+on:
+  push:
+    branches: ["feature/musicflow-world-chart-covers-v0759"]
+    paths:
+      - "app/**"
+      - ".github/workflows/musicflow-v0759-world-chart-covers-test.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Kotlin JUnit and TEST debug APK (ub-mode)
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Check chart UI wiring, regression tests, TEST package and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+          root=Path("app/src/main/java/com/musicflow/app")
+          top=(root/"TopSongs.kt").read_text()
+          lookup=(root/"CoverLookup.kt").read_text()
+          sources=(root/"MusicSources.kt").read_text()
+          gradle=Path("app/build.gradle.kts").read_text()
+          assert "rememberCoverArt(song.artist, song.title, song.artwork)" in top
+          assert "ChartArtworkPolicy.displayUrl" in top
+          assert "TopSongsDirectory.parseWorld" not in top or "parseWorld(body)" in top
+          assert "musicflow_cover_cache" in lookup
+          assert '"zaycev" to ::zaycevTracks' in sources
+          assert '"muzofond" to ::muzofondTracks' in sources
+          assert '"mailru" to ::mailRuTracks' in sources
+          assert "versionCode = 759" in gradle
+          assert 'versionName = "0.7.59"' in gradle
+          for name, count in [("WorldChartCoversTest",6),("TopSongsDirectoryTest",3),
+                              ("ChartPlaylistQueueTest",1)]:
+              tests=list(Path("app/build/test-results/testDebugUnitTest").glob("TEST-*"+name+".xml"))
+              assert tests, "Missing tests "+name
+              xml=ET.parse(tests[0]).getroot()
+              assert int(xml.attrib.get("tests",0))>=count
+              assert int(xml.attrib.get("failures",0))==0 and int(xml.attrib.get("errors",0))==0
+          print("PASS: chart covers fallback, source contracts, existing charts, version")
+          PY
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview.dev' versionCode='759' versionName='0.7.59-dev'"
+          mkdir -p out
+          cp "$APK" out/MusicFlow-0.7.59-TEST-preflight.apk
+          (cd out && sha256sum MusicFlow-0.7.59-TEST-preflight.apk > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.59-TEST-world-chart-covers-preflight
+          path: out/
+          retention-days: 30
+          if-no-files-found: error
