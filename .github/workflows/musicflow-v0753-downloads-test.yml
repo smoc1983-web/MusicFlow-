@@ -51,7 +51,7 @@ jobs:
           assert c.count("onClick = ::downloadCurrentMovie") == 2
           assert "DownloadManager.Request" in d
           assert "VISIBILITY_VISIBLE_NOTIFY_COMPLETED" in d
-          assert "DownloadMediaKind.MUSIC" in p and "DownloadMediaKind.VIDEO" in p
+          assert "enum class DownloadMediaKind { MUSIC, VIDEO }" in p
           print("PASS: TEST package isolated; download actions present in music and both cinema modes")
           PY
       - name: Kotlin JUnit and debug APK assembly (ub-mode)
