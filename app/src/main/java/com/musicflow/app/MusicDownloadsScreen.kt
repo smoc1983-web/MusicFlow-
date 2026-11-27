@@ -29,7 +29,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DummyDataSource
+import androidx.media3.datasource.PlaceholderDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.offline.Download
@@ -249,7 +249,7 @@ private fun OfflineFilePlayer(file: LibraryFile, onDismiss: () -> Unit) {
                 // Offline-only: no fallback to the network when the file is missing.
                 val source = CacheDataSource.Factory()
                     .setCache(OfflineDownloads.cache(context))
-                    .setUpstreamDataSourceFactory(DummyDataSource.Factory())
+                    .setUpstreamDataSourceFactory(PlaceholderDataSource.FACTORY)
                     .setCacheWriteDataSinkFactory(null)
                 DefaultMediaSourceFactory(source)
             }
