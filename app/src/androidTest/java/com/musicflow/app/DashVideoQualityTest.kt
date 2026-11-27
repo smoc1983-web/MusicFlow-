@@ -7,8 +7,11 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.dash.manifest.DashManifestParser
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.runner.RunWith
+import androidx.test.ext.junit.runners.AndroidJUnit4
 
 @OptIn(UnstableApi::class)
+@RunWith(AndroidJUnit4::class)
 class DashVideoQualityTest {
     private fun parse(mpd: String) = DashManifestParser().parse(
         Uri.parse("https://video.example.org/test.mpd"),
