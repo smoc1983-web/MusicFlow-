@@ -45,6 +45,11 @@ jobs:
           gradle=Path("app/build.gradle.kts").read_text()
           assert 'Качество скачивания видео' in cinema
           assert 'DownloadSizeEstimate.choice(' in cinema
+          assert 'DownloadsProgressShortcut' in cinema
+          assert 'Загрузки — посмотреть ход скачивания' in cinema
+          assert 'if (!CinemaAudioPickerPolicy.canOpen(audioOptions.size)) return' in cinema
+          assert 'fun canOpen(trackCount: Int): Boolean = trackCount > 1' in (root/'CinemaAudioPickerPolicy.kt').read_text()
+          assert 'Загрузки · ход скачивания' in (root/'MusicDownloadsScreen.kt').read_text()
           assert 'DownloadSizeEstimate.choice(' in mini
           assert (root/'DownloadSizeEstimate.kt').exists()
           assert (root/'DirectFileSizeInspector.kt').exists()
@@ -73,6 +78,7 @@ jobs:
               ("RadioQueuePolicyTest",4),
               ("HlsQualityPolicyTest",7),
               ("DownloadSizeEstimateTest",3),
+              ("CinemaAudioPickerPolicyTest",2),
               ("RadioStationArtworkFallbackTest",3),
               ("WorldChartCoversTest",6),
           ]:
