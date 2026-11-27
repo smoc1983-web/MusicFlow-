@@ -329,8 +329,8 @@ internal fun MusicDownloadsScreen(
     }
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Загруженные файлы", style = MaterialTheme.typography.titleLarge)
-        Text("Обычные MP4/MP3 доступны другим плеерам. HLS/DASH хранятся в офлайн-кеше Media3 и воспроизводятся внутри MusicFlow.",
+        Text("Загрузки · ход скачивания", style = MaterialTheme.typography.titleLarge)
+        Text("Здесь видны текущие загрузки: процент выполнения, объём, скорость и оставшееся время (если сервер сообщил размер). Можно остановить, продолжить или открыть готовый файл. Обычные MP4/MP3 доступны другим плеерам; HLS/DASH хранятся внутри MusicFlow.",
             style = MaterialTheme.typography.bodySmall)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
