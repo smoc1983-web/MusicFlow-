@@ -24,6 +24,20 @@ internal object MediaDownloads {
         kind: DownloadMediaKind,
         referer: String? = null
     ): DownloadPlanResult {
+        val route = OfflineDownloadRoute.classify(url)
+        if (route == OfflineTransfer.ADAPTIVE_HLS ||
+            route == OfflineTransfer.ADAPTIVE_DASH) {
+            return try {
+                OfflineDownloads.enqueue(context, url, title, kind)
+                DownloadPlanResult.Accepted(MediaDownloadPlan(
+                    url, "$title (офлайн Media3)", "application/octet-stream",
+                    "Media3 • внутренняя библиотека"
+                ))
+            } catch (error: Exception) {
+                AppDiagnostics.failure("Downloads", "Media3 offline queue", error)
+                DownloadPlanResult.Rejected("Не удалось добавить поток в офлайн-загрузки Media3")
+            }
+        }
         val decision = MediaDownloadPolicy.plan(url, title, kind)
         if (decision !is DownloadPlanResult.Accepted) return decision
 
@@ -71,7 +85,7 @@ internal object MediaDownloads {
     fun showResult(context: Context, outcome: DownloadPlanResult) {
         val message = when (outcome) {
             is DownloadPlanResult.Accepted ->
-                "Добавлено в загрузки • проверьте уведомления Android"
+                "Добавлено в загрузки • откройте вкладку «Загрузки»"
             is DownloadPlanResult.Rejected -> outcome.message
         }
         Toast.makeText(context, message, Toast.LENGTH_LONG).show()
@@ -91,6 +105,14 @@ internal object MediaDownloads {
         urls: List<String>, title: String, kind: DownloadMediaKind
     ): DownloadPlanResult {
         for (url in urls.distinct()) {
+            val transfer = OfflineDownloadRoute.classify(url)
+            if (transfer == OfflineTransfer.ADAPTIVE_HLS ||
+                transfer == OfflineTransfer.ADAPTIVE_DASH) {
+                return DownloadPlanResult.Accepted(MediaDownloadPlan(
+                    url, title, "application/octet-stream",
+                    "Media3 • внутренняя библиотека"
+                ))
+            }
             val choice = MediaDownloadPolicy.plan(url, title, kind)
             if (choice is DownloadPlanResult.Accepted) return choice
         }
