@@ -335,10 +335,10 @@ internal fun CinemaNativeInlinePlayer(
 
     @Composable
     fun AudioPicker() {
+        if (!CinemaAudioPickerPolicy.canOpen(audioOptions.size)) return
         Box {
             TextButton(
                 onClick = { audioOpen = true },
-                enabled = CinemaAudioPickerPolicy.canOpen(audioOptions.size)
             ) {
                 Text(
                     "Озвучка: " + when {
@@ -368,6 +368,28 @@ internal fun CinemaNativeInlinePlayer(
                     )
                 }
             }
+        }
+    }
+
+    @Composable
+    fun DownloadsProgressShortcut(tint: Color) {
+        Column(
+            modifier = Modifier.width(72.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            IconButton(onClick = { showDownloadsLibrary = true },
+                modifier = Modifier.size(38.dp)) {
+                Icon(Icons.Filled.FolderOpen,
+                    contentDescription = "Загрузки — посмотреть ход скачивания",
+                    tint = tint)
+            }
+            Text("Загрузки", color = tint,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1)
+            Text("прогресс", color = tint.copy(alpha = 0.78f),
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = androidx.compose.ui.unit.TextUnit(9f, androidx.compose.ui.unit.TextUnitType.Sp)),
+                maxLines = 1)
         }
     }
 
@@ -443,9 +465,7 @@ internal fun CinemaNativeInlinePlayer(
                 IconButton(onClick = ::downloadCurrentMovie) {
                     Icon(Icons.Filled.Download, "Скачать фильм", tint = Color.White)
                 }
-                IconButton(onClick = { showDownloadsLibrary = true }) {
-                    Icon(Icons.Filled.FolderOpen, "Мои загрузки", tint = Color.White)
-                }
+                DownloadsProgressShortcut(Color.White)
                 IconButton(onClick = { fullScreen = true }) {
                     Icon(Icons.Filled.Fullscreen, "На весь экран", tint = Color.White)
                 }
@@ -565,9 +585,7 @@ internal fun CinemaNativeInlinePlayer(
                         IconButton(onClick = ::downloadCurrentMovie) {
                             Icon(Icons.Filled.Download, "Скачать фильм", tint = Color.White)
                         }
-                        IconButton(onClick = { showDownloadsLibrary = true }) {
-                            Icon(Icons.Filled.FolderOpen, "Мои загрузки", tint = Color.White)
-                        }
+                        DownloadsProgressShortcut(Color.White)
                         IconButton(onClick = ::collapseVideo) {
                             Icon(Icons.Filled.FullscreenExit, "Мини-плеер",
                                 tint = Color.White)
