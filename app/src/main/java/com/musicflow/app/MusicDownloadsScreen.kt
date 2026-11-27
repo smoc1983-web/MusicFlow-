@@ -183,11 +183,20 @@ private data class CleanupPrompt(
 
 private fun humanBytes(bytes: Long): String {
     if (bytes < 1024L) return "$bytes Б"
-    val unit = if (bytes >= 1_073_741_824L) 1_073_741_824.0 else 1_048_576.0
-    val label = if (unit == 1_073_741_824.0) "ГБ" else "МБ"
+    val unit = when {
+        bytes >= 1_073_741_824L -> 1_073_741_824.0
+        bytes >= 1_048_576L -> 1_048_576.0
+        else -> 1024.0
+    }
+    val label = when (unit) {
+        1_073_741_824.0 -> "ГБ"
+        1_048_576.0 -> "МБ"
+        else -> "КБ"
+    }
     return String.format(Locale.getDefault(), "%.1f %s", bytes / unit, label)
 }
 
+@OptIn(UnstableApi::class)
 private fun LibraryFile.cleanupCandidate(): CleanupCandidate = when (this) {
     is LibraryFile.Cached -> CleanupCandidate(
         key, true, state != DownloadUiState.REMOVING,
