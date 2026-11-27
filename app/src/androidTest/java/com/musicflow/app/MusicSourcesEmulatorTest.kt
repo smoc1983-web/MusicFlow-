@@ -18,6 +18,7 @@ import androidx.media3.common.Player
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import kotlinx.coroutines.runBlocking
@@ -163,12 +164,27 @@ class MusicSourcesEmulatorTest {
             // OS services sometimes crash on a cold virtual device. Dismiss
             // their dialog, but still require the real MusicFlow UI to render.
             for (labelToDismiss in listOf("Close app", "Закрыть приложение", "Закрыть")) {
-                device.findObject(By.text(labelToDismiss))?.click()
+                try { device.findObject(By.text(labelToDismiss))?.click() }
+                catch (_: StaleObjectException) { /* Re-query on next poll. */ }
             }
-            device.findObject(By.text(label))?.let { return it }
+            try { device.findObject(By.text(label))?.let { return it } }
+            catch (_: StaleObjectException) { /* Compose replaced the node. */ }
             Thread.sleep(1200L)
         }
         return null
+    }
+
+    private fun clickFresh(selector: androidx.test.uiautomator.BySelector, timeoutMs: Long, last: Boolean = false) {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMs
+        while (SystemClock.elapsedRealtime() < deadline) {
+            try {
+                val nodes = device.findObjects(selector)
+                val node = if (last) nodes.lastOrNull() else nodes.firstOrNull()
+                if (node != null) { node.click(); return }
+            } catch (_: StaleObjectException) { /* Re-query after recomposition. */ }
+            Thread.sleep(350L)
+        }
+        fail("Unable to click visible control: " + selector)
     }
 
     @Test fun radioScreenAlwaysShowsArtworkAndPlayerNavigationControls() {
@@ -183,16 +199,16 @@ class MusicSourcesEmulatorTest {
         record("radio_ui=launch " + launch.take(110).replace('\n', ' '))
         val tab = waitForVisible("Музыка", 95_000)
         assertNotNull("MusicFlow navigation not visible after real Activity launch", tab)
-        tab!!.click()
+        clickFresh(By.text("Музыка"), 12_000)
         assertNotNull("Radio dropdown item absent",
             waitForVisible("Радио", 30_000))
-        device.findObject(By.text("Радио")).click()
+        clickFresh(By.text("Радио"), 12_000)
         assertNotNull("Radio list not loaded",
             waitForVisible("Популярные", 70_000))
         device.takeScreenshot(File(context.filesDir, "musicflow-radio-list-v0760.png"))
         val play = device.wait(Until.findObject(By.desc("Слушать")), 12_000)
         assertNotNull("No stations with play control", play)
-        play.click()
+        clickFresh(By.desc("Слушать"), 12_000)
         Thread.sleep(1200L)
         // The mini-player contains the now-active station title and opens
         // the compact player on tap. Prefer its last matching title.
@@ -207,7 +223,7 @@ class MusicSourcesEmulatorTest {
             // If the row is not yet measured, use the mini-player's visible text.
             val fallback = bundled.firstOrNull { device.hasObject(By.text(it.name)) }
             assertNotNull("No active radio mini player", fallback)
-            device.findObjects(By.text(fallback!!.name)).last().click()
+            clickFresh(By.text(fallback!!.name), 12_000, last = true)
         }
         assertNotNull("Previous station is not present in compact player",
             device.wait(Until.findObject(By.desc("Предыдущая радиостанция")), 12_000))
