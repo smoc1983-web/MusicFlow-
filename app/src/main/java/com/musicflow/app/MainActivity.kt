@@ -1024,8 +1024,23 @@ private fun MusicScreen(
         }
         }
         if (trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
-            val miniCover by rememberCoverArt(trackArtist, trackTitle, currentArtwork)
             val isRadio = currentMediaId.startsWith("radio:")
+            val musicMiniCover by rememberCoverArt(trackArtist, trackTitle, currentArtwork)
+            val radioStreamUrl = player?.currentMediaItem?.localConfiguration?.uri?.toString().orEmpty()
+            val radioMiniCover by produceState<String?>(
+                initialValue = currentArtwork,
+                currentMediaId, trackTitle, currentArtwork, radioStreamUrl
+            ) {
+                value = currentArtwork
+                if (isRadio && RussianRadioDirectory.isPublicStream(radioStreamUrl)) {
+                    val station = RussianRadioStation(
+                        currentMediaId.removePrefix("radio:"),
+                        trackTitle, radioStreamUrl, currentArtwork, "", "", 0
+                    )
+                    value = RadioArtworkCatalog.resolve(context, station) ?: currentArtwork
+                }
+            }
+            val miniCover = if (isRadio) radioMiniCover else musicMiniCover
             Column(
                 modifier = Modifier.fillMaxWidth()
                     .musicFlowGlass(palette, radius = 18.dp)
