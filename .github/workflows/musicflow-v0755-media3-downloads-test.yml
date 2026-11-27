@@ -46,7 +46,7 @@ jobs:
           assert "DownloadService.sendAddDownload" in offline
           assert "DownloadIndex" in offline or "downloadIndex.getDownloads()" in offline
           assert "CacheDataSource.Factory()" in lib
-          assert "DummyDataSource.Factory()" in lib
+          assert "PlaceholderDataSource.FACTORY" in lib
           assert "Intent.ACTION_VIEW" in lib
           assert "FLAG_GRANT_READ_URI_PERMISSION" in lib
           assert "OfflineDownloads.enqueue" in downloads
