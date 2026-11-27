@@ -53,13 +53,14 @@ internal object MediaDownloads {
         kind: DownloadMediaKind,
         referer: String? = null,
         userAgent: String? = null,
-        hlsVariantIndex: Int? = null
+        hlsVariantIndex: Int? = null,
+        dashStreamKeys: List<androidx.media3.common.StreamKey>? = null
     ): DownloadPlanResult {
         val route = OfflineDownloadRoute.classify(url)
         if (route == OfflineTransfer.ADAPTIVE_HLS ||
             route == OfflineTransfer.ADAPTIVE_DASH) {
             return try {
-                OfflineDownloads.enqueue(context, url, title, kind, hlsVariantIndex)
+                OfflineDownloads.enqueue(context, url, title, kind, hlsVariantIndex, dashStreamKeys)
                 DownloadPlanResult.Accepted(MediaDownloadPlan(
                     url, "$title (офлайн Media3)", "application/octet-stream",
                     "Media3 • внутренняя библиотека"

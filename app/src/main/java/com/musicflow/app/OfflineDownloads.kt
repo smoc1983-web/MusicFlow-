@@ -55,7 +55,8 @@ internal object OfflineDownloads {
     }
 
     fun enqueue(context: Context, url: String, title: String,
-                kind: DownloadMediaKind, variantIndex: Int? = null): Boolean {
+                kind: DownloadMediaKind, variantIndex: Int? = null,
+                dashStreamKeys: List<StreamKey>? = null): Boolean {
         val route = OfflineDownloadRoute.classify(url)
         if (route != OfflineTransfer.ADAPTIVE_HLS &&
             route != OfflineTransfer.ADAPTIVE_DASH) return false
@@ -71,6 +72,10 @@ internal object OfflineDownloads {
             builder.setStreamKeys(listOf(StreamKey(
                 HlsMultivariantPlaylist.GROUP_INDEX_VARIANT, variantIndex
             )))
+        }
+        if (route == OfflineTransfer.ADAPTIVE_DASH && !dashStreamKeys.isNullOrEmpty()) {
+            require(dashStreamKeys.size <= 32) { "Слишком много выбранных дорожек DASH" }
+            builder.setStreamKeys(dashStreamKeys)
         }
         val request = builder.build()
         manager(context)

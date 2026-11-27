@@ -293,6 +293,9 @@ private fun MusicScreen(
     var hlsQualities by remember { mutableStateOf<List<HlsQuality>>(emptyList()) }
     var inspectedHlsUrl by remember { mutableStateOf("") }
     var chosenHlsIndex by remember { mutableStateOf<Int?>(null) }
+    var dashQualities by remember { mutableStateOf<List<DashVideoQuality>>(emptyList()) }
+    var inspectedDashUrl by remember { mutableStateOf("") }
+    var chosenDashIndex by remember { mutableStateOf<Int?>(null) }
     var qualityChecking by remember { mutableStateOf(false) }
     var qualityMessage by remember { mutableStateOf("") }
     var headerEditorOpen by remember { mutableStateOf(false) }
@@ -1207,8 +1210,12 @@ private fun MusicScreen(
         if (directDownloadUrl.trim() != inspectedHlsUrl) {
             hlsQualities = emptyList()
             chosenHlsIndex = null
-            qualityMessage = ""
         }
+        if (directDownloadUrl.trim() != inspectedDashUrl) {
+            dashQualities = emptyList()
+            chosenDashIndex = null
+        }
+        qualityMessage = ""
     }
     if (showTrackQualityDialog) {
         AlertDialog(
@@ -1287,61 +1294,117 @@ private fun MusicScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    if (OfflineDownloadRoute.classify(directDownloadUrl) ==
-                        OfflineTransfer.ADAPTIVE_HLS) {
+                    val adaptive = OfflineDownloadRoute.classify(directDownloadUrl)
+                    if (adaptive == OfflineTransfer.ADAPTIVE_HLS ||
+                        adaptive == OfflineTransfer.ADAPTIVE_DASH) {
                         OutlinedButton(
                             onClick = {
                                 qualityChecking = true
                                 qualityMessage = ""
-                                val urlToInspect = directDownloadUrl.trim()
+                                val targetUrl = directDownloadUrl.trim()
+                                val targetMode = adaptive
                                 scope.launch {
                                     try {
-                                        val headers = DownloadHttpHeaders.validated(
+                                        val headerMap = DownloadHttpHeaders.validated(
                                             downloadReferer, downloadUserAgent
                                         )
-                                        val choices = kotlinx.coroutines.withContext(
-                                            kotlinx.coroutines.Dispatchers.IO
-                                        ) { HlsQualityInspector.inspect(urlToInspect, headers) }
-                                        if (urlToInspect == directDownloadUrl.trim()) {
-                                            hlsQualities = choices
-                                            inspectedHlsUrl = urlToInspect
-                                            qualityMessage = if (choices.isEmpty())
-                                                "Это одиночный HLS-плейлист — качество определяется источником."
-                                            else "Выберите качество или оставьте «Авто»."
+                                        if (targetMode == OfflineTransfer.ADAPTIVE_HLS) {
+                                            val found = kotlinx.coroutines.withContext(
+                                                kotlinx.coroutines.Dispatchers.IO
+                                            ) {
+                                                HlsQualityInspector.inspect(targetUrl, headerMap)
+                                            }
+                                            if (targetUrl == directDownloadUrl.trim()) {
+                                                hlsQualities = found
+                                                inspectedHlsUrl = targetUrl
+                                                chosenHlsIndex = null
+                                                qualityMessage = if (found.isEmpty())
+                                                    "HLS без вариантов качества: загружается исходный поток."
+                                                else "Выберите разрешение видео или оставьте «Авто»."
+                                            }
+                                        } else {
+                                            val found = kotlinx.coroutines.withContext(
+                                                kotlinx.coroutines.Dispatchers.IO
+                                            ) { DashVideoQualityInspector.inspect(targetUrl) }
+                                            if (targetUrl == directDownloadUrl.trim()) {
+                                                dashQualities = found
+                                                inspectedDashUrl = targetUrl
+                                                chosenDashIndex = null
+                                                qualityMessage = if (found.isEmpty())
+                                                    "DASH не содержит выбираемых вариантов видео."
+                                                else "Выберите качество DASH или оставьте «Авто»."
+                                            }
                                         }
                                     } catch (error: Exception) {
-                                        qualityMessage = error.message ?: "Проверка качества не удалась"
+                                        qualityMessage = "Не удалось проверить качество: " +
+                                            (error.message ?: "неизвестная ошибка")
                                     } finally {
                                         qualityChecking = false
                                     }
                                 }
                             },
-                            enabled = !qualityChecking
-                        ) { Text(if (qualityChecking) "Проверка…" else "Проверить качество HLS") }
+                            enabled = !qualityChecking,
+                        ) {
+                            Text(if (qualityChecking) "Проверяем…" else
+                                if (adaptive == OfflineTransfer.ADAPTIVE_HLS)
+                                    "Выбрать качество HLS" else "Выбрать качество DASH")
+                        }
                         if (qualityMessage.isNotBlank()) {
                             Text(qualityMessage, style = MaterialTheme.typography.bodySmall)
                         }
-                        if (hlsQualities.isNotEmpty() &&
+                        if (adaptive == OfflineTransfer.ADAPTIVE_HLS &&
+                            hlsQualities.isNotEmpty() &&
                             inspectedHlsUrl == directDownloadUrl.trim()) {
-                            Text("Качество скачивания", style = MaterialTheme.typography.titleSmall)
+                            Text("Качество видео HLS", style = MaterialTheme.typography.titleSmall)
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                FilterChip(selected = chosenHlsIndex == null,
+                                FilterChip(
+                                    selected = chosenHlsIndex == null,
                                     onClick = { chosenHlsIndex = null },
-                                    label = { Text("Авто") })
-                                hlsQualities.forEach { choice ->
+                                    label = { Text("Авто") }
+                                )
+                                hlsQualities.forEach { variant ->
                                     FilterChip(
-                                        selected = chosenHlsIndex == choice.index,
-                                        onClick = { chosenHlsIndex = choice.index },
-                                        enabled = !choice.externalAudio,
-                                        label = { Text(choice.label) }
+                                        selected = chosenHlsIndex == variant.index,
+                                        onClick = { chosenHlsIndex = variant.index },
+                                        enabled = !variant.externalAudio,
+                                        label = { Text(variant.label) }
                                     )
                                 }
                             }
                             if (hlsQualities.any { it.externalAudio }) {
-                                Text("Потоки с отдельными аудиодорожками доступны только в «Авто», чтобы не потерять звук.",
+                                Text("Варианты с отдельным аудио доступны в «Авто», " +
+                                    "чтобы не потерять звуковую дорожку.",
                                     style = MaterialTheme.typography.bodySmall)
                             }
                         }
+                        if (adaptive == OfflineTransfer.ADAPTIVE_DASH &&
+                            dashQualities.isNotEmpty() &&
+                            inspectedDashUrl == directDownloadUrl.trim()) {
+                            Text("Качество видео DASH", style = MaterialTheme.typography.titleSmall)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                FilterChip(
+                                    selected = chosenDashIndex == null,
+                                    onClick = { chosenDashIndex = null },
+                                    label = { Text("Авто") }
+                                )
+                                dashQualities.forEachIndexed { index, variant ->
+                                    FilterChip(
+                                        selected = chosenDashIndex == index,
+                                        onClick = { chosenDashIndex = index },
+                                        label = { Text(variant.label) }
+                                    )
+                                }
+                            }
+                            Text("При выборе DASH сохраняется и подходящая аудиодорожка. " +
+                                "Оригинальный поток остаётся в офлайн-кеше.",
+                                style = MaterialTheme.typography.bodySmall)
+                        }
+                    } else if (adaptive == OfflineTransfer.DIRECT_FILE &&
+                        directDownloadIsMovie) {
+                        Text("Прямой MP4 имеет одно исходное качество. " +
+                            "Для выбора 360p/720p/1080p источник должен предоставить " +
+                            "несколько файлов или HLS/DASH.",
+                            style = MaterialTheme.typography.bodySmall)
                     }
                     TextButton(onClick = { headerEditorOpen = !headerEditorOpen }) {
                         Text(if (headerEditorOpen) "Скрыть заголовки" else "Дополнительные HTTP-заголовки")
@@ -1380,6 +1443,10 @@ private fun MusicScreen(
                         userAgent = downloadUserAgent.ifBlank { null },
                         hlsVariantIndex = chosenHlsIndex.takeIf {
                             inspectedHlsUrl == directDownloadUrl.trim()
+                        },
+                        dashStreamKeys = chosenDashIndex?.let { index ->
+                            if (inspectedDashUrl == directDownloadUrl.trim())
+                                dashQualities.getOrNull(index)?.streamKeys else null
                         }
                     )
                     MediaDownloads.showResult(context, outcome)
@@ -1388,6 +1455,8 @@ private fun MusicScreen(
                         directDownloadUrl = ""
                         chosenHlsIndex = null
                         hlsQualities = emptyList()
+                        chosenDashIndex = null
+                        dashQualities = emptyList()
                     }
                 }) { Text("Скачать") }
             },
