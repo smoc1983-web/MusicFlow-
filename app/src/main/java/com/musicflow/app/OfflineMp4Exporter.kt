@@ -83,7 +83,7 @@ internal object OfflineMp4Exporter {
             if (!finished.compareAndSet(false, true)) return
             handler.post {
                 monitor?.let(handler::removeCallbacks)
-                if (current === this) current = null
+                if (OfflineMp4Exporter.current === this) OfflineMp4Exporter.current = null
                 onResult(success, message)
             }
         }
@@ -134,7 +134,10 @@ internal object OfflineMp4Exporter {
                             "Пустой результат экспорта"
                         }
                         val uri = saveToMovies(app, temp, task)
-                        if (task.cancelled.get()) throw CancellationException()
+                        if (task.cancelled.get()) {
+                            app.contentResolver.delete(uri, null, null)
+                            throw CancellationException()
+                        }
                         AppDiagnostics.info("Downloads", "exported MP4 " + uri.scheme)
                         task.finish(true, "MP4 сохранён в Фильмы/MusicFlow")
                     } catch (cancel: CancellationException) {
@@ -262,6 +265,7 @@ internal object OfflineMp4Exporter {
             check(resolver.update(uri, published, null, null) > 0) {
                 "Не удалось опубликовать MP4"
             }
+            if (task.cancelled.get()) throw CancellationException()
             return uri
         } catch (error: Exception) {
             resolver.delete(uri, null, null)
