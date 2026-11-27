@@ -287,6 +287,10 @@ private fun MusicScreen(
     var showAboutDialog by remember { mutableStateOf(false) }
     var showDirectDownloadDialog by remember { mutableStateOf(false) }
     var showTrackQualityDialog by remember { mutableStateOf(false) }
+    var trackSizes by remember { mutableStateOf<Map<String, Long?>>(emptyMap()) }
+    var directFileSize by remember { mutableStateOf<Long?>(null) }
+    var inspectedDirectSizeUrl by remember { mutableStateOf("") }
+    var directFileSizeChecking by remember { mutableStateOf(false) }
     var trackDownloadChoices by remember { mutableStateOf<List<MusicDownloadChoice>>(emptyList()) }
     var trackDownloadTitle by remember { mutableStateOf("") }
     var directDownloadUrl by remember { mutableStateOf("") }
@@ -1286,6 +1290,18 @@ private fun MusicScreen(
         }
         qualityMessage = ""
     }
+    LaunchedEffect(showTrackQualityDialog, trackDownloadChoices) {
+        if (showTrackQualityDialog) {
+            trackSizes = emptyMap()
+            for (choice in trackDownloadChoices.take(12)) {
+                if (choice.isAdaptive) continue
+                val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching { DirectFileSizeInspector.contentLength(choice.url) }.getOrNull()
+                }
+                trackSizes = trackSizes + (choice.url to bytes)
+            }
+        }
+    }
     if (showTrackQualityDialog) {
         AlertDialog(
             onDismissRequest = { showTrackQualityDialog = false },
@@ -1315,7 +1331,13 @@ private fun MusicScreen(
                                 }
                             },
                             modifier = Modifier.fillMaxWidth()
-                        ) { Text(choice.label) }
+                        ) {
+                            val size = if (choice.isAdaptive) "размер после выбора потока"
+                                else if (choice.url in trackSizes)
+                                    DownloadSizeEstimate.format(trackSizes[choice.url], false)
+                                else "проверяем размер…"
+                            Text(choice.label + " · " + size)
+                        }
                     }
                     if (trackDownloadChoices.any { it.isAdaptive }) {
                         Text("Для HLS после выбора откроется проверка плейлиста " +
@@ -1364,6 +1386,35 @@ private fun MusicScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     val adaptive = OfflineDownloadRoute.classify(directDownloadUrl)
+                    if (adaptive == OfflineTransfer.DIRECT_FILE) {
+                        OutlinedButton(
+                            onClick = {
+                                directFileSizeChecking = true
+                                val target = directDownloadUrl.trim()
+                                scope.launch {
+                                    val bytes = kotlinx.coroutines.withContext(
+                                        kotlinx.coroutines.Dispatchers.IO
+                                    ) {
+                                        runCatching {
+                                            DirectFileSizeInspector.contentLength(target,
+                                                DownloadHttpHeaders.validated(
+                                                    downloadReferer, downloadUserAgent))
+                                        }.getOrNull()
+                                    }
+                                    inspectedDirectSizeUrl = target
+                                    directFileSize = bytes
+                                    directFileSizeChecking = false
+                                }
+                            },
+                            enabled = !directFileSizeChecking
+                        ) { Text(if (directFileSizeChecking) "Проверяем размер…" else
+                            "Узнать размер MP4/MP3") }
+                        if (inspectedDirectSizeUrl == directDownloadUrl.trim()) {
+                            Text("Размер файла по данным сервера: " +
+                                DownloadSizeEstimate.format(directFileSize, false),
+                                style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
                     if (adaptive == OfflineTransfer.ADAPTIVE_HLS ||
                         adaptive == OfflineTransfer.ADAPTIVE_DASH) {
                         OutlinedButton(
@@ -1389,7 +1440,7 @@ private fun MusicScreen(
                                                 chosenHlsIndex = null
                                                 qualityMessage = if (found.isEmpty())
                                                     "HLS без вариантов качества: загружается исходный поток."
-                                                else "Выберите разрешение видео или оставьте «Авто»."
+                                                else "Выберите качество (размер ≈) или оставьте «Авто»."
                                             }
                                         } else {
                                             val found = kotlinx.coroutines.withContext(
@@ -1401,7 +1452,7 @@ private fun MusicScreen(
                                                 chosenDashIndex = null
                                                 qualityMessage = if (found.isEmpty())
                                                     "DASH не содержит выбираемых вариантов видео."
-                                                else "Выберите качество DASH или оставьте «Авто»."
+                                                else "Выберите качество DASH (размер ≈) или оставьте «Авто»."
                                             }
                                         }
                                     } catch (error: Exception) {
@@ -1436,7 +1487,8 @@ private fun MusicScreen(
                                         selected = chosenHlsIndex == variant.index,
                                         onClick = { chosenHlsIndex = variant.index },
                                         enabled = !variant.externalAudio,
-                                        label = { Text(variant.label) }
+                                        label = { Text(DownloadSizeEstimate.choice(
+                                            variant.label, variant.estimatedBytes)) }
                                     )
                                 }
                             }
@@ -1460,11 +1512,14 @@ private fun MusicScreen(
                                     FilterChip(
                                         selected = chosenDashIndex == index,
                                         onClick = { chosenDashIndex = index },
-                                        label = { Text(variant.label) }
+                                        label = { Text(DownloadSizeEstimate.choice(
+                                            variant.label, variant.estimatedBytes)) }
                                     )
                                 }
                             }
-                            Text("При выборе DASH сохраняется и подходящая аудиодорожка. " +
+                            Text("Размер ≈ рассчитан по длительности и битрейту; " +
+                                "фактический объём может отличаться. " +
+                                "При выборе DASH сохраняется и подходящая аудиодорожка. " +
                                 "Оригинальный поток остаётся в офлайн-кеше.",
                                 style = MaterialTheme.typography.bodySmall)
                         }
