@@ -22,12 +22,35 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import java.util.Locale
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 
 /** Stable, clearly non-official fallback; never pretend a made-up tile is a station logo. */
 internal object RadioStationArtworkFallback {
     /** A reproducible visual identity when the station has no usable logo. */
+    /** Nine bundled sketch covers; same station always gets the same style. */
+    fun artworkIndex(name: String): Int {
+        val key = name.trim().lowercase(Locale.ROOT).replace('ё', 'е')
+        val hash = key.hashCode().toLong() and 0x7fff_ffffL
+        return (hash % 9).toInt()
+    }
+
+    private val pictures = intArrayOf(
+        R.drawable.musicflow_radio_fallback_0,
+        R.drawable.musicflow_radio_fallback_1,
+        R.drawable.musicflow_radio_fallback_2,
+        R.drawable.musicflow_radio_fallback_3,
+        R.drawable.musicflow_radio_fallback_4,
+        R.drawable.musicflow_radio_fallback_5,
+        R.drawable.musicflow_radio_fallback_6,
+        R.drawable.musicflow_radio_fallback_7,
+        R.drawable.musicflow_radio_fallback_8
+    )
+
+    fun artworkResource(name: String) = pictures[artworkIndex(name)]
+
     fun hue(name: String): Float {
         val seed = name.trim().lowercase(Locale.ROOT).hashCode().toLong() and 0x7fff_ffffL
         return (seed % 360).toFloat()
@@ -56,32 +79,16 @@ internal fun RadioStationArtwork(
     modifier: Modifier = Modifier,
     radius: Dp = 11.dp
 ) {
-    val palette = LocalMusicFlowPalette.current
     val shape = RoundedCornerShape(radius)
+    // A real logo always wins. The nine bundled styles are offline placeholders,
+    // never passed off as the broadcasters' official graphics.
     val placeholder: @Composable () -> Unit = {
-        val hue = RadioStationArtworkFallback.hue(name)
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.linearGradient(listOf(
-                    Color.hsv(hue, 0.64f, 0.56f),
-                    Color.hsv((hue + 34f) % 360f, 0.73f, 0.29f)
-                ))
-            ),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Filled.Radio, contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.72f),
-                    modifier = Modifier.size(14.dp))
-                Text(
-                    RadioStationArtworkFallback.initials(name),
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1
-                )
-            }
-        }
+        Image(
+            painter = painterResource(RadioStationArtworkFallback.artworkResource(name)),
+            contentDescription = "Обложка-заглушка радиостанции",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
     }
     Box(modifier.clip(shape)) {
         if (logo.isNullOrBlank()) placeholder()

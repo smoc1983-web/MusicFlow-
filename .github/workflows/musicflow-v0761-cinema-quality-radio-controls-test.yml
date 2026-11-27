@@ -55,6 +55,11 @@ jobs:
           assert 'shuffleModeEnabled' in player
           assert 'RadioStationArtwork(' in radio and 'RadioStationArtwork(' in mini
           assert 'error = { placeholder() }' in cover
+          assert 'artworkResource(name)' in cover and 'painterResource(' in cover
+          art=list(Path('app/src/main/res/drawable-nodpi').glob('musicflow_radio_fallback_*.webp'))
+          assert len(art)==9, len(art)
+          assert all(3_000 <= p.stat().st_size <= 100_000 for p in art)
+
           assert 'versionCode = 760' in gradle and 'versionName = "0.7.60"' in gradle
           for cls, min_count in [
               ("CinemaDownloadQualityPolicyTest",4),
