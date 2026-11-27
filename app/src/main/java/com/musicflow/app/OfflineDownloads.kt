@@ -82,6 +82,30 @@ internal object OfflineDownloads {
         return result.sortedByDescending { it.startTimeMs }
     }
 
+    fun pause(context: Context, id: String) {
+        manager(context)
+        DownloadService.sendSetStopReason(context,
+            MusicFlowOfflineDownloadService::class.java,
+            id, DownloadActionPolicy.USER_PAUSED_STOP_REASON, false)
+    }
+
+    fun resume(context: Context, id: String) {
+        manager(context)
+        DownloadService.sendSetStopReason(context,
+            MusicFlowOfflineDownloadService::class.java,
+            id, DownloadActionPolicy.RESUME_STOP_REASON, false)
+        // If a previous global pause was left over, allow that queued item to run.
+        DownloadService.sendResumeDownloads(context,
+            MusicFlowOfflineDownloadService::class.java, false)
+    }
+
+    fun retry(context: Context, failed: Download) {
+        manager(context)
+        DownloadService.sendAddDownload(context,
+            MusicFlowOfflineDownloadService::class.java,
+            failed.request, false)
+    }
+
     fun remove(context: Context, id: String) {
         DownloadService.sendRemoveDownload(context,
             MusicFlowOfflineDownloadService::class.java, id, false)
