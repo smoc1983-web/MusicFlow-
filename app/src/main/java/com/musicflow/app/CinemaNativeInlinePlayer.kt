@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.List
@@ -346,6 +347,13 @@ internal fun CinemaNativeInlinePlayer(
         }
     }
 
+    fun downloadCurrentMovie() {
+        val outcome = MediaDownloads.enqueue(
+            context, streamUrl, title, DownloadMediaKind.VIDEO, referer = pageUrl
+        )
+        MediaDownloads.showResult(context, outcome)
+    }
+
     @Composable
     fun VideoControls(modifier: Modifier) {
         Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -357,6 +365,9 @@ internal fun CinemaNativeInlinePlayer(
                     IconButton(onClick = { seriesOpen = true }) {
                         Icon(Icons.Filled.List, "Сезоны и серии", tint = Color.White)
                     }
+                }
+                IconButton(onClick = ::downloadCurrentMovie) {
+                    Icon(Icons.Filled.Download, "Скачать фильм", tint = Color.White)
                 }
                 IconButton(onClick = { fullScreen = true }) {
                     Icon(Icons.Filled.Fullscreen, "На весь экран", tint = Color.White)
@@ -472,6 +483,9 @@ internal fun CinemaNativeInlinePlayer(
                         }
                         AudioPicker()
                         PlayerEqualizerButton(tint = Color.White)
+                        IconButton(onClick = ::downloadCurrentMovie) {
+                            Icon(Icons.Filled.Download, "Скачать фильм", tint = Color.White)
+                        }
                         IconButton(onClick = ::collapseVideo) {
                             Icon(Icons.Filled.FullscreenExit, "Мини-плеер",
                                 tint = Color.White)
