@@ -241,6 +241,8 @@ internal fun MusicDownloadsScreen(
     var pendingRemoval by remember { mutableStateOf<CleanupPrompt?>(null) }
     var pendingExport by remember { mutableStateOf<LibraryFile.Cached?>(null) }
     var exporting by remember { mutableStateOf(false) }
+    var exportTitle by remember { mutableStateOf("") }
+    var exportProgress by remember { mutableStateOf<OfflineMp4ExportProgress?>(null) }
     var selectedFilter by remember { mutableStateOf("Все") }
     var selectionMode by remember { mutableStateOf(false) }
     var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -404,9 +406,50 @@ internal fun MusicDownloadsScreen(
         }
         if (selectionMode) Text("Отмечено: ${markedKeys.size}. «Выбрать показанные» относится к текущему фильтру.",
             style = MaterialTheme.typography.bodySmall)
-        if (removing || exporting) {
+        if (exporting) {
+            val progress = exportProgress
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Экспорт MP4", style = MaterialTheme.typography.titleMedium)
+                    Text(exportTitle, style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2)
+                    val phase = when (progress?.phase) {
+                        OfflineMp4ExportPhase.TRANSFORMING -> "Создание MP4"
+                        OfflineMp4ExportPhase.SAVING -> "Сохранение в «Фильмы/MusicFlow»"
+                        null -> "Подготовка экспорта"
+                    }
+                    val percent = progress?.percent
+                    Text(phase + (percent?.let { " · $it%" } ?: " · расчёт прогресса…"),
+                        style = MaterialTheme.typography.labelMedium)
+                    if (percent != null) {
+                        LinearProgressIndicator(
+                            progress = { percent.coerceIn(0, 100) / 100f },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    if (progress != null) {
+                        val bytes = humanBytes(progress.processedBytes)
+                        val total = progress.totalBytes?.takeIf { it > 0L }
+                            ?.let { " из " + humanBytes(it) }.orEmpty()
+                        Text((if (progress.phase == OfflineMp4ExportPhase.TRANSFORMING)
+                            "Создано временного MP4: " else "Скопировано: ") +
+                            bytes + total, style = MaterialTheme.typography.labelSmall)
+                    }
+                    TextButton(onClick = { OfflineMp4Exporter.cancel() }) {
+                        Icon(Icons.Filled.Close, contentDescription = null)
+                        Spacer(Modifier.width(5.dp))
+                        Text("Отменить экспорт")
+                    }
+                }
+            }
+        } else if (removing) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            if (exporting) Text("Экспорт MP4 из офлайн-кеша…", style = MaterialTheme.typography.bodySmall)
         }
         if (loadError != null) Text(loadError!!, color = MaterialTheme.colorScheme.error)
         if (shownFiles.isEmpty()) {
@@ -531,15 +574,22 @@ internal fun MusicDownloadsScreen(
                 TextButton(onClick = {
                     pendingExport = null
                     try {
-                        OfflineMp4Exporter.start(context, file.value) { success, message ->
+                        exporting = true
+                        exportTitle = file.title
+                        exportProgress = null
+                        OfflineMp4Exporter.start(
+                            context, file.value,
+                            onProgress = { progress -> exportProgress = progress }
+                        ) { success, message ->
                             exporting = false
+                            exportProgress = null
                             android.widget.Toast.makeText(context, message,
                                 android.widget.Toast.LENGTH_LONG).show()
                             refresh++
                         }
-                        exporting = true
                     } catch (error: Exception) {
                         exporting = false
+                        exportProgress = null
                         AppDiagnostics.failure("Downloads", "start offline export", error)
                         android.widget.Toast.makeText(context,
                             "Экспорт не запущен: ${error.message.orEmpty()}",
