@@ -1,10 +1,10 @@
 name: MusicFlow 0.7.57 TEST bulk cleanup and cache controls
 on:
   push:
-    branches: ["feature/musicflow-download-actions-player-v0757"]
+    branches: ["feature/musicflow-download-bulk-cleanup-v0757"]
     paths:
       - "app/**"
-      - ".github/workflows/musicflow-v0757-download-actions-test.yml"
+      - ".github/workflows/musicflow-v0757-bulk-cleanup-test.yml"
   workflow_dispatch:
 permissions:
   contents: read
