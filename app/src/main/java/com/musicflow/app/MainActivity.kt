@@ -14,6 +14,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.ListOrdered
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
@@ -308,6 +311,7 @@ private fun MusicScreen(
     var playbackStatus by remember { mutableStateOf<String?>(null) }
     var playing by remember { mutableStateOf(false) }
     var currentArtwork by remember { mutableStateOf<String?>(null) }
+    var radioShuffleEnabled by remember { mutableStateOf(false) }
     var currentMediaId by remember { mutableStateOf("") }
     var trackTitle by remember { mutableStateOf("") }
     var trackArtist by remember { mutableStateOf("") }
@@ -484,6 +488,7 @@ private fun MusicScreen(
             }
             currentMediaId = player.currentMediaItem?.mediaId.orEmpty()
             currentArtwork = player.currentMediaItem?.mediaMetadata?.artworkUri?.toString()
+            radioShuffleEnabled = player.shuffleModeEnabled
             trackTitle = player.currentMediaItem?.mediaMetadata?.title?.toString() ?: ""
             trackArtist = player.currentMediaItem?.mediaMetadata?.artist?.toString() ?: ""
             positionMs = player.currentPosition.coerceAtLeast(0)
@@ -508,11 +513,15 @@ private fun MusicScreen(
         homePlaybackMessage = null
         queueCatalog = list.toList()
         if (radioPlaylist) {
-            // Preserve the chosen station at its visible-list index, then allow
-            // previous/next in order or Media3 shuffle from compact radio player.
-            p.shuffleModeEnabled = false
+            // Switching to another station must NOT undo an explicitly selected
+            // shuffle mode. A fresh radio session starts in ordered mode.
+            val alreadyInRadio = p.currentMediaItem?.mediaId?.startsWith("radio:") == true
+            p.shuffleModeEnabled = alreadyInRadio && p.shuffleModeEnabled
             p.repeatMode = androidx.media3.common.Player.REPEAT_MODE_ALL
+            radioShuffleEnabled = p.shuffleModeEnabled
         } else {
+            p.shuffleModeEnabled = false
+            radioShuffleEnabled = false
             p.repeatMode = androidx.media3.common.Player.REPEAT_MODE_OFF
         }
         AppDiagnostics.info("Player", "queue size=" + list.size + "; index=" + index)
@@ -1026,6 +1035,19 @@ private fun MusicScreen(
         if (trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
             val miniCover by rememberCoverArt(trackArtist, trackTitle, currentArtwork)
             val isRadio = currentMediaId.startsWith("radio:")
+            val radioCover by produceState<String?>(currentArtwork, currentMediaId, currentArtwork) {
+                value = currentArtwork
+                if (isRadio) {
+                    val uri = player?.currentMediaItem?.localConfiguration?.uri?.toString().orEmpty()
+                    if (RussianRadioDirectory.isPublicStream(uri)) {
+                        val station = RussianRadioStation(
+                            currentMediaId.removePrefix("radio:"), trackTitle, uri,
+                            currentArtwork, "", "", 0
+                        )
+                        value = RadioArtworkCatalog.resolve(context, station) ?: currentArtwork
+                    }
+                }
+            }
             Column(
                 modifier = Modifier.fillMaxWidth()
                     .musicFlowGlass(palette, radius = 18.dp)
@@ -1047,7 +1069,7 @@ private fun MusicScreen(
                             if (isRadio) {
                                 RadioStationArtwork(
                                     name = trackTitle,
-                                    logo = miniCover,
+                                    logo = radioCover,
                                     modifier = Modifier.fillMaxSize(),
                                     radius = 12.dp
                                 )
@@ -1128,6 +1150,51 @@ private fun MusicScreen(
                             tint = palette.foreground
                         )
                     }
+                    }
+                }
+                if (isRadio && (player?.mediaItemCount ?: 0) > 1) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = {
+                            val active = player ?: return@IconButton
+                            if (active.hasPreviousMediaItem()) active.seekToPreviousMediaItem()
+                            else active.seekTo(active.mediaItemCount - 1, 0L)
+                            active.play()
+                        }) {
+                            Icon(Icons.Filled.SkipPrevious, "Предыдущая радиостанция",
+                                tint = palette.foreground)
+                        }
+                        Text(
+                            if (radioShuffleEnabled) "Вразнобой" else "По списку",
+                            color = palette.muted,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                        IconButton(onClick = {
+                            val active = player ?: return@IconButton
+                            radioShuffleEnabled = !active.shuffleModeEnabled
+                            active.shuffleModeEnabled = radioShuffleEnabled
+                        }) {
+                            Icon(
+                                if (radioShuffleEnabled) Icons.Filled.Shuffle
+                                else Icons.Filled.ListOrdered,
+                                if (radioShuffleEnabled) "Случайный порядок включён"
+                                else "Включить случайный порядок",
+                                tint = if (radioShuffleEnabled) palette.accent
+                                    else palette.foreground
+                            )
+                        }
+                        IconButton(onClick = {
+                            val active = player ?: return@IconButton
+                            if (active.hasNextMediaItem()) active.seekToNextMediaItem()
+                            else active.seekTo(0, 0L)
+                            active.play()
+                        }) {
+                            Icon(Icons.Filled.SkipNext, "Следующая радиостанция",
+                                tint = palette.foreground)
+                        }
                     }
                 }
                 if (!isRadio) LinearProgressIndicator(
