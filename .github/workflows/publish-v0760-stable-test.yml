@@ -26,8 +26,8 @@ jobs:
         run: |
           set -euo pipefail
           source .github/release-assets/v0760-test/checksums.env
-          test "$SOURCE_SHA" = "d5b5f4d463ed13d545fc3466e1ce868915b83b54"
-          test "$SOURCE_RUN" = "45996328863"
+          test "$SOURCE_SHA" = "5339b802d0c84e5d10a3913af3f456fae3ab3f9a"
+          test "$SOURCE_RUN" = "46020472885"
           test "$SOURCE_ARTIFACT" = "MusicFlow-0.7.60-TEST-cinema-quality-radio-preflight"
           test "$TEST_CERT_SHA" = "5b021afbd43d8c4fc1de501bd5e000c8d0286da573a700121ace77339f199835"
           test "$TEST_CERT_SHA" != "c461ee635d5b295ef6c765e1ae533d0079dc6e53cb2632a11a1b445773752410"
@@ -40,7 +40,7 @@ jobs:
             echo "::error::App sources changed since TEST preflight"; exit 1;
           }
           # Never release this build before Android instrumentation has actually passed.
-          test "$EMULATOR_RUN" = "45996827962"
+          test "$EMULATOR_RUN" = "46020515711"
           echo "Waiting for the independent Android 14 emulator run $EMULATOR_RUN"
           EMU_STATUS=""
           for attempt in $(seq 1 120); do
@@ -100,7 +100,7 @@ jobs:
           test "$CERT" = "$TEST_CERT_SHA" || { echo "::error::Wrong TEST certificate"; exit 1; }
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" \
             | grep -F "name='com.musicflow.preview.dev' versionCode='760' versionName='0.7.60-dev'"
-          echo "PASS: stable TEST cert / v2+v3 / package 758"
+          echo "PASS: stable TEST cert / v2+v3 / package versionCode 760"
       - name: Publish distinct TEST prerelease for built-in updater
         shell: bash
         env:
