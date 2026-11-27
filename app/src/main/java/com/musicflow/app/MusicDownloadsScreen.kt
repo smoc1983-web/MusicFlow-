@@ -479,7 +479,7 @@ internal fun MusicDownloadsScreen(
                     pendingRemoval = null
                     if (toDelete.isNotEmpty()) cleanupScope.launch {
                         removing = true
-                        if (selected?.key in prompt.estimate.keys) selected = null
+                        if (selected?.key?.let { it in prompt.estimate.keys } == true) selected = null
                         var directDeleted = 0
                         var streamRequested = 0
                         var failures = 0
