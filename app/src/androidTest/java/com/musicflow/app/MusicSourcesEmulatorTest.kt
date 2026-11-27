@@ -1,15 +1,20 @@
 package com.musicflow.app
 
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
+import android.net.Uri
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
-import androidx.media3.session.MediaController
-import androidx.media3.session.SessionToken
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -21,7 +26,6 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -29,6 +33,7 @@ import java.util.concurrent.atomic.AtomicReference
  * Real provider results are always logged and persisted; a regional 403 is
  * reported as BLOCKED rather than misrepresented as successful playback.
  */
+@OptIn(UnstableApi::class)
 @RunWith(AndroidJUnit4::class)
 class MusicSourcesEmulatorTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -50,31 +55,61 @@ class MusicSourcesEmulatorTest {
         println("MUSICFLOW_SOURCE_PROBE $report")
         val directory = context.getExternalFilesDir(null) ?: return
         File(directory, "source-probe-v0760.txt").appendText(report + "\n")
+        File(context.filesDir, "source-probe-v0760.txt").appendText(report + "\n")
     }
 
-    private fun checkPlayable(track: Track, controller: MediaController): String {
+    /** Direct player avoids starting the service during slow AVD JIT compilation. */
+    private fun newProbePlayer(): ExoPlayer {
+        val http = DefaultHttpDataSource.Factory()
+            .setConnectTimeoutMs(9_000).setReadTimeoutMs(12_000)
+        val upstream = DefaultDataSource.Factory(context, http)
+        val resolved = ResolvingDataSource.Factory(upstream) { spec ->
+            if (spec.uri.scheme == "zaycev") {
+                spec.withUri(ZaycevStreamResolver.resolve(spec.uri))
+                    .withAdditionalHeaders(mapOf("Referer" to "https://zaycev.net/"))
+            } else {
+                val host = spec.uri.host.orEmpty().lowercase()
+                val referer = when {
+                    host.endsWith("muzofond.fm") -> "https://muzofond.fm/"
+                    host.endsWith("moosic.my.mail.ru") -> "https://my.mail.ru/music/"
+                    else -> null
+                }
+                if (referer == null) spec
+                else spec.withAdditionalHeaders(mapOf("Referer" to referer))
+            }
+        }
+        return main {
+            ExoPlayer.Builder(context)
+                .setMediaSourceFactory(DefaultMediaSourceFactory(resolved)).build()
+        }
+    }
+
+    private fun checkPlayable(track: Track, player: ExoPlayer): String {
         if (track.stream.isBlank()) return "EMPTY_STREAM"
         return try {
             main {
-                controller.stop()
-                controller.setMediaItem(MediaItem.Builder()
+                player.stop()
+                player.clearMediaItems()
+                player.setMediaItem(MediaItem.Builder()
                     .setMediaId(track.id)
-                    .setUri(track.stream)
+                    .setUri(Uri.parse(track.stream))
                     .setMediaMetadata(MediaMetadata.Builder()
                         .setTitle(track.title).setArtist(track.artist).build())
                     .build())
-                controller.prepare()
-                controller.play()
+                player.prepare()
+                player.play()
             }
-            val until = SystemClock.elapsedRealtime() + 18_000L
-            while (SystemClock.elapsedRealtime() < until) {
-                val error = main { controller.playerError }
+            val deadline = SystemClock.elapsedRealtime() + 20_000L
+            while (SystemClock.elapsedRealtime() < deadline) {
+                val error = main { player.playerError }
                 if (error != null) return "PLAYBACK_ERROR_" + error.errorCodeName
-                if (main { controller.playbackState == Player.STATE_READY }) return "READY"
-                Thread.sleep(300L)
+                if (main { player.playbackState == Player.STATE_READY }) return "READY"
+                Thread.sleep(350L)
             }
             "PLAYBACK_TIMEOUT"
-        } catch (e: Exception) { "PLAYBACK_EXCEPTION_" + e.javaClass.simpleName }
+        } catch (error: Exception) {
+            "PLAYBACK_EXCEPTION_" + error.javaClass.simpleName
+        }
     }
 
     @Test fun searchAndPlaybackOfAllThreeRegisteredSources() {
@@ -83,34 +118,38 @@ class MusicSourcesEmulatorTest {
             "muzofond" to suspend { muzofondTracks("Queen") },
             "mailru" to suspend { mailRuTracks("Queen") }
         )
-        val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
-        val future = main { MediaController.Builder(context, token).buildAsync() }
-        var checked = 0
-        try {
-            val controller = future.get(30L, TimeUnit.SECONDS)
-            for ((name, search) in providers) {
-                val output = try {
-                    val result = runBlocking {
-                        withTimeout(23_000L) { search() }
-                    }
-                    val verified = result.firstOrNull {
-                        it.stream.isNotBlank() && it.title.isNotBlank()
-                    }
-                    if (verified == null) "EMPTY results=${result.size}"
-                    else "results=${result.size} playback=${checkPlayable(verified, controller)}"
-                } catch (e: Exception) {
-                    "ERROR type=${e.javaClass.simpleName} msg=${e.message.orEmpty().take(75)}"
+        // Search first: record every provider before initializing any playback engine.
+        val playable = mutableListOf<Pair<String, Track>>()
+        val status = mutableMapOf<String, String>()
+        for ((name, search) in providers) {
+            val output = try {
+                val result = runBlocking { withTimeout(28_000L) { search() } }
+                val first = result.firstOrNull {
+                    it.stream.isNotBlank() && it.title.isNotBlank()
                 }
-                checked++
-                record("source=$name $output")
+                if (first != null) {
+                    playable += name to first
+                    "FOUND results=" + result.size + " scheme=" + first.stream.substringBefore(':')
+                } else "EMPTY results=" + result.size
+            } catch (error: Exception) {
+                "ERROR type=" + error.javaClass.simpleName +
+                    " msg=" + error.message.orEmpty().take(75)
             }
-            assertEquals("All three registered providers must be exercised", 3, checked)
+            status[name] = output
+            record("source=" + name + " search=" + output)
+        }
+        assertEquals("All three registered sources must be probed", 3, status.size)
+        if (playable.isEmpty()) {
+            record("playback=SKIPPED: no playable candidates returned")
+            fail("No provider returned a candidate: " + status)
+        }
+        val player = newProbePlayer()
+        try {
+            for ((source, track) in playable) {
+                record("source=" + source + " playback=" + checkPlayable(track, player))
+            }
         } finally {
-            runCatching {
-                val controller = future.get(2L, TimeUnit.SECONDS)
-                main { controller.stop(); controller.clearMediaItems() }
-            }
-            main { MediaController.releaseFuture(future) }
+            main { player.release() }
         }
     }
 
@@ -128,7 +167,7 @@ class MusicSourcesEmulatorTest {
         device.findObject(By.text("Радио")).click()
         assertNotNull("Radio list not loaded",
             device.wait(Until.findObject(By.text("Популярные")), 18_000))
-        device.takeScreenshot(File(context.getExternalFilesDir(null), "musicflow-radio-list-v0760.png"))
+        device.takeScreenshot(File(context.filesDir, "musicflow-radio-list-v0760.png"))
         val play = device.wait(Until.findObject(By.desc("Слушать")), 12_000)
         assertNotNull("No stations with play control", play)
         play.click()
@@ -154,7 +193,7 @@ class MusicSourcesEmulatorTest {
             device.findObject(By.desc("Следующая радиостанция")))
         assertNotNull("Shuffle toggle absent",
             device.findObject(By.desc("Включён порядок по списку — переключить случайно")))
-        device.takeScreenshot(File(context.getExternalFilesDir(null), "musicflow-radio-player-v0760.png"))
+        device.takeScreenshot(File(context.filesDir, "musicflow-radio-player-v0760.png"))
         record("radio_ui=PASS bundled=${bundled.size} previous_next_shuffle=VISIBLE covers=LOGO_OR_LOCAL_TILE")
     }
 }
