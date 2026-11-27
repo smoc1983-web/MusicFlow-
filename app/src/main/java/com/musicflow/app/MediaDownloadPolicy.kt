@@ -9,12 +9,14 @@ import java.util.Locale
  * are deliberately NOT represented as downloadable movie/audio files.
  */
 internal enum class DownloadMediaKind { MUSIC, VIDEO }
+internal enum class MediaTransferMode { DIRECT, HLS_VOD }
 
 internal data class MediaDownloadPlan(
     val url: String,
     val fileName: String,
     val mimeType: String,
-    val relativeDirectory: String
+    val relativeDirectory: String,
+    val transferMode: MediaTransferMode = MediaTransferMode.DIRECT
 )
 
 internal sealed interface DownloadPlanResult {
@@ -23,16 +25,27 @@ internal sealed interface DownloadPlanResult {
 }
 
 internal object MediaDownloadPolicy {
+    internal fun isSafeHttps(url: String): Boolean = try {
+        val uri = URI(url)
+        uri.scheme.equals("https", ignoreCase = true) &&
+            !uri.host.isNullOrBlank() && uri.rawUserInfo == null
+    } catch (_: Exception) {
+        false
+    }
+
     private val audioTypes = mapOf(
         "mp3" to "audio/mpeg", "m4a" to "audio/mp4",
         "aac" to "audio/aac", "flac" to "audio/flac",
         "ogg" to "audio/ogg", "opus" to "audio/ogg",
-        "wav" to "audio/wav"
+        "wav" to "audio/wav", "aiff" to "audio/aiff",
+        "wma" to "audio/x-ms-wma"
     )
     private val movieTypes = mapOf(
         "mp4" to "video/mp4", "m4v" to "video/x-m4v",
         "mkv" to "video/x-matroska", "webm" to "video/webm",
-        "mov" to "video/quicktime"
+        "mov" to "video/quicktime", "ts" to "video/mp2t",
+        "3gp" to "video/3gpp", "avi" to "video/x-msvideo",
+        "mpg" to "video/mpeg", "mpeg" to "video/mpeg"
     )
 
     fun plan(url: String, title: String, kind: DownloadMediaKind): DownloadPlanResult {
@@ -42,23 +55,25 @@ internal object MediaDownloadPolicy {
         } catch (_: Exception) {
             return DownloadPlanResult.Rejected("Некорректная ссылка на медиафайл")
         }
-        if (!uri.scheme.equals("https", ignoreCase = true) ||
-            uri.host.isNullOrBlank() || uri.rawUserInfo != null) {
+        if (!isSafeHttps(cleanUrl)) {
             return DownloadPlanResult.Rejected("Для скачивания нужна прямая HTTPS-ссылка на файл")
         }
 
         val extension = uri.path.orEmpty().substringAfterLast('.', "")
             .lowercase(Locale.ROOT)
-        if (extension in setOf("m3u8", "mpd")) {
+        if (extension == "mpd") {
             return DownloadPlanResult.Rejected(
-                "Поток HLS/DASH нельзя сохранить как единый файл. Нужна разрешённая прямая ссылка MP4 или аудиофайл"
+                "MPEG-DASH (.mpd) пока не поддерживается. Найдите разрешённый MP4-файл"
             )
         }
         val formats = if (kind == DownloadMediaKind.MUSIC) audioTypes else movieTypes
-        val mimeType = formats[extension] ?: return DownloadPlanResult.Rejected(
+        val isHls = extension == "m3u8"
+        val mimeType = if (isHls) {
+            if (kind == DownloadMediaKind.VIDEO) "video/mp2t" else "audio/mp2t"
+        } else formats[extension] ?: return DownloadPlanResult.Rejected(
             if (kind == DownloadMediaKind.MUSIC)
-                "Для этой записи нет прямой ссылки MP3, M4A, FLAC, OGG, OPUS, AAC или WAV"
-            else "Для этого фильма нужна прямая ссылка MP4, MKV, WEBM или MOV"
+                "Нет прямой ссылки MP3, M4A, FLAC, AAC, OGG или WAV"
+            else "Нет прямой ссылки MP4, MKV, TS, WEBM, MOV или AVI"
         )
 
         val safeTitle = title.trim()
@@ -69,10 +84,11 @@ internal object MediaDownloadPolicy {
             .ifBlank { if (kind == DownloadMediaKind.MUSIC) "MusicFlow-Audio" else "MusicFlow-Video" }
         return DownloadPlanResult.Accepted(MediaDownloadPlan(
             url = cleanUrl,
-            fileName = "$safeTitle.$extension",
+            fileName = "$safeTitle.${if (isHls) "ts" else extension}",
             mimeType = mimeType,
             relativeDirectory = if (kind == DownloadMediaKind.MUSIC)
-                "MusicFlow/Music" else "MusicFlow/Movies"
+                "MusicFlow/Music" else "MusicFlow/Movies",
+            transferMode = if (isHls) MediaTransferMode.HLS_VOD else MediaTransferMode.DIRECT
         ))
     }
 }
