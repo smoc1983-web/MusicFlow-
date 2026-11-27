@@ -4,6 +4,7 @@ on:
     branches: ["feature/musicflow-cinema-quality-radio-controls-v0761"]
     paths:
       - "app/**"
+      - "settings.gradle.kts"
       - ".github/workflows/musicflow-v0761-cinema-quality-radio-controls-test.yml"
   workflow_dispatch:
 permissions:
