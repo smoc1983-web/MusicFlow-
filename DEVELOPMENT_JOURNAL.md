@@ -433,3 +433,9 @@
 - Preflight [46031874610](https://github.com/smoc1983-web/MusicFlow-/actions/runs/46031874610) SUCCESS на production SHA 380e8cde; AVD [46031875050](https://github.com/smoc1983-web/MusicFlow-/actions/runs/46031875050) FAILURE: INSTALL_FAILED_VERIFICATION_FAILURE (Integrity verification timed out) при установке androidTest APK, до инструментальных тестов.
 - CI commit 94a197fdcb747acaaf0aa9a2e12672102648fa76: ожидание готовности package manager, non-streaming adb install с максимум тремя попытками и диагностикой. Проверка APK не отключена, asserts не изменены, production app не изменён. Новый AVD должен подтвердить результат. ub-mode: точечное исправление инфраструктуры; CRAP/Dryer/mutation не запускались.
 - Release v0.7.61-test отсутствует по API; подписание и публикация заблокированы до успешного AVD.
+
+
+### 2026-11-27 — TEST 0.7.61: повторная проверка UI радио
+
+- AVD 46054911716: установка прошла; реальные тесты упали на UnknownHostException всех трёх музыкальных источников и StaleObjectException в waitForVisible (строка 166). Не считать GREEN.
+- TEST-only commit 1b407bb29892899a15168b7a1759d7065d067dae: повторный поиск accessibility nodes при Compose recomposition, ограниченный timeout, сохранены assertions. Production app не изменён. DNS остаётся отдельным блокером. Повторный AVD ожидается; CRAP/Dryer/mutation не запускались. Подписание и выпуск запрещены до GREEN.
