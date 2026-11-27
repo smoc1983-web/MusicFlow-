@@ -41,7 +41,7 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
         mutableStateOf(MusicFlowUpdates.updateChannelMessage(context))
     }
     val currentVersion = remember { MusicFlowUpdates.currentVersion(context) }
-    val officialUpdateChannel = remember { MusicFlowUpdates.supportsOfficialUpdates(context) }
+    val updateChannelAvailable = remember { MusicFlowUpdates.supportsUpdates(context) }
 
     val localApkLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -78,13 +78,13 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
     }
 
     LaunchedEffect(Unit) {
-        if (!officialUpdateChannel) return@LaunchedEffect
+        if (!updateChannelAvailable) return@LaunchedEffect
         MusicFlowBackgroundUpdates.savedRelease(context)?.let { update = it }
         checking = true
         try {
-            val candidate = MusicFlowUpdates.latestRelease()
+            val candidate = MusicFlowUpdates.latestRelease(context)
             if (candidate == null) {
-                message = "Подписанные APK-выпуски пока не опубликованы. Для дальнейших обновлений их необходимо публиковать в GitHub Releases."
+                message = "Совместимых выпусков для этого канала пока нет в GitHub Releases."
             } else if (candidate.versionCode > MusicFlowUpdates.currentCode(context)) {
                 update = candidate
                 message = "Доступна версия " + candidate.version + ". Размер: " +
@@ -101,7 +101,7 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
     }
 
     LaunchedEffect(Unit) {
-        if (!officialUpdateChannel) return@LaunchedEffect
+        if (!updateChannelAvailable) return@LaunchedEffect
         while (true) {
             try {
                 transfer = MusicFlowBackgroundUpdates.snapshot(context)
@@ -151,7 +151,7 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
                         style = MaterialTheme.typography.bodySmall)
                 }
                 Button(
-                    enabled = officialUpdateChannel && !checking && !downloading,
+                    enabled = updateChannelAvailable && !checking && !downloading,
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
                         checking = true
@@ -159,9 +159,9 @@ internal fun MusicFlowAboutDialog(onDismiss: () -> Unit) {
                         message = "Проверяем выпуски MusicFlow…"
                         scope.launch {
                             try {
-                                val candidate = MusicFlowUpdates.latestRelease()
+                                val candidate = MusicFlowUpdates.latestRelease(context)
                                 if (candidate == null) {
-                                    message = "Подписанные APK-выпуски ещё не опубликованы."
+                                    message = "Совместимых тестовых или официальных обновлений пока нет."
                                 } else if (candidate.versionCode > MusicFlowUpdates.currentCode(context)) {
                                     update = candidate
                                     message = "Доступна версия " + candidate.version +
