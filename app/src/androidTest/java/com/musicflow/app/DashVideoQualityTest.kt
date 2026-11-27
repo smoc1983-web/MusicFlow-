@@ -47,6 +47,8 @@ class DashVideoQualityTest {
             xml.toByteArray(Charsets.UTF_8)
         )
         assertEquals(listOf("360p", "720p"), qualities.map { it.label })
+        assertEquals("Includes video + one audio representation for every 6s period",
+            3_417_000L, qualities[1].estimatedBytes)
         assertEquals(listOf(
             StreamKey(0, 0, 1), StreamKey(0, 1, 0),
             StreamKey(1, 1, 1), StreamKey(1, 0, 0)
@@ -71,6 +73,7 @@ class DashVideoQualityTest {
             xml.toByteArray(Charsets.UTF_8)
         )
         assertEquals(listOf("1400 кбит/с"), qualities.map { it.label })
+        assertEquals(1_050_000L, qualities.single().estimatedBytes)
     }
 
     @Test fun noVideoRepresentationsReturnsNoQualityChoices() {
