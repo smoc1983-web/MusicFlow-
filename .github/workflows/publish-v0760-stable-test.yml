@@ -108,14 +108,25 @@ jobs:
         run: |
           set -euo pipefail
           source .github/release-assets/v0760-test/checksums.env
-          # A pre-existing, verified commit tag avoids release creation asking
-          # for an implicit git ref. Never force-update release tags.
+          # GitHub App cannot create a tag which introduces workflow files it is
+          # not authorized to change. The clean tag target is based on main,
+          # with the EXACT preflight app tree and settings, but unchanged
+          # .github/workflows/. Verify these properties before pushing any tag.
+          git fetch --no-tags origin main release/musicflow-test-0760-snapshot
+          TAG_TARGET_SHA=$(git rev-parse origin/release/musicflow-test-0760-snapshot)
+          test "$TAG_TARGET_SHA" = "1fa630e4f6a0e0f613d1a009711969dc885a14e5"
+          git diff --quiet "$SOURCE_SHA" "$TAG_TARGET_SHA" -- app/ settings.gradle.kts build.gradle.kts || {
+            echo "::error::Release tag snapshot does not match tested Android source"; exit 1;
+          }
+          git diff --quiet origin/main "$TAG_TARGET_SHA" -- .github/workflows/ || {
+            echo "::error::Release tag snapshot contains workflow changes"; exit 1;
+          }
           if ! git show-ref --verify --quiet refs/tags/v0.7.60-test; then
-            git tag v0.7.60-test "$SOURCE_SHA"
+            git tag v0.7.60-test "$TAG_TARGET_SHA"
             git push origin refs/tags/v0.7.60-test
           fi
           gh release create v0.7.60-test out/MusicFlow-TEST_0.7.60.apk out/SHA256SUMS.txt \
-            -R "$GITHUB_REPOSITORY" --verify-tag --target "$SOURCE_SHA" --prerelease \
+            -R "$GITHUB_REPOSITORY" --verify-tag --target "$TAG_TARGET_SHA" --prerelease \
             --title "MusicFlow 0.7.60 TEST · качество HLS, MP4 и загрузки" \
             --notes "MusicFlow TEST 0.7.60-dev (760), com.musicflow.preview.dev. Девять встроенных оптимизированных WebP обложек-заглушек для радиостанций без действующего логотипа; проверенный логотип имеет приоритет. Кнопки предыдущая/следующая радиостанция и переключатель по списку/вразнобой, режим сохраняется при переключении станций. Выбор исходного качества музыки, HLS/DASH разрешения и качества видео при скачивании в кино-плеере. Для DASH выбирается аудиодорожка; прямой MP4 скачивается в оригинальном качестве без искусственного повышения. Ограничения доступа, авторское право, DRM не обходятся. Исходники и Android-инструментальные проверки прошли CI. APK подписан стабильным сертификатом TEST 0.7.58, совместим для обновления без удаления. Применены ub-mode, контроль SHA256 и Android v2/v3."
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.7.60-test" --jq '.prerelease' | grep -Fx true
