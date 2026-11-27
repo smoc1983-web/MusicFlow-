@@ -42,12 +42,35 @@ class DashVideoQualityTest {
             </Period>
           </MPD>
         """.trimIndent()
-        val qualities = DashVideoQualityPolicy.choices(parse(xml))
+        val qualities = DashVideoQualityPolicy.fromMpd(
+            Uri.parse("https://video.example.org/test.mpd"),
+            xml.toByteArray(Charsets.UTF_8)
+        )
         assertEquals(listOf("360p", "720p"), qualities.map { it.label })
         assertEquals(listOf(
             StreamKey(0, 0, 1), StreamKey(0, 1, 0),
             StreamKey(1, 1, 1), StreamKey(1, 0, 0)
         ), qualities[1].streamKeys)
+    }
+
+    @Test fun unknownResolutionIsReportedAsActualManifestBitrate() {
+        val xml = """
+          <MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static"
+               mediaPresentationDuration="PT6S" minBufferTime="PT1S">
+            <Period>
+              <AdaptationSet mimeType="video/mp4" contentType="video">
+                <Representation id="one" bandwidth="1400000">
+                  <BaseURL>one.mp4</BaseURL>
+                </Representation>
+              </AdaptationSet>
+            </Period>
+          </MPD>
+        """.trimIndent()
+        val qualities = DashVideoQualityPolicy.fromMpd(
+            Uri.parse("https://video.example.org/test.mpd"),
+            xml.toByteArray(Charsets.UTF_8)
+        )
+        assertEquals(listOf("1400 кбит/с"), qualities.map { it.label })
     }
 
     @Test fun noVideoRepresentationsReturnsNoQualityChoices() {
