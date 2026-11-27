@@ -32,9 +32,8 @@ class MediaDownloadPolicyTest {
         assertEquals("MusicFlow/Movies", plan.relativeDirectory)
     }
 
-    @Test fun rejectsHlsDashAndProtectedOrIndirectLinks() {
+    @Test fun rejectsDashAndProtectedOrIndirectLinks() {
         val rejected = listOf(
-            "https://cdn.example.org/master.m3u8",
             "https://cdn.example.org/manifest.mpd",
             "zaycev://track/123",
             "https://example.org/watch?id=1",
@@ -46,6 +45,37 @@ class MediaDownloadPolicyTest {
             assertTrue("$uri must be rejected", MediaDownloadPolicy.plan(
                 uri, "Movie", DownloadMediaKind.VIDEO
             ) is DownloadPlanResult.Rejected)
+        }
+    }
+
+    @Test fun supportsHlsPlaylistOnlyAsSegmentedVOD() {
+        val v = MediaDownloadPolicy.plan(
+            "https://cdn.example.org/movie/master.m3u8?token=signed",
+            "Фильм", DownloadMediaKind.VIDEO
+        )
+        assertTrue(v is DownloadPlanResult.Accepted)
+        val plan = (v as DownloadPlanResult.Accepted).value
+        assertEquals(MediaTransferMode.HLS_VOD, plan.transferMode)
+        assertEquals("Фильм.ts", plan.fileName)
+        assertEquals("video/mp2t", plan.mimeType)
+        val direct = MediaDownloadPolicy.plan(
+            "https://cdn.example.org/video/video.ts", "Movie", DownloadMediaKind.VIDEO
+        ) as DownloadPlanResult.Accepted
+        assertEquals(MediaTransferMode.DIRECT, direct.value.transferMode)
+    }
+
+    @Test fun supportsAdditionalProgressiveVideoAndAudioExtensions() {
+        for (extension in listOf("mp4","mkv","webm","mov","avi","3gp","ts","mpeg")) {
+            assertTrue(".$extension", MediaDownloadPolicy.plan(
+                "https://cdn.example.org/media/video.$extension", "Movie",
+                DownloadMediaKind.VIDEO
+            ) is DownloadPlanResult.Accepted)
+        }
+        for (extension in listOf("mp3","m4a","flac","aac","ogg","opus","wav","aiff")) {
+            assertTrue(".$extension", MediaDownloadPolicy.plan(
+                "https://cdn.example.org/media/song.$extension", "Song",
+                DownloadMediaKind.MUSIC
+            ) is DownloadPlanResult.Accepted)
         }
     }
 
