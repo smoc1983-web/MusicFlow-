@@ -63,7 +63,7 @@ internal object MusicFlowBackgroundUpdates {
         val bytes = p.getLong(BYTES, 0L)
         // Older versions may have cached v0.7.50-radio-artwork-test.
         // Never show or install a cached debug APK as an official update.
-        if (!MusicFlowUpdates.isOfficialSavedRelease(version, url)) {
+        if (!MusicFlowUpdates.isSavedReleaseForChannel(context, version, url)) {
             if (id >= 0L) runCatching { manager(context).remove(id) }
             forget(context)
             return null
@@ -79,11 +79,11 @@ internal object MusicFlowBackgroundUpdates {
 
     suspend fun enqueue(context: Context, update: MusicFlowUpdate): Long =
         withContext(Dispatchers.IO) {
-            require(MusicFlowUpdates.supportsOfficialUpdates(context)) {
+            require(MusicFlowUpdates.supportsUpdates(context)) {
                 "Это неофициальная сборка: обновление поверх неё недоступно"
             }
-            require(MusicFlowUpdates.isOfficialSavedRelease(
-                update.version, update.downloadUrl) &&
+            require(MusicFlowUpdates.isSavedReleaseForChannel(
+                context, update.version, update.downloadUrl) &&
                 update.versionCode > MusicFlowUpdates.currentCode(context) &&
                 update.bytes in 1_000_000L..(150L * 1024L * 1024L)) {
                 "Некорректные данные официального обновления"
@@ -132,7 +132,7 @@ internal object MusicFlowBackgroundUpdates {
 
     suspend fun snapshot(context: Context): Snapshot = withContext(Dispatchers.IO) {
         val release = savedRelease(context) ?: return@withContext Snapshot(Phase.IDLE)
-        if (!MusicFlowUpdates.supportsOfficialUpdates(context) ||
+        if (!MusicFlowUpdates.supportsUpdates(context) ||
             release.versionCode <= MusicFlowUpdates.currentCode(context)) {
             forget(context)
             return@withContext Snapshot(Phase.IDLE)

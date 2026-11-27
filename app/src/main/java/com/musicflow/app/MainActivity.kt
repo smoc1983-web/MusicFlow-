@@ -1,6 +1,7 @@
 package com.musicflow.app
 
 import android.content.ComponentName
+import android.content.Context
 import android.content.res.Configuration
 import android.content.Intent
 import android.net.Uri
@@ -13,6 +14,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
@@ -281,6 +285,23 @@ private fun MusicScreen(
     var sectionMenu by remember { mutableStateOf(false) }
     var showAppearanceMenu by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
+    var showDirectDownloadDialog by remember { mutableStateOf(false) }
+    var showTrackQualityDialog by remember { mutableStateOf(false) }
+    var trackDownloadChoices by remember { mutableStateOf<List<MusicDownloadChoice>>(emptyList()) }
+    var trackDownloadTitle by remember { mutableStateOf("") }
+    var directDownloadUrl by remember { mutableStateOf("") }
+    var directDownloadIsMovie by remember { mutableStateOf(false) }
+    var downloadReferer by remember { mutableStateOf("") }
+    var downloadUserAgent by remember { mutableStateOf("") }
+    var hlsQualities by remember { mutableStateOf<List<HlsQuality>>(emptyList()) }
+    var inspectedHlsUrl by remember { mutableStateOf("") }
+    var chosenHlsIndex by remember { mutableStateOf<Int?>(null) }
+    var dashQualities by remember { mutableStateOf<List<DashVideoQuality>>(emptyList()) }
+    var inspectedDashUrl by remember { mutableStateOf("") }
+    var chosenDashIndex by remember { mutableStateOf<Int?>(null) }
+    var qualityChecking by remember { mutableStateOf(false) }
+    var qualityMessage by remember { mutableStateOf("") }
+    var headerEditorOpen by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showThemePicker by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -290,6 +311,7 @@ private fun MusicScreen(
     var playbackStatus by remember { mutableStateOf<String?>(null) }
     var playing by remember { mutableStateOf(false) }
     var currentArtwork by remember { mutableStateOf<String?>(null) }
+    var radioShuffleEnabled by remember { mutableStateOf(false) }
     var currentMediaId by remember { mutableStateOf("") }
     var trackTitle by remember { mutableStateOf("") }
     var trackArtist by remember { mutableStateOf("") }
@@ -466,6 +488,7 @@ private fun MusicScreen(
             }
             currentMediaId = player.currentMediaItem?.mediaId.orEmpty()
             currentArtwork = player.currentMediaItem?.mediaMetadata?.artworkUri?.toString()
+            radioShuffleEnabled = player.shuffleModeEnabled
             trackTitle = player.currentMediaItem?.mediaMetadata?.title?.toString() ?: ""
             trackArtist = player.currentMediaItem?.mediaMetadata?.artist?.toString() ?: ""
             positionMs = player.currentPosition.coerceAtLeast(0)
@@ -474,7 +497,12 @@ private fun MusicScreen(
         }
     }
 
-    fun queueAndPlay(list: List<Track>, index: Int, homePlaylist: Boolean = false, chartPlaylist: Boolean = false) {
+    fun queueAndPlay(
+        list: List<Track>, index: Int,
+        homePlaylist: Boolean = false,
+        chartPlaylist: Boolean = false,
+        radioPlaylist: Boolean = false
+    ) {
         val p = player ?: run {
             problem = "Плеер подключается. Повторите попытку."
             AppDiagnostics.warning("Player", "play requested before connection")
@@ -484,6 +512,20 @@ private fun MusicScreen(
         pendingHomeSong = null
         homePlaybackMessage = null
         queueCatalog = list.toList()
+        if (radioPlaylist) {
+            // Switching to another station must NOT undo an explicitly selected
+            // shuffle mode. A fresh radio session starts in ordered mode.
+            val alreadyInRadio = p.currentMediaItem?.mediaId?.startsWith("radio:") == true
+            p.shuffleModeEnabled = RadioQueuePolicy.preserveShuffle(
+                alreadyInRadio, p.shuffleModeEnabled
+            )
+            p.repeatMode = androidx.media3.common.Player.REPEAT_MODE_ALL
+            radioShuffleEnabled = p.shuffleModeEnabled
+        } else {
+            p.shuffleModeEnabled = false
+            radioShuffleEnabled = false
+            p.repeatMode = androidx.media3.common.Player.REPEAT_MODE_OFF
+        }
         AppDiagnostics.info("Player", "queue size=" + list.size + "; index=" + index)
         p.setMediaItems(list.map { t ->
             MediaItem.Builder()
@@ -625,6 +667,35 @@ private fun MusicScreen(
         save(favorites.toList())
     }
 
+    fun downloadCurrentSong() {
+        val current = player?.currentMediaItem
+        if (current == null || current.mediaId.startsWith("radio:")) {
+            MediaDownloads.showResult(context, DownloadPlanResult.Rejected(
+                "Сначала запустите музыкальную композицию"
+            ))
+            return
+        }
+        val source = queueCatalog.firstOrNull { it.id == current.mediaId }
+            ?: tracks.firstOrNull { it.id == current.mediaId }
+            ?: favorites.firstOrNull { it.id == current.mediaId }
+        val streams = (source?.streams().orEmpty() +
+            decodeStreams(current.mediaMetadata.extras?.getString(MUSIC_STREAMS)) +
+            listOfNotNull(current.localConfiguration?.uri?.toString()?.let {
+                MusicStream(current.mediaId, it)
+            })).distinctBy { it.uri }
+        trackDownloadTitle = listOf(trackArtist, trackTitle)
+            .filter(String::isNotBlank).joinToString(" — ")
+        trackDownloadChoices = MusicDownloadChoicePolicy.choices(streams)
+        if (trackDownloadChoices.isEmpty()) {
+            MediaDownloads.showResult(context, DownloadPlanResult.Rejected(
+                "Нет прямой ссылки доступного файла для этой песни. " +
+                    "Попробуйте «Загрузить по ссылке»."
+            ))
+            return
+        }
+        showTrackQualityDialog = true
+    }
+
     val visible = when (tab) {
         2 -> favorites.toList()
         1 -> filterAndSortTracks(tracks, appliedSearch, searchMode, sortMode)
@@ -698,6 +769,14 @@ private fun MusicScreen(
                         showAppearanceMenu = false
                         tab = 5
                     })
+                    DropdownMenuItem(text = { Text("Загрузить по ссылке · TEST") }, onClick = {
+                        showAppearanceMenu = false
+                        showDirectDownloadDialog = true
+                    })
+                    DropdownMenuItem(text = { Text("Открыть загрузки") }, onClick = {
+                        showAppearanceMenu = false
+                        MediaDownloads.openDownloads(context)
+                    })
                     DropdownMenuItem(text = { Text("Диагностика") }, onClick = {
                         showAppearanceMenu = false
                         tab = 4
@@ -718,6 +797,7 @@ private fun MusicScreen(
                         2 -> "Избранное"
                         3 -> "ТВ"
                         7 -> "Кино"
+                        8 -> "Загрузки"
                         6 -> "Радио"
                         5 -> "История"
                         else -> "Музыка"
@@ -732,7 +812,8 @@ private fun MusicScreen(
                     containerColor = palette.surface,
                     shadowElevation = 14.dp) {
                     listOf(0 to "Музыка", 2 to "Избранное", 6 to "Радио",
-                        5 to "История", 3 to "ТВ", 7 to "Кино")
+                        5 to "История", 3 to "ТВ", 7 to "Кино",
+                        8 to "Загрузки")
                         .forEach { (index, label) ->
                             DropdownMenuItem(text = { Text(label) },
                                 onClick = {
@@ -766,13 +847,24 @@ private fun MusicScreen(
             RuVideoHubTvScreen(player = player, modifier = Modifier.weight(1f))
         } else if (tab == 7) {
             CinemaLabScreen(modifier = Modifier.weight(1f))
+        } else if (tab == 8) {
+            MusicDownloadsScreen(
+                onAddLink = { showDirectDownloadDialog = true },
+                modifier = Modifier.weight(1f)
+            )
         } else if (tab == 4) {
             DiagnosticsScreen(modifier = Modifier.weight(1f))
         } else if (tab == 6) {
             RussianRadioScreen(
                 activeId = currentMediaId,
                 playing = playing,
-                onPlay = { station -> queueAndPlay(listOf(station.toTrack()), 0) },
+                onPlay = { station, shown ->
+                    val (ordered, index) = RadioQueuePolicy.playlist(station, shown)
+                    val tracks = ordered.map {
+                        (if (it.uuid == station.uuid) station else it).toTrack()
+                    }
+                    queueAndPlay(tracks, index, radioPlaylist = true)
+                },
                 onStop = { stopMusic() },
                 modifier = Modifier.weight(1f)
             )
@@ -945,6 +1037,19 @@ private fun MusicScreen(
         if (trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
             val miniCover by rememberCoverArt(trackArtist, trackTitle, currentArtwork)
             val isRadio = currentMediaId.startsWith("radio:")
+            val radioCover by produceState<String?>(currentArtwork, currentMediaId, currentArtwork) {
+                value = currentArtwork
+                if (isRadio) {
+                    val uri = player?.currentMediaItem?.localConfiguration?.uri?.toString().orEmpty()
+                    if (RussianRadioDirectory.isPublicStream(uri)) {
+                        val station = RussianRadioStation(
+                            currentMediaId.removePrefix("radio:"), trackTitle, uri,
+                            currentArtwork, "", "", 0
+                        )
+                        value = RadioArtworkCatalog.resolve(context, station) ?: currentArtwork
+                    }
+                }
+            }
             Column(
                 modifier = Modifier.fillMaxWidth()
                     .musicFlowGlass(palette, radius = 18.dp)
@@ -966,7 +1071,7 @@ private fun MusicScreen(
                             if (isRadio) {
                                 RadioStationArtwork(
                                     name = trackTitle,
-                                    logo = miniCover,
+                                    logo = radioCover,
                                     modifier = Modifier.fillMaxSize(),
                                     radius = 12.dp
                                 )
@@ -1049,6 +1154,51 @@ private fun MusicScreen(
                     }
                     }
                 }
+                if (isRadio && (player?.mediaItemCount ?: 0) > 1) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = {
+                            val active = player ?: return@IconButton
+                            if (active.hasPreviousMediaItem()) active.seekToPreviousMediaItem()
+                            else active.seekTo(active.mediaItemCount - 1, 0L)
+                            active.play()
+                        }) {
+                            Icon(Icons.Filled.SkipPrevious, "Предыдущая радиостанция",
+                                tint = palette.foreground)
+                        }
+                        Text(
+                            if (radioShuffleEnabled) "Вразнобой" else "По списку",
+                            color = palette.muted,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                        IconButton(onClick = {
+                            val active = player ?: return@IconButton
+                            radioShuffleEnabled = !active.shuffleModeEnabled
+                            active.shuffleModeEnabled = radioShuffleEnabled
+                        }) {
+                            Icon(
+                                if (radioShuffleEnabled) Icons.Filled.Shuffle
+                                else Icons.Filled.FormatListNumbered,
+                                if (radioShuffleEnabled) "Случайный порядок включён"
+                                else "Включить случайный порядок",
+                                tint = if (radioShuffleEnabled) palette.accent
+                                    else palette.foreground
+                            )
+                        }
+                        IconButton(onClick = {
+                            val active = player ?: return@IconButton
+                            if (active.hasNextMediaItem()) active.seekToNextMediaItem()
+                            else active.seekTo(0, 0L)
+                            active.play()
+                        }) {
+                            Icon(Icons.Filled.SkipNext, "Следующая радиостанция",
+                                tint = palette.foreground)
+                        }
+                    }
+                }
                 if (!isRadio) LinearProgressIndicator(
                     progress = { if (durationMs > 0L) {
                         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
@@ -1125,6 +1275,267 @@ private fun MusicScreen(
             }
         )
     }
+    LaunchedEffect(directDownloadUrl) {
+        if (directDownloadUrl.trim() != inspectedHlsUrl) {
+            hlsQualities = emptyList()
+            chosenHlsIndex = null
+        }
+        if (directDownloadUrl.trim() != inspectedDashUrl) {
+            dashQualities = emptyList()
+            chosenDashIndex = null
+        }
+        qualityMessage = ""
+    }
+    if (showTrackQualityDialog) {
+        AlertDialog(
+            onDismissRequest = { showTrackQualityDialog = false },
+            title = { Text("Выбрать качество скачивания") },
+            text = {
+                Column(
+                    modifier = Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("MusicFlow предлагает только доступные исходные потоки. " +
+                        "Если сервер не сообщил битрейт, его качество неизвестно; " +
+                        "приложение не создаёт искусственные 320 кбит/с.",
+                        style = MaterialTheme.typography.bodySmall)
+                    trackDownloadChoices.forEach { choice ->
+                        OutlinedButton(
+                            onClick = {
+                                showTrackQualityDialog = false
+                                if (choice.isAdaptive) {
+                                    directDownloadUrl = choice.url
+                                    directDownloadIsMovie = false
+                                    showDirectDownloadDialog = true
+                                } else {
+                                    MediaDownloads.showResult(context, MediaDownloads.enqueue(
+                                        context, choice.url, trackDownloadTitle,
+                                        DownloadMediaKind.MUSIC
+                                    ))
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(choice.label) }
+                    }
+                    if (trackDownloadChoices.any { it.isAdaptive }) {
+                        Text("Для HLS после выбора откроется проверка плейлиста " +
+                            "с доступными вариантами битрейта.",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showTrackQualityDialog = false }) { Text("Закрыть") }
+            }
+        )
+    }
+    if (showDirectDownloadDialog) {
+        AlertDialog(
+            onDismissRequest = { showDirectDownloadDialog = false },
+            title = { Text("Скачать медиафайл · TEST") },
+            text = {
+                Column(
+                    modifier = Modifier.heightIn(max = 480.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("Обычные MP4/MP3 сохраняются в папке Загрузки. " +
+                        "HLS/DASH загружаются для офлайн-просмотра в Media3. " +
+                        "DRM и ограничения источников не обходятся.")
+                    OutlinedButton(onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
+                            as android.content.ClipboardManager
+                        val raw = clipboard.primaryClip?.getItemAt(0)
+                            ?.coerceToText(context)?.toString().orEmpty()
+                        val pasted = ClipboardDownloadUrl.extract(raw)
+                        if (pasted != null) {
+                            directDownloadUrl = pasted
+                        } else {
+                            android.widget.Toast.makeText(context,
+                                "В буфере нет HTTPS-ссылки на файл",
+                                android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }) { Text("Вставить из буфера") }
+                    OutlinedTextField(
+                        value = directDownloadUrl,
+                        onValueChange = { directDownloadUrl = it },
+                        label = { Text("Ссылка на MP4, MP3, HLS или DASH") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    val adaptive = OfflineDownloadRoute.classify(directDownloadUrl)
+                    if (adaptive == OfflineTransfer.ADAPTIVE_HLS ||
+                        adaptive == OfflineTransfer.ADAPTIVE_DASH) {
+                        OutlinedButton(
+                            onClick = {
+                                qualityChecking = true
+                                qualityMessage = ""
+                                val targetUrl = directDownloadUrl.trim()
+                                val targetMode = adaptive
+                                scope.launch {
+                                    try {
+                                        val headerMap = DownloadHttpHeaders.validated(
+                                            downloadReferer, downloadUserAgent
+                                        )
+                                        if (targetMode == OfflineTransfer.ADAPTIVE_HLS) {
+                                            val found = kotlinx.coroutines.withContext(
+                                                kotlinx.coroutines.Dispatchers.IO
+                                            ) {
+                                                HlsQualityInspector.inspect(targetUrl, headerMap)
+                                            }
+                                            if (targetUrl == directDownloadUrl.trim()) {
+                                                hlsQualities = found
+                                                inspectedHlsUrl = targetUrl
+                                                chosenHlsIndex = null
+                                                qualityMessage = if (found.isEmpty())
+                                                    "HLS без вариантов качества: загружается исходный поток."
+                                                else "Выберите разрешение видео или оставьте «Авто»."
+                                            }
+                                        } else {
+                                            val found = kotlinx.coroutines.withContext(
+                                                kotlinx.coroutines.Dispatchers.IO
+                                            ) { DashVideoQualityInspector.inspect(targetUrl) }
+                                            if (targetUrl == directDownloadUrl.trim()) {
+                                                dashQualities = found
+                                                inspectedDashUrl = targetUrl
+                                                chosenDashIndex = null
+                                                qualityMessage = if (found.isEmpty())
+                                                    "DASH не содержит выбираемых вариантов видео."
+                                                else "Выберите качество DASH или оставьте «Авто»."
+                                            }
+                                        }
+                                    } catch (error: Exception) {
+                                        qualityMessage = "Не удалось проверить качество: " +
+                                            (error.message ?: "неизвестная ошибка")
+                                    } finally {
+                                        qualityChecking = false
+                                    }
+                                }
+                            },
+                            enabled = !qualityChecking,
+                        ) {
+                            Text(if (qualityChecking) "Проверяем…" else
+                                if (adaptive == OfflineTransfer.ADAPTIVE_HLS)
+                                    "Выбрать качество HLS" else "Выбрать качество DASH")
+                        }
+                        if (qualityMessage.isNotBlank()) {
+                            Text(qualityMessage, style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (adaptive == OfflineTransfer.ADAPTIVE_HLS &&
+                            hlsQualities.isNotEmpty() &&
+                            inspectedHlsUrl == directDownloadUrl.trim()) {
+                            Text("Качество видео HLS", style = MaterialTheme.typography.titleSmall)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                FilterChip(
+                                    selected = chosenHlsIndex == null,
+                                    onClick = { chosenHlsIndex = null },
+                                    label = { Text("Авто") }
+                                )
+                                hlsQualities.forEach { variant ->
+                                    FilterChip(
+                                        selected = chosenHlsIndex == variant.index,
+                                        onClick = { chosenHlsIndex = variant.index },
+                                        enabled = !variant.externalAudio,
+                                        label = { Text(variant.label) }
+                                    )
+                                }
+                            }
+                            if (hlsQualities.any { it.externalAudio }) {
+                                Text("Варианты с отдельным аудио доступны в «Авто», " +
+                                    "чтобы не потерять звуковую дорожку.",
+                                    style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        if (adaptive == OfflineTransfer.ADAPTIVE_DASH &&
+                            dashQualities.isNotEmpty() &&
+                            inspectedDashUrl == directDownloadUrl.trim()) {
+                            Text("Качество видео DASH", style = MaterialTheme.typography.titleSmall)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                FilterChip(
+                                    selected = chosenDashIndex == null,
+                                    onClick = { chosenDashIndex = null },
+                                    label = { Text("Авто") }
+                                )
+                                dashQualities.forEachIndexed { index, variant ->
+                                    FilterChip(
+                                        selected = chosenDashIndex == index,
+                                        onClick = { chosenDashIndex = index },
+                                        label = { Text(variant.label) }
+                                    )
+                                }
+                            }
+                            Text("При выборе DASH сохраняется и подходящая аудиодорожка. " +
+                                "Оригинальный поток остаётся в офлайн-кеше.",
+                                style = MaterialTheme.typography.bodySmall)
+                        }
+                    } else if (adaptive == OfflineTransfer.DIRECT_FILE &&
+                        directDownloadIsMovie) {
+                        Text("Прямой MP4 имеет одно исходное качество. " +
+                            "Для выбора 360p/720p/1080p источник должен предоставить " +
+                            "несколько файлов или HLS/DASH.",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    TextButton(onClick = { headerEditorOpen = !headerEditorOpen }) {
+                        Text(if (headerEditorOpen) "Скрыть заголовки" else "Дополнительные HTTP-заголовки")
+                    }
+                    if (headerEditorOpen) {
+                        OutlinedTextField(value = downloadReferer,
+                            onValueChange = { downloadReferer = it },
+                            label = { Text("Referer (HTTPS)") },
+                            singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = downloadUserAgent,
+                            onValueChange = { downloadUserAgent = it },
+                            label = { Text("User-Agent") },
+                            singleLine = true, modifier = Modifier.fillMaxWidth())
+                        Text("Заголовки применяются при скачивании MP3/MP4 и при проверке HLS-плейлиста. " +
+                            "Media3 пока не передаёт их сегментам HLS/DASH. Пароли и токены не вводите.",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = !directDownloadIsMovie,
+                            onClick = { directDownloadIsMovie = false },
+                            label = { Text("Музыка") })
+                        FilterChip(selected = directDownloadIsMovie,
+                            onClick = { directDownloadIsMovie = true },
+                            label = { Text("Фильм") })
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val kind = if (directDownloadIsMovie)
+                        DownloadMediaKind.VIDEO else DownloadMediaKind.MUSIC
+                    val outcome = MediaDownloads.enqueue(
+                        context, directDownloadUrl,
+                        if (directDownloadIsMovie) "Фильм" else "Музыка", kind,
+                        referer = downloadReferer.ifBlank { null },
+                        userAgent = downloadUserAgent.ifBlank { null },
+                        hlsVariantIndex = chosenHlsIndex.takeIf {
+                            inspectedHlsUrl == directDownloadUrl.trim()
+                        },
+                        dashStreamKeys = chosenDashIndex?.let { index ->
+                            if (inspectedDashUrl == directDownloadUrl.trim())
+                                dashQualities.getOrNull(index)?.streamKeys else null
+                        }
+                    )
+                    MediaDownloads.showResult(context, outcome)
+                    if (outcome is DownloadPlanResult.Accepted) {
+                        showDirectDownloadDialog = false
+                        directDownloadUrl = ""
+                        chosenHlsIndex = null
+                        hlsQualities = emptyList()
+                        chosenDashIndex = null
+                        dashQualities = emptyList()
+                    }
+                }) { Text("Скачать") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDirectDownloadDialog = false }) {
+                    Text("Отмена")
+                }
+            }
+        )
+    }
     if (expandedPlayer && player != null && trackTitle.isNotBlank() && !currentMediaId.startsWith("ruvideo:")) {
         FullPlayerDialog(
             player = player,
@@ -1138,6 +1549,7 @@ private fun MusicScreen(
             favorite = if (currentMediaId.startsWith("radio:"))
                 isCurrentRadioFavorite() else favorites.any { it.id == currentMediaId },
             onFavorite = { toggleCurrentFavorite() },
+            onDownload = { downloadCurrentSong() },
             onStop = { stopMusic() },
             availableTracks = combineMusicTracks(queueCatalog, tracks + favorites.toList()),
             onPlayAlbumTrack = { track ->

@@ -23,6 +23,7 @@ import org.json.JSONObject
 import org.jsoup.Jsoup
 import java.io.IOException
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URL
 import java.text.NumberFormat
 import java.time.LocalDate
@@ -43,6 +44,25 @@ internal data class TopSong(
     val listenCount: Long,
     val artwork: String? = null
 )
+
+/** Keep Russian provider artwork; world chart data has no picture, so prefer
+ * a verified cover resolved from the existing artwork services. Never load
+ * non-HTTPS content into Coil. */
+internal object ChartArtworkPolicy {
+    private fun httpsImage(value: String?): String? {
+        val raw = value?.trim()?.takeIf(String::isNotEmpty) ?: return null
+        val parsed = runCatching { URI(raw) }.getOrNull() ?: return null
+        if (!parsed.scheme.equals("https", ignoreCase = true) ||
+            parsed.host.isNullOrBlank() || parsed.rawUserInfo != null) return null
+        return raw
+    }
+
+    fun displayUrl(isRussia: Boolean, provided: String?, lookup: String?): String? {
+        val original = httpsImage(provided)
+        if (isRussia) return original
+        return httpsImage(lookup) ?: original
+    }
+}
 
 /** Russia: sum of daily listeners for charted days, not monthly unique users or plays.
  * Archive observations begin Oct 2026; "year" is therefore a partial YTD snapshot.
@@ -91,6 +111,21 @@ internal object TopSongsDirectory {
             TopSongsRegion.WORLD -> fetchWorld(period)
         }
 
+    /** ListenBrainz stats do not guarantee artwork fields, unlike the Russian HTML. */
+    internal fun parseWorld(body: String): List<TopSong> {
+        val recordings = JSONObject(body).optJSONObject("payload")
+            ?.optJSONArray("recordings")
+            ?: throw IOException("Ответ ListenBrainz не содержит список песен")
+        return (0 until minOf(recordings.length(), 100)).mapNotNull { index ->
+            val item = recordings.optJSONObject(index) ?: return@mapNotNull null
+            val title = item.optString("track_name").trim()
+            val artist = item.optString("artist_name").trim()
+            val count = item.optLong("listen_count", 0L)
+            if (title.isBlank() || artist.isBlank()) return@mapNotNull null
+            TopSong(title.take(240), artist.take(200), count.coerceAtLeast(0L))
+        }
+    }
+
     private suspend fun fetchWorld(period: TopSongsPeriod): List<TopSong> =
         withContext(Dispatchers.IO) {
             val endpoint = WORLD_API + "?range=" + period.apiRange + "&count=100"
@@ -105,17 +140,7 @@ internal object TopSongsDirectory {
                     throw IOException("ListenBrainz HTTP " + connection.responseCode)
                 }
                 val body = connection.inputStream.bufferedReader().use { it.readText() }
-                val recordings = JSONObject(body).optJSONObject("payload")
-                    ?.optJSONArray("recordings")
-                    ?: throw IOException("Ответ ListenBrainz не содержит список песен")
-                (0 until recordings.length()).mapNotNull { index ->
-                    val item = recordings.optJSONObject(index) ?: return@mapNotNull null
-                    val title = item.optString("track_name").trim()
-                    val artist = item.optString("artist_name").trim()
-                    val count = item.optLong("listen_count", 0L)
-                    if (title.isBlank() || artist.isBlank()) return@mapNotNull null
-                    TopSong(title.take(240), artist.take(200), count.coerceAtLeast(0L))
-                }
+                parseWorld(body)
             } finally {
                 connection.disconnect()
             }
@@ -133,6 +158,13 @@ internal fun TopSongHomeRow(
 ) {
     val palette = LocalMusicFlowPalette.current
     val numberFormat = NumberFormat.getIntegerInstance(Locale.forLanguageTag("ru-RU"))
+    // Only WORLD rows require metadata lookup. LazyColumn composes visible rows
+    // and CoverLookup already bounds requests, caches results and validates images.
+    val lookedUpCover = if (isRussia) null else
+        rememberCoverArt(song.artist, song.title, song.artwork).value
+    val visibleCover = ChartArtworkPolicy.displayUrl(
+        isRussia = isRussia, provided = song.artwork, lookup = lookedUpCover
+    )
     Surface(
         color = palette.surface, shape = RoundedCornerShape(13.dp),
         modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
@@ -144,8 +176,9 @@ internal fun TopSongHomeRow(
         ) {
             Text((index + 1).toString(), modifier = Modifier.width(30.dp),
                 color = palette.accent, fontWeight = FontWeight.Bold)
-            if (!song.artwork.isNullOrBlank()) {
-                Image(rememberAsyncImagePainter(song.artwork), contentDescription = null,
+            if (!visibleCover.isNullOrBlank()) {
+                Image(rememberAsyncImagePainter(visibleCover), contentDescription = "Обложка: " +
+                    song.artist + " — " + song.title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.size(46.dp).clip(RoundedCornerShape(9.dp)))
             } else {

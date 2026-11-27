@@ -30,6 +30,9 @@ import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -64,7 +67,7 @@ private val PlayerBackground = Color(0xFF10131E)
 private val PlayerPanel = Color(0xFF1D2333)
 private val PlayerAccent = Color(0xFFB99CFF)
 
-private enum class PlayerPage { NOW_PLAYING, QUEUE, ALBUM, LYRICS }
+private enum class PlayerPage { NOW_PLAYING, QUEUE, ALBUM, LYRICS, DOWNLOADS }
 
 @Composable
 internal fun FullPlayerDialog(
@@ -78,6 +81,7 @@ internal fun FullPlayerDialog(
     durationMs: Long,
     favorite: Boolean,
     onFavorite: () -> Unit,
+    onDownload: () -> Unit,
     onStop: () -> Unit,
     availableTracks: List<Track>,
     onPlayAlbumTrack: (Track) -> Unit,
@@ -102,6 +106,7 @@ internal fun FullPlayerDialog(
     val albumHint = player.currentMediaItem?.mediaMetadata?.albumTitle?.toString()
     val scope = rememberCoroutineScope()
     var page by remember { mutableStateOf(PlayerPage.NOW_PLAYING) }
+    var playerActionsMenu by remember { mutableStateOf(false) }
     var immersive by remember { mutableStateOf(false) }
     var albumInfo by remember { mutableStateOf<AlbumListing?>(null) }
     var albumLoading by remember { mutableStateOf(false) }
@@ -353,6 +358,7 @@ internal fun FullPlayerDialog(
                                 PlayerPage.QUEUE -> "Очередь"
                                 PlayerPage.ALBUM -> "Треки альбома"
                                 PlayerPage.LYRICS -> "Текст песни"
+                                PlayerPage.DOWNLOADS -> "Загрузки"
                             },
                             modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.titleMedium,
@@ -364,38 +370,52 @@ internal fun FullPlayerDialog(
                             tint = palette.accent
                         )
                         if (!isRadio) {
-                        IconButton(modifier = Modifier.size(38.dp),
-                            onClick = { page = if (page == PlayerPage.ALBUM)
-                                PlayerPage.NOW_PLAYING else PlayerPage.ALBUM }) {
-                            Icon(Icons.Filled.Album, "Альбом", tint = palette.accent)
-                        }
-                        IconButton(modifier = Modifier.size(38.dp),
-                            onClick = { page = if (page == PlayerPage.QUEUE)
-                                PlayerPage.NOW_PLAYING else PlayerPage.QUEUE }) {
-                            Icon(Icons.Filled.QueueMusic, "Очередь", tint = palette.accent)
-                        }
-                        if (!isRadio) {
-                            IconButton(modifier = Modifier.size(38.dp),
-                                onClick = { page = if (page == PlayerPage.LYRICS)
-                                    PlayerPage.NOW_PLAYING else PlayerPage.LYRICS }) {
-                                Icon(Icons.Filled.Subtitles, "Текст песни",
-                                    tint = palette.accent)
+                            IconButton(modifier = Modifier.size(38.dp), onClick = onDownload) {
+                                Icon(Icons.Filled.Download, "Скачать песню", tint = palette.accent)
                             }
-                        }
-                        IconButton(modifier = Modifier.size(38.dp),
-                            onClick = { immersive = !immersive }) {
-                            Icon(
-                                if (immersive) Icons.Filled.FullscreenExit
-                                else Icons.Filled.Fullscreen,
-                                if (immersive) "Выйти из полноэкранного режима"
-                                else "Развернуть на весь экран",
-                                tint = palette.foreground
-                            )
-                        }
-                        IconButton(modifier = Modifier.size(38.dp),
-                            onClick = onStop) {
-                            Icon(Icons.Filled.Close, "Выключить музыку", tint = palette.foreground)
-                        }
+                            // Next to the download arrow: open the actual library
+                            // as another page of this player, preserving the music footer.
+                            IconButton(modifier = Modifier.size(38.dp), onClick = {
+                                page = if (page == PlayerPage.DOWNLOADS)
+                                    PlayerPage.NOW_PLAYING else PlayerPage.DOWNLOADS
+                            }) {
+                                Icon(Icons.Filled.FolderOpen, "Мои загрузки", tint = palette.accent)
+                            }
+                            Box {
+                                IconButton(modifier = Modifier.size(38.dp),
+                                    onClick = { playerActionsMenu = true }) {
+                                    Icon(Icons.Filled.MoreVert, "Другие функции плеера",
+                                        tint = palette.foreground)
+                                }
+                                DropdownMenu(
+                                    expanded = playerActionsMenu,
+                                    onDismissRequest = { playerActionsMenu = false }
+                                ) {
+                                    DropdownMenuItem(text = { Text("Альбом") }, onClick = {
+                                        playerActionsMenu = false
+                                        page = PlayerPage.ALBUM
+                                    })
+                                    DropdownMenuItem(text = { Text("Очередь") }, onClick = {
+                                        playerActionsMenu = false
+                                        page = PlayerPage.QUEUE
+                                    })
+                                    DropdownMenuItem(text = { Text("Текст песни") }, onClick = {
+                                        playerActionsMenu = false
+                                        page = PlayerPage.LYRICS
+                                    })
+                                    DropdownMenuItem(
+                                        text = { Text(if (immersive) "Обычный экран"
+                                            else "Полный экран") },
+                                        onClick = {
+                                            playerActionsMenu = false
+                                            immersive = !immersive
+                                        }
+                                    )
+                                }
+                            }
+                            IconButton(modifier = Modifier.size(38.dp), onClick = onStop) {
+                                Icon(Icons.Filled.Close, "Выключить музыку", tint = palette.foreground)
+                            }
                         } else {
                             IconButton(modifier = Modifier.size(42.dp), onClick = onStop) {
                                 Icon(Icons.Filled.Close, "Закрыть радио-плеер",
@@ -407,6 +427,13 @@ internal fun FullPlayerDialog(
                         Text(it, color = palette.muted, style = MaterialTheme.typography.labelSmall)
                     }
                     when (page) {
+                        PlayerPage.DOWNLOADS -> {
+                            MusicDownloadsScreen(
+                                onAddLink = onDownload,
+                                onBeforePlayback = { player.pause() },
+                                modifier = Modifier.fillMaxWidth().weight(1f)
+                            )
+                        }
                         PlayerPage.LYRICS -> {
                             SyncedLyricsScreen(
                                 artist = artist,
