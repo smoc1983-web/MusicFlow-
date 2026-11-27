@@ -137,6 +137,29 @@ internal fun CinemaNativeInlinePlayer(
             }
     }
 
+    // PlayerView lives inside the Activity in inline mode and inside a separate
+    // Dialog Window in fullscreen. The view's keepScreenOn flag follows actual
+    // playback (including buffering), so Android may sleep on pause or closure.
+    var keepVideoScreenAwake by remember(player) {
+        mutableStateOf(CinemaScreenAwakePolicy.shouldKeepScreenOn(
+            player.playWhenReady, player.playbackState, player.playerError != null
+        ))
+    }
+    DisposableEffect(player) {
+        val wakeListener = object : Player.Listener {
+            override fun onEvents(player: Player, events: Player.Events) {
+                keepVideoScreenAwake = CinemaScreenAwakePolicy.shouldKeepScreenOn(
+                    player.playWhenReady, player.playbackState, player.playerError != null
+                )
+            }
+        }
+        player.addListener(wakeListener)
+        onDispose {
+            player.removeListener(wakeListener)
+            keepVideoScreenAwake = false
+        }
+    }
+
     DisposableEffect(player, sourceKey) {
         val preferences = context.getSharedPreferences(AudioEqSettings.PREFS,
             Context.MODE_PRIVATE)
@@ -364,7 +387,8 @@ internal fun CinemaNativeInlinePlayer(
                 AudioPicker()
                 PlayerEqualizerButton(tint = Color(0xFFBCA2FF))
             }
-            CinemaPlayerView(player, Modifier.fillMaxWidth().height(218.dp)) {
+            CinemaPlayerView(player, keepVideoScreenAwake,
+                Modifier.fillMaxWidth().height(218.dp)) {
                 controllerVisible = it
             }
             errorText?.let { message ->
@@ -410,7 +434,7 @@ internal fun CinemaNativeInlinePlayer(
                 }
             }
             Box(Modifier.fillMaxSize().background(Color.Black)) {
-                CinemaPlayerView(player, Modifier.fillMaxSize()) {
+                CinemaPlayerView(player, keepVideoScreenAwake, Modifier.fillMaxSize()) {
                     controllerVisible = it
                 }
                 if (controllerVisible || qualityOpen || audioOpen || seriesOpen) {
@@ -648,6 +672,7 @@ private fun CinemaPlayerSeasonsDialog(
 @Composable
 private fun CinemaPlayerView(
     player: ExoPlayer,
+    keepScreenOn: Boolean,
     modifier: Modifier,
     onControlsVisible: (Boolean) -> Unit
 ) {
@@ -656,6 +681,7 @@ private fun CinemaPlayerView(
         factory = { ctx ->
             PlayerView(ctx).apply {
                 this.player = player
+                this.keepScreenOn = keepScreenOn
                 useController = true
                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                 setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
@@ -666,8 +692,14 @@ private fun CinemaPlayerView(
                 )
             }
         },
-        update = { view -> view.player = player },
-        onRelease = { view -> view.player = null },
+        update = { view ->
+            view.player = player
+            view.keepScreenOn = keepScreenOn
+        },
+        onRelease = { view ->
+            view.keepScreenOn = false
+            view.player = null
+        },
         modifier = modifier.background(Color.Black)
     )
 }
