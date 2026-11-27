@@ -77,7 +77,7 @@ private sealed interface LibraryFile {
         override val actions: Set<DownloadUiAction> get() =
             DownloadActionPolicy.forMedia3(state)
         override val isMusic: Boolean get() =
-            String(value.request.data, Charsets.UTF_8).startsWith("MUSIC\\n")
+            String(value.request.data, Charsets.UTF_8).startsWith("MUSIC\n")
         override val subtitle: String get() {
             val format = if (value.request.uri.toString().contains(".mpd", true))
                 "DASH" else "HLS"
