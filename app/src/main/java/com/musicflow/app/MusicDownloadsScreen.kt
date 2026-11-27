@@ -43,6 +43,8 @@ import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import java.util.Locale
 
 /** Offline HLS/DASH cache entries and regular files in public Android Downloads. */
 @OptIn(UnstableApi::class)
@@ -173,6 +175,31 @@ private fun loadDirectFiles(context: Context): List<LibraryFile.Direct> {
     return result.sortedByDescending { it.id }
 }
 
+private data class CleanupPrompt(
+    val title: String,
+    val estimate: CleanupEstimate,
+    val hasActive: Boolean
+)
+
+private fun humanBytes(bytes: Long): String {
+    if (bytes < 1024L) return "$bytes Б"
+    val unit = if (bytes >= 1_073_741_824L) 1_073_741_824.0 else 1_048_576.0
+    val label = if (unit == 1_073_741_824.0) "ГБ" else "МБ"
+    return String.format(Locale.getDefault(), "%.1f %s", bytes / unit, label)
+}
+
+private fun LibraryFile.cleanupCandidate(): CleanupCandidate = when (this) {
+    is LibraryFile.Cached -> CleanupCandidate(
+        key, true, state != DownloadUiState.REMOVING,
+        value.bytesDownloaded.takeIf { it >= 0L }
+    )
+    is LibraryFile.Direct -> CleanupCandidate(
+        key, false, true,
+        (if (ready && totalBytes > 0L) totalBytes else downloadedBytes)
+            .takeIf { it > 0L }
+    )
+}
+
 @OptIn(UnstableApi::class)
 @Composable
 internal fun MusicDownloadsScreen(
@@ -185,8 +212,39 @@ internal fun MusicDownloadsScreen(
     var selected by remember { mutableStateOf<LibraryFile?>(null) }
     var refresh by remember { mutableIntStateOf(0) }
     var loadError by remember { mutableStateOf<String?>(null) }
-    var pendingRemoval by remember { mutableStateOf<LibraryFile?>(null) }
+    var pendingRemoval by remember { mutableStateOf<CleanupPrompt?>(null) }
     var selectedFilter by remember { mutableStateOf("Все") }
+    var selectionMode by remember { mutableStateOf(false) }
+    var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var removing by remember { mutableStateOf(false) }
+    val cleanupScope = rememberCoroutineScope()
+    val candidates = files.map { it.cleanupCandidate() }
+    val shownFiles = files.filter { file ->
+        selectedFilter == "Все" || (selectedFilter == "Музыка") == file.isMusic
+    }
+    val validKeys = candidates.filter { it.removable }.map { it.key }.toSet()
+    val visibleKeys = shownFiles.map { it.key }.toSet().intersect(validKeys)
+    val markedKeys = selectedKeys.intersect(validKeys)
+
+    fun requestCleanup(scope: CleanupScope, keys: Set<String> = emptySet(), single: LibraryFile? = null) {
+        if (removing) return
+        val estimate = DownloadCleanupPolicy.plan(candidates, scope, keys)
+        if (estimate.count == 0) return
+        val title = when {
+            single != null -> if (single.ready) "Удалить файл?" else "Отменить загрузку?"
+            scope == CleanupScope.SELECTED -> "Удалить выбранные загрузки?"
+            scope == CleanupScope.ALL -> "Удалить все загрузки?"
+            else -> "Очистить кеш HLS/DASH?"
+        }
+        pendingRemoval = CleanupPrompt(
+            title, estimate,
+            files.any { it.key in estimate.keys && !it.ready }
+        )
+    }
+
+    LaunchedEffect(validKeys) {
+        selectedKeys = selectedKeys.intersect(validKeys)
+    }
 
     fun runAction(file: LibraryFile, action: DownloadUiAction) {
         try {
@@ -216,7 +274,8 @@ internal fun MusicDownloadsScreen(
                     }
                 }
                 DownloadUiAction.OPEN_SYSTEM -> MediaDownloads.openDownloads(context)
-                DownloadUiAction.CANCEL, DownloadUiAction.DELETE -> pendingRemoval = file
+                DownloadUiAction.CANCEL, DownloadUiAction.DELETE ->
+                    requestCleanup(CleanupScope.SELECTED, setOf(file.key), file)
             }
             refresh++
         } catch (error: Exception) {
@@ -273,10 +332,45 @@ internal fun MusicDownloadsScreen(
                 )
             }
         }
-        if (loadError != null) Text(loadError!!, color = MaterialTheme.colorScheme.error)
-        val shownFiles = files.filter { file ->
-            selectedFilter == "Все" || (selectedFilter == "Музыка") == file.isMusic
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (selectionMode) {
+                OutlinedButton(onClick = { selectionMode = false; selectedKeys = emptySet() }) {
+                    Text("Готово")
+                }
+                OutlinedButton(onClick = { selectedKeys = selectedKeys + visibleKeys },
+                    enabled = visibleKeys.isNotEmpty() && !removing) {
+                    Text("Выбрать показанные")
+                }
+                OutlinedButton(onClick = { selectedKeys = selectedKeys - visibleKeys },
+                    enabled = markedKeys.isNotEmpty() && !removing) {
+                    Text("Снять выбор")
+                }
+            } else {
+                OutlinedButton(onClick = { selectionMode = true }, enabled = !removing) {
+                    Text("Выбрать файлы")
+                }
+            }
         }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { requestCleanup(CleanupScope.SELECTED, markedKeys) },
+                enabled = markedKeys.isNotEmpty() && !removing) {
+                Text("Удалить выбранные (${markedKeys.size})")
+            }
+            OutlinedButton(onClick = { requestCleanup(CleanupScope.ALL) },
+                enabled = validKeys.isNotEmpty() && !removing) {
+                Text("Удалить всё")
+            }
+            OutlinedButton(onClick = { requestCleanup(CleanupScope.STREAM_CACHE) },
+                enabled = candidates.any { it.stream && it.removable } && !removing) {
+                Text("Очистить HLS/DASH")
+            }
+        }
+        if (selectionMode) Text("Отмечено: ${markedKeys.size}. «Выбрать показанные» относится к текущему фильтру.",
+            style = MaterialTheme.typography.bodySmall)
+        if (removing) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        if (loadError != null) Text(loadError!!, color = MaterialTheme.colorScheme.error)
         if (shownFiles.isEmpty()) {
             Text("Здесь пока нет загруженных файлов.",
                 modifier = Modifier.padding(vertical = 24.dp))
@@ -288,7 +382,20 @@ internal fun MusicDownloadsScreen(
                     Card(shape = RoundedCornerShape(16.dp)) {
                         Column(Modifier.fillMaxWidth().padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                            Text(file.title, style = MaterialTheme.typography.titleMedium)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (selectionMode && file.key in validKeys) {
+                                    Checkbox(
+                                        checked = file.key in markedKeys,
+                                        onCheckedChange = { checked ->
+                                            selectedKeys = if (checked) selectedKeys + file.key
+                                                else selectedKeys - file.key
+                                        },
+                                        enabled = !removing
+                                    )
+                                }
+                                Text(file.title, style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.weight(1f))
+                            }
                             Text(file.subtitle, style = MaterialTheme.typography.bodySmall)
                             if (file.state in listOf(DownloadUiState.DOWNLOADING,
                                     DownloadUiState.STOPPED, DownloadUiState.PAUSED_SYSTEM,
@@ -314,6 +421,7 @@ internal fun MusicDownloadsScreen(
                                         DownloadUiAction.DELETE -> "Удалить"
                                     }
                                     TextButton(onClick = { runAction(file, action) },
+                                        enabled = !removing,
                                         contentPadding = PaddingValues(horizontal = 8.dp)) {
                                         when (action) {
                                             DownloadUiAction.PAUSE ->
@@ -346,33 +454,71 @@ internal fun MusicDownloadsScreen(
             }
         }
     }
-    pendingRemoval?.let { file ->
+    pendingRemoval?.let { prompt ->
         AlertDialog(
-            onDismissRequest = { pendingRemoval = null },
-            title = { Text(if (file.ready) "Удалить файл?" else "Отменить загрузку?") },
+            onDismissRequest = { if (!removing) pendingRemoval = null },
+            title = { Text(prompt.title) },
             text = {
-                Text(if (file.ready) "Файл и данные загрузки будут удалены."
-                    else "Частично скачанные данные будут удалены. Отменённую загрузку нельзя продолжить с прежнего места.")
+                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Text("Затронуто загрузок: ${prompt.estimate.count} (HLS/DASH: ${prompt.estimate.streamCount}).")
+                    Text("Оценка освобождаемого места: ${humanBytes(prompt.estimate.knownBytes)}" +
+                        if (prompt.estimate.unknownSizeCount > 0)
+                            " + ${prompt.estimate.unknownSizeCount} с неизвестным размером"
+                        else "")
+                    Text("Это приблизительная оценка: сегменты потоков могут использоваться совместно.")
+                    if (prompt.hasActive) {
+                        Text("Незавершённые загрузки будут отменены; их нельзя будет продолжить с прежнего места.")
+                    }
+                    Text("Удаляются только загрузки MusicFlow. Операция необратима.")
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    try {
-                        when (file) {
-                            is LibraryFile.Cached ->
-                                OfflineDownloads.remove(context, file.value.request.id)
-                            is LibraryFile.Direct -> MediaDownloads.cancel(context, file.id)
+                    val toDelete = files.filter { it.key in prompt.estimate.keys &&
+                        it.key in validKeys }.distinctBy { it.key }
+                    pendingRemoval = null
+                    if (toDelete.isNotEmpty()) cleanupScope.launch {
+                        removing = true
+                        if (selected?.key in prompt.estimate.keys) selected = null
+                        var directDeleted = 0
+                        var streamRequested = 0
+                        var failures = 0
+                        try {
+                            for (file in toDelete) {
+                                try {
+                                    when (file) {
+                                        is LibraryFile.Cached -> {
+                                            OfflineDownloads.remove(context, file.value.request.id)
+                                            streamRequested++
+                                        }
+                                        is LibraryFile.Direct -> {
+                                            if (withContext(Dispatchers.IO) {
+                                                MediaDownloads.cancel(context, file.id)
+                                            }) directDeleted++ else failures++
+                                        }
+                                    }
+                                } catch (error: Exception) {
+                                    failures++
+                                    AppDiagnostics.failure("Downloads", "bulk cleanup " + file.key, error)
+                                }
+                            }
+                            val message = "Удалено обычных файлов: $directDeleted; " +
+                                "передано Media3: $streamRequested" +
+                                if (failures > 0) "; ошибок: $failures" else ""
+                            android.widget.Toast.makeText(context, message,
+                                android.widget.Toast.LENGTH_LONG).show()
+                        } finally {
+                            selectedKeys = selectedKeys - prompt.estimate.keys
+                            refresh++
+                            removing = false
                         }
-                        if (selected?.key == file.key) selected = null
-                        refresh++
-                    } catch (error: Exception) {
-                        AppDiagnostics.failure("Downloads", "cancel/remove", error)
-                    } finally {
-                        pendingRemoval = null
                     }
-                }) { Text(if (file.ready) "Удалить" else "Отменить загрузку") }
+                }, enabled = !removing) { Text("Удалить") }
             },
             dismissButton = {
-                TextButton(onClick = { pendingRemoval = null }) { Text("Назад") }
+                TextButton(onClick = { pendingRemoval = null }, enabled = !removing) {
+                    Text("Назад")
+                }
             }
         )
     }

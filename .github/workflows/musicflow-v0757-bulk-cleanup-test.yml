@@ -1,0 +1,90 @@
+name: MusicFlow 0.7.57 TEST bulk cleanup and cache controls
+on:
+  push:
+    branches: ["feature/musicflow-download-actions-player-v0757"]
+    paths:
+      - "app/**"
+      - ".github/workflows/musicflow-v0757-download-actions-test.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Static player and downloads action check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          app=Path("app/src/main/java/com/musicflow/app")
+          full=(app/"FullPlayerDialog.kt").read_text()
+          video=(app/"CinemaNativeInlinePlayer.kt").read_text()
+          lib=(app/"MusicDownloadsScreen.kt").read_text()
+          media=(app/"OfflineDownloads.kt").read_text()
+          direct=(app/"MediaDownloads.kt").read_text()
+          gradle=Path("app/build.gradle.kts").read_text()
+          assert 'applicationIdSuffix = ".dev"' in gradle
+          assert 'versionCode = 757' in gradle and 'versionName = "0.7.57"' in gradle
+          assert "PlayerPage.DOWNLOADS" in full and "MusicDownloadsScreen(" in full
+          assert 'Icon(Icons.Filled.FolderOpen, "Мои загрузки"' in full
+          assert video.count("showDownloadsLibrary = true") == 2
+          assert "MusicDownloadsScreen(" in video
+          assert "DownloadUiAction.RESUME" in lib and "DownloadUiAction.CANCEL" in lib
+          assert "pendingRemoval?.let" in lib
+          assert "DownloadCleanupPolicy.plan" in lib and "Checkbox(" in lib
+          assert "Очистить HLS/DASH" in lib and "Удалить выбранные" in lib
+          assert "MediaDownloads.isOwnFile" in lib
+          assert "FlowRow(" in lib
+          assert "DownloadService.sendSetStopReason" in media
+          assert "DownloadManager" in direct and "fun cancel(context: Context" in direct
+          print("PASS: Media3 true resume/cancel, direct cancel/retry, player library shortcuts")
+          PY
+      - name: Kotlin JUnit + TEST APK build (ub-mode)
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Verify new JUnit, test package and APK signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+          folder=Path("app/build/test-results/testDebugUnitTest")
+          expected={"DownloadCleanupPolicyTest":7, "DownloadActionPolicyTest":6, "OfflineDownloadRouteTest":5,
+                    "ClipboardDownloadUrlTest":4, "MusicFlowTestUpdateChannelTest":5}
+          for suite, count in expected.items():
+            results=list(folder.glob("TEST-*"+suite+".xml"))
+            assert results, "Missing JUnit suite "+suite
+            root=ET.parse(results[0]).getroot()
+            assert int(root.attrib.get("tests","0"))>=count, suite+" missing tests"
+            assert int(root.attrib.get("failures","0"))==0, suite+" failed"
+            assert int(root.attrib.get("errors","0"))==0, suite+" errored"
+          print("PASS: Download action policy and existing updates regression")
+          PY
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview.dev' versionCode='757' versionName='0.7.57-dev'"
+          mkdir -p out
+          cp "$APK" out/MusicFlow-0.7.57-TEST-preflight.apk
+          (cd out && sha256sum MusicFlow-0.7.57-TEST-preflight.apk > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.57-TEST-bulk-cleanup-preflight
+          path: out/
+          retention-days: 30
+          if-no-files-found: error
