@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.List
@@ -99,6 +100,7 @@ internal fun CinemaNativeInlinePlayer(
     var fullScreen by remember { mutableStateOf(false) }
     var enteredFullScreen by remember { mutableStateOf(false) }
     var seriesOpen by remember { mutableStateOf(false) }
+    var showDownloadsLibrary by remember { mutableStateOf(false) }
     var controllerVisible by remember { mutableStateOf(true) }
     var qualityOpen by remember { mutableStateOf(false) }
     var selectedQuality by remember(sourceKey, streamUrl) { mutableStateOf("Авто") }
@@ -369,6 +371,9 @@ internal fun CinemaNativeInlinePlayer(
                 IconButton(onClick = ::downloadCurrentMovie) {
                     Icon(Icons.Filled.Download, "Скачать фильм", tint = Color.White)
                 }
+                IconButton(onClick = { showDownloadsLibrary = true }) {
+                    Icon(Icons.Filled.FolderOpen, "Мои загрузки", tint = Color.White)
+                }
                 IconButton(onClick = { fullScreen = true }) {
                     Icon(Icons.Filled.Fullscreen, "На весь экран", tint = Color.White)
                 }
@@ -486,6 +491,9 @@ internal fun CinemaNativeInlinePlayer(
                         IconButton(onClick = ::downloadCurrentMovie) {
                             Icon(Icons.Filled.Download, "Скачать фильм", tint = Color.White)
                         }
+                        IconButton(onClick = { showDownloadsLibrary = true }) {
+                            Icon(Icons.Filled.FolderOpen, "Мои загрузки", tint = Color.White)
+                        }
                         IconButton(onClick = ::collapseVideo) {
                             Icon(Icons.Filled.FullscreenExit, "Мини-плеер",
                                 tint = Color.White)
@@ -495,6 +503,34 @@ internal fun CinemaNativeInlinePlayer(
                                 tint = Color.White)
                         }
                     }
+                }
+            }
+        }
+    }
+
+    if (showDownloadsLibrary) {
+        Dialog(onDismissRequest = { showDownloadsLibrary = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(0.96f).fillMaxHeight(0.88f),
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Column(Modifier.fillMaxSize()) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+                        horizontalArrangement = Arrangement.End) {
+                        IconButton(onClick = { showDownloadsLibrary = false }) {
+                            Icon(Icons.Filled.Close, "Вернуться к фильму")
+                        }
+                    }
+                    MusicDownloadsScreen(
+                        onAddLink = {
+                            showDownloadsLibrary = false
+                            downloadCurrentMovie()
+                        },
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        onBeforePlayback = { player.pause() }
+                    )
                 }
             }
         }
