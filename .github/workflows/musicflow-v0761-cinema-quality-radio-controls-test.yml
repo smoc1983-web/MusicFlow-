@@ -1,0 +1,85 @@
+name: MusicFlow TEST 0.7.60 Cinema download quality and radio controls
+on:
+  push:
+    branches: ["feature/musicflow-cinema-quality-radio-controls-v0761"]
+    paths:
+      - "app/**"
+      - ".github/workflows/musicflow-v0761-cinema-quality-radio-controls-test.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  kotlin-tests-and-test-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: ub-mode Kotlin regression + TEST debug and AndroidTest compilation
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Inspect exact TEST package, signature, video download and radio control wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+          root=Path("app/src/main/java/com/musicflow/app")
+          cinema=(root/"CinemaNativeInlinePlayer.kt").read_text()
+          mini=(root/"MainActivity.kt").read_text()
+          player=(root/"CompactGlassRadioDialog.kt").read_text()
+          cover=(root/"RadioStationArtwork.kt").read_text()
+          radio=(root/"RussianRadio.kt").read_text()
+          policy=(root/"CinemaDownloadQualityPolicy.kt").read_text()
+          gradle=Path("app/build.gradle.kts").read_text()
+          assert 'Качество скачивания видео' in cinema
+          assert 'HlsQualityInspector.inspect(streamUrl)' in cinema
+          assert 'DashVideoQualityInspector.inspect(streamUrl)' in cinema
+          assert 'dashStreamKeys = dashKeys' in cinema
+          assert 'hlsVariantIndex = hlsIndex' in cinema
+          assert 'CinemaDownloadQualityPolicy.hlsIndex' in cinema
+          assert 'preserveShuffle(' in mini
+          assert 'Предыдущая радиостанция' in mini and 'Следующая радиостанция' in mini
+          assert 'Включить случайный порядок' in mini
+          assert 'Предыдущая радиостанция' in player and 'Следующая радиостанция' in player
+          assert 'shuffleModeEnabled' in player
+          assert 'RadioStationArtwork(' in radio and 'RadioStationArtwork(' in mini
+          assert 'error = { placeholder() }' in cover
+          assert 'versionCode = 760' in gradle and 'versionName = "0.7.60"' in gradle
+          for cls, min_count in [
+              ("CinemaDownloadQualityPolicyTest",4),
+              ("RadioQueuePolicyTest",4),
+              ("HlsQualityPolicyTest",4),
+              ("RadioStationArtworkFallbackTest",3),
+              ("WorldChartCoversTest",6),
+          ]:
+              matches=list(Path("app/build/test-results/testDebugUnitTest").glob("TEST-*"+cls+".xml"))
+              assert matches, "Test results missing "+cls
+              result=ET.parse(matches[0]).getroot()
+              assert int(result.get("tests","0"))>=min_count, (cls,result.attrib)
+              assert int(result.get("failures","0"))==0 and int(result.get("errors","0"))==0, (cls,result.attrib)
+          print("PASS: cinema quality, radio shuffle, fallback artwork, world chart regressions")
+          PY
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview.dev' versionCode='760' versionName='0.7.60-dev'"
+          mkdir -p out
+          cp "$APK" out/MusicFlow-0.7.60-TEST-cinema-quality-radio-preflight.apk
+          (cd out && sha256sum MusicFlow-0.7.60-TEST-cinema-quality-radio-preflight.apk > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.60-TEST-cinema-quality-radio-preflight
+          path: out/
+          retention-days: 30
+          if-no-files-found: error
