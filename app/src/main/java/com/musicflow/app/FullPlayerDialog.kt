@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -78,6 +79,7 @@ internal fun FullPlayerDialog(
     durationMs: Long,
     favorite: Boolean,
     onFavorite: () -> Unit,
+    onDownload: () -> Unit,
     onStop: () -> Unit,
     availableTracks: List<Track>,
     onPlayAlbumTrack: (Track) -> Unit,
@@ -364,6 +366,10 @@ internal fun FullPlayerDialog(
                             tint = palette.accent
                         )
                         if (!isRadio) {
+                        IconButton(modifier = Modifier.size(38.dp),
+                            onClick = onDownload) {
+                            Icon(Icons.Filled.Download, "Скачать песню", tint = palette.accent)
+                        }
                         IconButton(modifier = Modifier.size(38.dp),
                             onClick = { page = if (page == PlayerPage.ALBUM)
                                 PlayerPage.NOW_PLAYING else PlayerPage.ALBUM }) {
