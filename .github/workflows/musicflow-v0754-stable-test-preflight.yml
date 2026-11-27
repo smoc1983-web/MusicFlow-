@@ -1,0 +1,83 @@
+name: MusicFlow 0.7.54 TEST updater regression and APK preflight
+on:
+  push:
+    branches: ["fix/musicflow-stable-test-updater-20261127"]
+    paths:
+      - "app/**"
+      - ".github/workflows/musicflow-v0754-stable-test-preflight.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Verify TEST channel identity and updater controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          a=Path("app/src/main/java/com/musicflow/app")
+          gradle=Path("app/build.gradle.kts").read_text()
+          updates=(a/"MusicFlowUpdates.kt").read_text()
+          about=(a/"MusicFlowAboutDialog.kt").read_text()
+          auto=(a/"MusicFlowAutoUpdate.kt").read_text()
+          background=(a/"MusicFlowBackgroundUpdates.kt").read_text()
+          assert 'applicationIdSuffix = ".dev"' in gradle
+          assert 'versionCode = 754' in gradle and 'versionName = "0.7.54"' in gradle
+          assert "enum class UpdateChannel" in updates
+          assert "parseTestReleases(response)" in updates
+          assert "MusicFlowUpdates.supportsUpdates(context)" in about
+          assert "MusicFlowUpdates.supportsUpdates(context)" in auto
+          assert "isSavedReleaseForChannel" in background
+          assert "MusicFlowUpdates.latestRelease(context)" in about
+          assert "MusicFlowUpdates.latestRelease(context)" in auto
+          print("PASS: TEST channel available, official feed isolated, same-package installer guard retained")
+          PY
+      - name: Run ub-mode JUnit and assemble TEST APK
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Verify new tests actually ran and APK identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+          folder=Path("app/build/test-results/testDebugUnitTest")
+          for suite in ("MusicFlowTestUpdateChannelTest", "MusicFlowOfficialUpdateChannelTest", "MediaDownloadPolicyTest"):
+            results=list(folder.glob("TEST-*"+suite+".xml"))
+            assert results, "Missing JUnit suite: " + suite
+            root=ET.parse(results[0]).getroot()
+            assert int(root.attrib.get("tests","0"))>=5, "Too few tests: "+suite
+            assert int(root.attrib.get("failures","0"))==0
+            assert int(root.attrib.get("errors","0"))==0
+          print("PASS: Official and TEST feeds, download policies pass")
+          PY
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview.dev' versionCode='754' versionName='0.7.54-dev'"
+          mkdir -p out
+          cp "$APK" out/MusicFlow_0.7.54_preflight-debug.apk
+          (cd out && sha256sum MusicFlow_0.7.54_preflight-debug.apk > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.54-stable-test-preflight
+          path: out/
+          retention-days: 30
+          if-no-files-found: error
