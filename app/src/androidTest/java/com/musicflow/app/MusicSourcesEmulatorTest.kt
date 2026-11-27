@@ -157,20 +157,38 @@ class MusicSourcesEmulatorTest {
         assertTrue("All available audio streams failed Media3 READY: see source-probe", ready >= 1)
     }
 
+    private fun waitForVisible(label: String, durationMs: Long): androidx.test.uiautomator.UiObject2? {
+        val expires = SystemClock.elapsedRealtime() + durationMs
+        while (SystemClock.elapsedRealtime() < expires) {
+            // OS services sometimes crash on a cold virtual device. Dismiss
+            // their dialog, but still require the real MusicFlow UI to render.
+            for (labelToDismiss in listOf("Close app", "Закрыть приложение", "Закрыть")) {
+                device.findObject(By.text(labelToDismiss))?.click()
+            }
+            device.findObject(By.text(label))?.let { return it }
+            Thread.sleep(1200L)
+        }
+        return null
+    }
+
     @Test fun radioScreenAlwaysShowsArtworkAndPlayerNavigationControls() {
         val bundled = RussianRadioFallback.bundledStations(context)
         assertTrue("Radio offline catalog is empty", bundled.size >= 2)
-        instrumentation.startActivitySync(Intent(context, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        })
-        assertNotNull("Main screen not loaded",
-            device.wait(Until.findObject(By.text("Музыка")), 18_000))
-        device.findObject(By.text("Музыка")).click()
+        // startActivitySync requires a completely idle Compose event queue and
+        // fails after 45s on a software-loaded emulator despite an active UI.
+        // ActivityManager starts it without the false Looper-idle requirement.
+        val launch = device.executeShellCommand(
+            "am start -n com.musicflow.preview.dev/com.musicflow.app.MainActivity"
+        )
+        record("radio_ui=launch " + launch.take(110).replace('\n', ' '))
+        val tab = waitForVisible("Музыка", 95_000)
+        assertNotNull("MusicFlow navigation not visible after real Activity launch", tab)
+        tab!!.click()
         assertNotNull("Radio dropdown item absent",
-            device.wait(Until.findObject(By.text("Радио")), 10_000))
+            waitForVisible("Радио", 30_000))
         device.findObject(By.text("Радио")).click()
         assertNotNull("Radio list not loaded",
-            device.wait(Until.findObject(By.text("Популярные")), 18_000))
+            waitForVisible("Популярные", 70_000))
         device.takeScreenshot(File(context.filesDir, "musicflow-radio-list-v0760.png"))
         val play = device.wait(Until.findObject(By.desc("Слушать")), 12_000)
         assertNotNull("No stations with play control", play)
