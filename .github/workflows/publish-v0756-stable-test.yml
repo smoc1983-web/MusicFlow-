@@ -1,7 +1,7 @@
 name: Publish MusicFlow 0.7.56 stable signed TEST download controls
 on:
   push:
-    branches: ["feature/musicflow-media3-download-library-v0756"]
+    branches: ["feature/musicflow-download-actions-player-v0756"]
     paths:
       - ".github/workflows/publish-v0756-stable-test.yml"
   workflow_dispatch:
