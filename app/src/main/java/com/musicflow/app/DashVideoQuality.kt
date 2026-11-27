@@ -1,6 +1,8 @@
 package com.musicflow.app
 
 import android.net.Uri
+import android.util.Xml
+import org.xmlpull.v1.XmlPullParser
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.StreamKey
@@ -25,7 +27,42 @@ internal data class DashVideoQuality(
 
 @OptIn(UnstableApi::class)
 internal object DashVideoQualityPolicy {
-    fun choices(manifest: DashManifest): List<DashVideoQuality> {
+    /**
+     * Some DASH parsers return Format.NO_VALUE for dimensions even when
+     * Representation explicitly provides @height. Read that metadata from
+     * the already-bounded manifest, never derive pixels from bitrate.
+     */
+    fun fromMpd(uri: Uri, bytes: ByteArray): List<DashVideoQuality> {
+        val manifest = DashManifestParser().parse(uri, bytes.inputStream())
+        val heights = runCatching {
+            val parser = Xml.newPullParser()
+            parser.setInput(bytes.inputStream(), "UTF-8")
+            val map = mutableMapOf<String, Int>()
+            var adaptationHeight = 0
+            while (parser.eventType != XmlPullParser.END_DOCUMENT) {
+                if (parser.eventType == XmlPullParser.START_TAG) {
+                    when (parser.name) {
+                        "AdaptationSet" -> {
+                            adaptationHeight = parser.getAttributeValue(null, "height")
+                                ?.toIntOrNull()?.takeIf { it in 1..4320 } ?: 0
+                        }
+                        "Representation" -> {
+                            val id = parser.getAttributeValue(null, "id").orEmpty()
+                            val declared = parser.getAttributeValue(null, "height")
+                                ?.toIntOrNull()?.takeIf { it in 1..4320 }
+                                ?: adaptationHeight.takeIf { it > 0 }
+                            if (id.isNotBlank() && declared != null) map[id] = declared
+                        }
+                    }
+                }
+                parser.next()
+            }
+            map
+        }.getOrDefault(emptyMap())
+        return choices(manifest, heights)
+    }
+
+    fun choices(manifest: DashManifest, heightHints: Map<String, Int> = emptyMap()): List<DashVideoQuality> {
         if (manifest.periodCount < 1 || manifest.periodCount > 8) return emptyList()
         val first = manifest.getPeriod(0)
         val videoGroups = first.adaptationSets.withIndex()
@@ -34,7 +71,8 @@ internal object DashVideoQualityPolicy {
         if (mainVideo.representations.isEmpty()) return emptyList()
         val options = mainVideo.representations.take(24)
         return options.mapIndexed { _, representation ->
-            val targetHeight = representation.format.height.takeIf { it > 0 } ?: 0
+            val targetHeight = representation.format.height.takeIf { it > 0 }
+                ?: heightHints[representation.format.id.orEmpty()] ?: 0
             val bandwidth = representation.format.bitrate.takeIf { it > 0 } ?: 0
             val label = if (targetHeight > 0) "${targetHeight}p" else
                 if (bandwidth > 0) "${bandwidth / 1000} кбит/с" else "Видео"
@@ -48,7 +86,8 @@ internal object DashVideoQualityPolicy {
                 val available = selectedVideo.value.representations
                 if (available.isEmpty()) return@mapIndexed null
                 val targetIndex = available.indices.minByOrNull { i ->
-                    val candidateHeight = available[i].format.height.takeIf { it > 0 } ?: 0
+                    val candidateHeight = available[i].format.height.takeIf { it > 0 }
+                        ?: heightHints[available[i].format.id.orEmpty()] ?: 0
                     val candidateBitrate = available[i].format.bitrate.takeIf { it > 0 } ?: 0
                     if (targetHeight > 0 && candidateHeight > 0)
                         abs(candidateHeight - targetHeight).toLong() else
@@ -99,8 +138,7 @@ internal object DashVideoQualityInspector {
                 }
                 output.toByteArray()
             }
-            val manifest = DashManifestParser().parse(Uri.parse(url), bytes.inputStream())
-            DashVideoQualityPolicy.choices(manifest)
+            DashVideoQualityPolicy.fromMpd(Uri.parse(url), bytes)
         } finally {
             connection.disconnect()
         }
