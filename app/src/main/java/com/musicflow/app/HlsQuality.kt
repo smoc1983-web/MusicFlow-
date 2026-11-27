@@ -5,7 +5,10 @@ import java.net.URL
 import javax.net.ssl.HttpsURLConnection
 
 /** Metadata from a HLS multivariant playlist; index matches Media3 HLS variant stream key. */
-internal data class HlsQuality(\n    val index: Int, val label: String, val externalAudio: Boolean,\n    val estimatedBytes: Long? = null\n)
+internal data class HlsQuality(
+    val index: Int, val label: String, val externalAudio: Boolean,
+    val estimatedBytes: Long? = null
+)
 
 internal object HlsQualityPolicy {
     private val attribute = Regex("""([A-Z0-9-]+)=("[^"]*"|[^,]*)""")
