@@ -36,23 +36,18 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 600
           script: |
-            set -euo pipefail
+            set -eu
             mkdir -p emulator-evidence
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-            set +e
-            adb shell am instrument -w -e class 'com.musicflow.app.MusicSourcesEmulatorTest,com.musicflow.app.DashVideoQualityTest' com.musicflow.preview.dev.test/androidx.test.runner.AndroidJUnitRunner > emulator-evidence/instrumentation.txt 2>&1
-            test_status=$?
-            set -e
+            adb shell am instrument -w -e class 'com.musicflow.app.MusicSourcesEmulatorTest,com.musicflow.app.DashVideoQualityTest' com.musicflow.preview.dev.test/androidx.test.runner.AndroidJUnitRunner > emulator-evidence/instrumentation.txt 2>&1 || echo 'Instrumentation command failed' >> emulator-evidence/instrumentation.txt
             cat emulator-evidence/instrumentation.txt | tail -n 100
             adb logcat -d -s MUSICFLOW_SOURCE_PROBE:I '*:S' > emulator-evidence/provider-diagnostics.log || true
-            adb pull /sdcard/Android/data/com.musicflow.preview.dev/files/source-probe-v0760.txt emulator-evidence/ || true
-            adb pull /sdcard/Android/data/com.musicflow.preview.dev/files/musicflow-radio-list-v0760.png emulator-evidence/ || true
-            adb pull /sdcard/Android/data/com.musicflow.preview.dev/files/musicflow-radio-player-v0760.png emulator-evidence/ || true
-            if test "$test_status" -ne 0 || grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|FAILURE' emulator-evidence/instrumentation.txt; then
-              echo '::error::Android emulator instrumentation did not pass'
-              exit 1
-            fi
+            adb exec-out run-as com.musicflow.preview.dev cat /sdcard/Android/data/com.musicflow.preview.dev/files/source-probe-v0760.txt > emulator-evidence/source-probe-v0760.txt || true
+            adb exec-out run-as com.musicflow.preview.dev cat /sdcard/Android/data/com.musicflow.preview.dev/files/musicflow-radio-list-v0760.png > emulator-evidence/musicflow-radio-list-v0760.png || true
+            adb exec-out run-as com.musicflow.preview.dev cat /sdcard/Android/data/com.musicflow.preview.dev/files/musicflow-radio-player-v0760.png > emulator-evidence/musicflow-radio-player-v0760.png || true
+            test -s emulator-evidence/instrumentation.txt
+            grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|FAILURE|Instrumentation command failed' emulator-evidence/instrumentation.txt && exit 1 || true
             grep -Eq 'OK \([1-9][0-9]* tests?\)' emulator-evidence/instrumentation.txt
       - name: Upload source statuses and radio screenshots even on failure
         if: always()
