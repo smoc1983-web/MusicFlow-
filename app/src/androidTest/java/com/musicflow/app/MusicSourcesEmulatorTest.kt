@@ -144,13 +144,17 @@ class MusicSourcesEmulatorTest {
             fail("No provider returned a candidate: " + status)
         }
         val player = newProbePlayer()
+        var ready = 0
         try {
             for ((source, track) in playable) {
-                record("source=" + source + " playback=" + checkPlayable(track, player))
+                val result = checkPlayable(track, player)
+                record("source=" + source + " playback=" + result)
+                if (result == "READY") ready++
             }
         } finally {
             main { player.release() }
         }
+        assertTrue("All available audio streams failed Media3 READY: see source-probe", ready >= 1)
     }
 
     @Test fun radioScreenAlwaysShowsArtworkAndPlayerNavigationControls() {
