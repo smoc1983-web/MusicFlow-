@@ -228,6 +228,8 @@ internal fun MusicDownloadsScreen(
     var loadError by remember { mutableStateOf<String?>(null) }
     var transferRates by remember { mutableStateOf<Map<String, DownloadSpeedSample>>(emptyMap()) }
     var pendingRemoval by remember { mutableStateOf<CleanupPrompt?>(null) }
+    var pendingExport by remember { mutableStateOf<LibraryFile.Cached?>(null) }
+    var exporting by remember { mutableStateOf(false) }
     var selectedFilter by remember { mutableStateOf("Все") }
     var selectionMode by remember { mutableStateOf(false) }
     var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -242,7 +244,7 @@ internal fun MusicDownloadsScreen(
     val markedKeys = selectedKeys.intersect(validKeys)
 
     fun requestCleanup(scope: CleanupScope, keys: Set<String> = emptySet(), single: LibraryFile? = null) {
-        if (removing) return
+        if (removing || exporting) return
         val estimate = DownloadCleanupPolicy.plan(candidates, scope, keys)
         if (estimate.count == 0) return
         val title = when {
@@ -391,7 +393,10 @@ internal fun MusicDownloadsScreen(
         }
         if (selectionMode) Text("Отмечено: ${markedKeys.size}. «Выбрать показанные» относится к текущему фильтру.",
             style = MaterialTheme.typography.bodySmall)
-        if (removing) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        if (removing || exporting) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            if (exporting) Text("Экспорт MP4 из офлайн-кеша…", style = MaterialTheme.typography.bodySmall)
+        }
         if (loadError != null) Text(loadError!!, color = MaterialTheme.colorScheme.error)
         if (shownFiles.isEmpty()) {
             Text("Здесь пока нет загруженных файлов.",
@@ -419,6 +424,19 @@ internal fun MusicDownloadsScreen(
                                     modifier = Modifier.weight(1f))
                             }
                             Text(file.subtitle, style = MaterialTheme.typography.bodySmall)
+                            if (file is LibraryFile.Cached && file.ready &&
+                                !file.isMusic && OfflineMp4ExportPolicy.allowed(
+                                    true,
+                                    OfflineDownloadRoute.classify(file.value.request.uri.toString()) ==
+                                        OfflineTransfer.ADAPTIVE_HLS,
+                                    file.value.request.keySetId != null,
+                                    android.os.Build.VERSION.SDK_INT
+                                )) {
+                                OutlinedButton(onClick = { pendingExport = file },
+                                    enabled = !exporting && !removing) {
+                                    Text("Экспорт MP4")
+                                }
+                            }
                             if (file.state == DownloadUiState.DOWNLOADING ||
                                 file.state == DownloadUiState.PAUSED_SYSTEM ||
                                 file.state == DownloadUiState.STOPPED) {
@@ -488,6 +506,40 @@ internal fun MusicDownloadsScreen(
                 }
             }
         }
+    }
+    pendingExport?.let { file ->
+        AlertDialog(
+            onDismissRequest = { pendingExport = null },
+            title = { Text("Сохранить отдельный MP4?") },
+            text = {
+                Text("MusicFlow попытается преобразовать завершённый HLS из офлайн-кеша " +
+                    "в MP4 и сохранить в Фильмы/MusicFlow. Это потребует дополнительного " +
+                    "свободного места. Не все видеокодеки совместимы; исходный кеш не удаляется.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingExport = null
+                    try {
+                        OfflineMp4Exporter.start(context, file.value) { success, message ->
+                            exporting = false
+                            android.widget.Toast.makeText(context, message,
+                                android.widget.Toast.LENGTH_LONG).show()
+                            refresh++
+                        }
+                        exporting = true
+                    } catch (error: Exception) {
+                        exporting = false
+                        AppDiagnostics.failure("Downloads", "start offline export", error)
+                        android.widget.Toast.makeText(context,
+                            "Экспорт не запущен: ${error.message.orEmpty()}",
+                            android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }) { Text("Экспортировать") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingExport = null }) { Text("Отмена") }
+            }
+        )
     }
     pendingRemoval?.let { prompt ->
         AlertDialog(

@@ -50,6 +50,8 @@ jobs:
           assert "DownloadSpeed.next" in lib
           assert "HlsQualityInspector.inspect" in (app/"MainActivity.kt").read_text()
           assert "setStreamKeys" in media
+          assert "OfflineMp4Exporter.start" in lib
+          assert "PlaceholderDataSource.FACTORY" in (app/"OfflineMp4Exporter.kt").read_text()
           assert "DownloadHttpHeaders.validated" in direct
           assert "Очистить HLS/DASH" in lib and "Удалить выбранные" in lib
           assert "MediaDownloads.isOwnFile" in lib
@@ -68,7 +70,7 @@ jobs:
           from pathlib import Path
           from xml.etree import ElementTree as ET
           folder=Path("app/build/test-results/testDebugUnitTest")
-          expected={"HlsQualityPolicyTest":4, "DownloadHttpHeadersTest":3,
+          expected={"OfflineMp4ExportPolicyTest":1, "HlsQualityPolicyTest":4, "DownloadHttpHeadersTest":3,
                     "DownloadSpeedTest":2, "DownloadCleanupPolicyTest":7, "DownloadActionPolicyTest":6, "OfflineDownloadRouteTest":5,
                     "ClipboardDownloadUrlTest":4, "MusicFlowTestUpdateChannelTest":5}
           for suite, count in expected.items():
