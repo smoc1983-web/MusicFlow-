@@ -22,7 +22,8 @@ internal data class DashVideoQuality(
     val height: Int,
     val bandwidth: Int,
     val label: String,
-    val streamKeys: List<StreamKey>
+    val streamKeys: List<StreamKey>,
+    val estimatedBytes: Long? = null
 )
 
 @OptIn(UnstableApi::class)
@@ -77,6 +78,8 @@ internal object DashVideoQualityPolicy {
             val label = if (targetHeight > 0) "${targetHeight}p" else
                 if (bandwidth > 0) "${bandwidth / 1000} кбит/с" else "Видео"
             val keys = mutableListOf<StreamKey>()
+            var totalEstimatedBytes = 0L
+            var canEstimate = true
             for (periodIndex in 0 until manifest.periodCount) {
                 val period = manifest.getPeriod(periodIndex)
                 val videos = period.adaptationSets.withIndex().filter {
@@ -99,12 +102,27 @@ internal object DashVideoQualityPolicy {
                         it.value.representations.isNotEmpty()
                 }
                 if (audio != null) {
-                    // One playable audio representation per period. Multi-language
-                    // audio selection is out of scope: unselected variants remain auto.
+                    // Include the same audio representation that Media3 downloads.
                     keys += StreamKey(periodIndex, audio.index, 0)
                 }
+                val selectedBitrate = available[targetIndex].format.bitrate.toLong()
+                    .takeIf { it > 0L }
+                val audioBitrate = audio?.value?.representations?.firstOrNull()
+                    ?.format?.bitrate?.toLong()?.takeIf { it > 0L }
+                val durationUs = manifest.getPeriodDurationUs(periodIndex)
+                val estimate = if (selectedBitrate == null ||
+                    (audio != null && audioBitrate == null) ||
+                    durationUs == C.TIME_UNSET) null
+                else DownloadSizeEstimate.bytes(
+                    durationUs.toDouble() / 1_000_000.0,
+                    selectedBitrate + (audioBitrate ?: 0L)
+                )
+                if (estimate == null || totalEstimatedBytes > Long.MAX_VALUE - estimate)
+                    canEstimate = false
+                else totalEstimatedBytes += estimate
             }
-            DashVideoQuality(targetHeight, bandwidth, label, keys)
+            DashVideoQuality(targetHeight, bandwidth, label, keys,
+                totalEstimatedBytes.takeIf { canEstimate && it > 0L })
         }.filterNotNull().distinctBy { it.streamKeys }.take(24)
     }
 }
