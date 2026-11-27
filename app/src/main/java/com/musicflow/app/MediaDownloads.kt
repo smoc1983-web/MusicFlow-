@@ -17,6 +17,35 @@ import java.util.Locale
  * the queue. We do not extract or decrypt protected streams or HLS/DASH media.
  */
 internal object MediaDownloads {
+    private const val FILE_IDS_PREF = "musicflow_download_ids_v1"
+    private const val FILE_IDS_KEY = "ids"
+
+    fun isOwnFile(context: Context, id: Long, description: String): Boolean =
+        description.startsWith("MusicFlow •") ||
+            context.getSharedPreferences(FILE_IDS_PREF, Context.MODE_PRIVATE)
+                .getStringSet(FILE_IDS_KEY, emptySet())?.contains(id.toString()) == true
+
+    private fun recordFile(context: Context, id: Long) {
+        val pref = context.getSharedPreferences(FILE_IDS_PREF, Context.MODE_PRIVATE)
+        pref.edit().putStringSet(FILE_IDS_KEY,
+            pref.getStringSet(FILE_IDS_KEY, emptySet()).orEmpty().toMutableSet()
+                .apply { add(id.toString()) }).apply()
+    }
+
+    private fun forgetFile(context: Context, id: Long) {
+        val pref = context.getSharedPreferences(FILE_IDS_PREF, Context.MODE_PRIVATE)
+        pref.edit().putStringSet(FILE_IDS_KEY,
+            pref.getStringSet(FILE_IDS_KEY, emptySet()).orEmpty().toMutableSet()
+                .apply { remove(id.toString()) }).apply()
+    }
+
+    fun cancel(context: Context, id: Long): Boolean {
+        val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        val removed = manager.remove(id) > 0
+        if (removed) forgetFile(context, id)
+        return removed
+    }
+
     fun enqueue(
         context: Context,
         url: String,
@@ -72,6 +101,7 @@ internal object MediaDownloads {
             }
             val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             val id = manager.enqueue(request)
+            recordFile(context, id)
             AppDiagnostics.info("Downloads", "queued kind=$kind id=$id")
             DownloadPlanResult.Accepted(plan)
         } catch (error: Exception) {
