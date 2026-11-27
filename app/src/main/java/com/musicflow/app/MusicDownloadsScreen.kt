@@ -132,6 +132,9 @@ internal fun MusicDownloadsScreen(
     var refresh by remember { mutableIntStateOf(0) }
     var loadError by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(refresh) {
+        // Media3 DownloadManager must be constructed on the main Looper; only
+        // the persisted database snapshot is read on the IO dispatcher.
+        OfflineDownloads.manager(context)
         while (true) {
             try {
                 files = withContext(Dispatchers.IO) {
