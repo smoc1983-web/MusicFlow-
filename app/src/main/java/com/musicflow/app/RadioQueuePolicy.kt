@@ -12,5 +12,9 @@ internal object RadioQueuePolicy {
         return if (index >= 0) distinct to index else listOf(station) to 0
     }
 
+    /** New radio session starts ordered; choosing another radio row keeps shuffle. */
+    fun preserveShuffle(wasRadio: Boolean, wasShuffled: Boolean): Boolean =
+        wasRadio && wasShuffled
+
     fun canNavigate(size: Int): Boolean = size > 1
 }

@@ -16,7 +16,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.filled.ListOrdered
+import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
@@ -516,7 +516,9 @@ private fun MusicScreen(
             // Switching to another station must NOT undo an explicitly selected
             // shuffle mode. A fresh radio session starts in ordered mode.
             val alreadyInRadio = p.currentMediaItem?.mediaId?.startsWith("radio:") == true
-            p.shuffleModeEnabled = alreadyInRadio && p.shuffleModeEnabled
+            p.shuffleModeEnabled = RadioQueuePolicy.preserveShuffle(
+                alreadyInRadio, p.shuffleModeEnabled
+            )
             p.repeatMode = androidx.media3.common.Player.REPEAT_MODE_ALL
             radioShuffleEnabled = p.shuffleModeEnabled
         } else {
@@ -1179,7 +1181,7 @@ private fun MusicScreen(
                         }) {
                             Icon(
                                 if (radioShuffleEnabled) Icons.Filled.Shuffle
-                                else Icons.Filled.ListOrdered,
+                                else Icons.Filled.FormatListNumbered,
                                 if (radioShuffleEnabled) "Случайный порядок включён"
                                 else "Включить случайный порядок",
                                 tint = if (radioShuffleEnabled) palette.accent

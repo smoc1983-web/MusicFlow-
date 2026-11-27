@@ -32,4 +32,10 @@ class RadioQueuePolicyTest {
         assertEquals(listOf(selected), items)
         assertEquals(0, index)
     }
+
+    @Test fun shuffleSurvivesSwitchingRadioAndResetsWhenStartingFresh() {
+        assertTrue(RadioQueuePolicy.preserveShuffle(wasRadio = true, wasShuffled = true))
+        assertFalse(RadioQueuePolicy.preserveShuffle(wasRadio = true, wasShuffled = false))
+        assertFalse(RadioQueuePolicy.preserveShuffle(wasRadio = false, wasShuffled = true))
+    }
 }
