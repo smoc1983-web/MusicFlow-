@@ -40,6 +40,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -388,7 +389,7 @@ internal fun CinemaNativeInlinePlayer(
                 maxLines = 1)
             Text("прогресс", color = tint.copy(alpha = 0.78f),
                 style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = androidx.compose.ui.unit.TextUnit(9f, androidx.compose.ui.unit.TextUnitType.Sp)),
+                    fontSize = 9.sp),
                 maxLines = 1)
         }
     }
