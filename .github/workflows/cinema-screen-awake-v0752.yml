@@ -1,0 +1,69 @@
+name: Cinema screen-awake regression and production APK build
+on:
+  push:
+    branches: ["fix/cinema-screen-awake-20261127"]
+    paths:
+      - "app/**"
+      - ".github/workflows/cinema-screen-awake-v0752.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cinema-awake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Verify cinema awake wiring and release identity
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("app/src/main/java/com/musicflow/app/CinemaNativeInlinePlayer.kt").read_text()
+          policy = Path("app/src/main/java/com/musicflow/app/CinemaScreenAwakePolicy.kt").read_text()
+          tests = Path("app/src/test/java/com/musicflow/app/CinemaScreenAwakePolicyTest.kt").read_text()
+          gradle = Path("app/build.gradle.kts").read_text()
+          assert "versionCode = 752" in gradle and 'versionName = "0.7.52"' in gradle
+          assert 'applicationId = "com.musicflow.preview"' in gradle
+          assert source.count("CinemaPlayerView(player, keepVideoScreenAwake") == 2
+          assert "override fun onEvents(player: Player, events: Player.Events)" in source
+          assert "view.keepScreenOn = keepScreenOn" in source
+          assert "view.keepScreenOn = false" in source
+          assert "Player.STATE_BUFFERING" in policy and "Player.STATE_ENDED" in tests
+          print("PASS: cinema inline/fullscreen keep-screen-on lifecycle wired")
+          PY
+      - name: Kotlin unit tests and release compile
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
+      - name: Confirm cinema unit tests ran and unsigned APK produced
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          suites = list(Path("app/build/test-results/testDebugUnitTest").glob("TEST-*.xml"))
+          assert any("CinemaScreenAwakePolicyTest" in p.name for p in suites), "Cinema policy tests missing"
+          import xml.etree.ElementTree as ET
+          root = ET.parse(next(p for p in suites if "CinemaScreenAwakePolicyTest" in p.name)).getroot()
+          assert int(root.attrib.get("tests", "0")) >= 4
+          assert int(root.attrib.get("failures", "0")) == 0
+          assert int(root.attrib.get("errors", "0")) == 0
+          assert Path("app/build/outputs/apk/release/app-release-unsigned.apk").stat().st_size > 1000000
+          print("PASS: cinema screen-awake JUnit and unsigned release APK")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.52-cinema-awake-unsigned-test
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          retention-days: 14
+          if-no-files-found: error
