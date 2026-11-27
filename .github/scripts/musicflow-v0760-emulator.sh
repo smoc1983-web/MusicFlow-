@@ -3,8 +3,26 @@ set -Eeuo pipefail
 mkdir -p emulator-evidence
 adb wait-for-device
 adb shell getprop sys.boot_completed | tee emulator-evidence/boot.txt
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+# Wait for package manager and boot completion before installing either APK.
+for attempt in $(seq 1 60); do
+  if [[ "$(adb shell getprop sys.boot_completed | tr -d '\r')" == "1" ]] &&
+     adb shell pm path android >/dev/null 2>&1; then break; fi
+  sleep 5
+done
+install_checked() {
+  local apk="$1"
+  local attempt
+  for attempt in 1 2 3; do
+    if adb install --no-streaming -r "$apk" 2>&1 | tee -a emulator-evidence/install.txt; then
+      return 0
+    fi
+    adb logcat -d -s PackageManager PackageInstaller > emulator-evidence/install-logcat.txt || true
+    sleep 30
+  done
+  return 1
+}
+install_checked app/build/outputs/apk/debug/app-debug.apk
+install_checked app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 overall=0
 for suite in MusicSourcesEmulatorTest DashVideoQualityTest; do
   echo "Testing $suite"
