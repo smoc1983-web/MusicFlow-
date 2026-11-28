@@ -1,10 +1,10 @@
-name: MusicFlow TEST 0.7.61 macOS accelerated emulator size and music smoke tests
+name: MusicFlow TEST 0.7.61 required Android UI/DASH + live sources diagnostic
 on:
   push:
     branches: ["feature/musicflow-quality-sizes-v0761"]
     paths:
       - ".github/workflows/musicflow-v0761-size-emulator.yml"
-      - ".github/scripts/musicflow-v0760-emulator.sh"
+      - ".github/scripts/musicflow-v0761-verified-emulator.sh"
       - "app/src/androidTest/**"
       - "app/src/main/**"
       - "app/build.gradle.kts"
@@ -27,7 +27,7 @@ jobs:
           gradle-version: "8.13"
       - name: Compile TEST app and real Android instrumentation APK
         run: gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
-      - name: Android 14 accelerated Intel emulator - music sources and radio UI
+      - name: Android 14 accelerated emulator - required radio/DASH and real provider diagnostic
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
@@ -40,12 +40,12 @@ jobs:
           disk-size: 6G
           disable-animations: true
           emulator-boot-timeout: 600
-          script: bash .github/scripts/musicflow-v0760-emulator.sh
+          script: bash .github/scripts/musicflow-v0761-verified-emulator.sh
       - name: Upload source statuses and radio screenshots even on failure
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MusicFlow-0.7.61-macos-android-emulator-evidence
+          name: MusicFlow-0.7.61-Android-UI-DASH-and-live-source-evidence
           path: emulator-evidence/
           retention-days: 30
           if-no-files-found: warn
