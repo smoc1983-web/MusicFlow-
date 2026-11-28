@@ -17,10 +17,17 @@ internal fun DiagnosticsScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var display by remember { mutableStateOf("") }
     var note by remember { mutableStateOf<String?>(null) }
+    var showSourceChecks by remember { mutableStateOf(false) }
     fun refresh() { display = AppDiagnostics.recentLines() }
     LaunchedEffect(Unit) { refresh() }
+    if (showSourceChecks) MusicSourceDiagnosticsDialog(
+        onClose = { showSourceChecks = false; refresh() }, onResult = { refresh() }
+    )
     Column(modifier.padding(top = 10.dp)) {
         Text("Журнал диагностики", style = MaterialTheme.typography.titleLarge)
+        Button(onClick = { showSourceChecks = true }, modifier = Modifier.fillMaxWidth()) {
+            Text("Проверить источники музыки")
+        }
         Spacer(Modifier.height(6.dp))
         Text(
             "Файл хранится только на телефоне (не более 512 КБ). " +

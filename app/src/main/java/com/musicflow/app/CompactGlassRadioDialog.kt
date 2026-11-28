@@ -16,6 +16,10 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -23,6 +27,9 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -51,6 +58,21 @@ internal fun CompactGlassRadioDialog(
     onClose: () -> Unit
 ) {
     val palette = LocalMusicFlowPalette.current
+    val context = LocalContext.current
+    val activeItem = player.currentMediaItem
+    val activeId = activeItem?.mediaId.orEmpty().removePrefix("radio:")
+    val activeUrl = activeItem?.localConfiguration?.uri?.toString().orEmpty()
+    var randomMode by remember { mutableStateOf(player.shuffleModeEnabled) }
+    val resolvedLogo by produceState<String?>(artwork, title, activeId) {
+        value = artwork
+        if (activeId.isNotBlank() && RussianRadioDirectory.isPublicStream(activeUrl)) {
+            val station = RussianRadioStation(
+                activeId, title, activeUrl, artwork, "", "", 0
+            )
+            value = RadioArtworkCatalog.resolve(context, station) ?: artwork
+        }
+    }
+    val stationCount = player.mediaItemCount
     Dialog(
         onDismissRequest = onClose,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -81,7 +103,7 @@ internal fun CompactGlassRadioDialog(
             Row(modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                RadioStationArtwork(name = title, logo = artwork,
+                RadioStationArtwork(name = title, logo = resolvedLogo,
                     modifier = Modifier.size(94.dp), radius = 19.dp)
                 Column(modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -99,12 +121,24 @@ internal fun CompactGlassRadioDialog(
                     )
                 }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
+                horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
+                IconButton(
+                    enabled = stationCount > 1,
+                    onClick = {
+                        if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem()
+                        else player.seekTo(player.mediaItemCount - 1, 0L)
+                        player.play()
+                    },
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(Icons.Filled.SkipPrevious, "Предыдущая радиостанция",
+                        tint = palette.foreground)
+                }
                 FilledIconButton(
                     onClick = {
                         if (player.isPlaying) player.pause()
@@ -126,7 +160,47 @@ internal fun CompactGlassRadioDialog(
                         if (playing) "Пауза" else "Воспроизвести",
                         modifier = Modifier.size(30.dp))
                 }
-                Spacer(Modifier.width(23.dp))
+                IconButton(
+                    enabled = stationCount > 1,
+                    onClick = {
+                        if (player.hasNextMediaItem()) player.seekToNextMediaItem()
+                        else player.seekTo(0, 0L)
+                        player.play()
+                    },
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(Icons.Filled.SkipNext, "Следующая радиостанция",
+                        tint = palette.foreground)
+                }
+                IconButton(
+                    onClick = {
+                        randomMode = !player.shuffleModeEnabled
+                        player.shuffleModeEnabled = randomMode
+                    },
+                    enabled = stationCount > 1,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(if (randomMode) Icons.Filled.Shuffle
+                        else Icons.Filled.FormatListNumbered,
+                        if (randomMode) "Включён случайный порядок — переключить по списку"
+                        else "Включён порядок по списку — переключить случайно",
+                        tint = if (randomMode) palette.accent else palette.foreground)
+                }
+            }
+            Text(
+                if (stationCount > 1) {
+                    if (randomMode) "Станции: в случайном порядке · $stationCount"
+                    else "Станции: по списку · $stationCount"
+                } else "В этом списке одна радиостанция",
+                modifier = Modifier.fillMaxWidth(),
+                color = palette.muted,
+                style = MaterialTheme.typography.labelSmall
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 IconButton(onClick = onFavorite, modifier = Modifier.size(50.dp)) {
                     Icon(if (favorite) Icons.Filled.Favorite
                         else Icons.Filled.FavoriteBorder,
@@ -134,7 +208,7 @@ internal fun CompactGlassRadioDialog(
                         tint = if (favorite) palette.accent else palette.foreground,
                         modifier = Modifier.size(28.dp))
                 }
-                Spacer(Modifier.width(14.dp))
+                Spacer(Modifier.width(12.dp))
                 PlayerEqualizerButton(modifier = Modifier.size(48.dp),
                     tint = palette.foreground)
             }

@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Public Downloads require legacy storage permission on Android 8 and 9 only. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- Keep CPU and Wi-Fi available while audio plays with screen off. -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.WAKE_WIFI_LOCK"/>
@@ -33,6 +38,19 @@
             android:screenOrientation="sensorLandscape"
             android:theme="@android:style/Theme.Material.Light.NoActionBar.Fullscreen"
             android:configChanges="orientation|screenSize|keyboardHidden" />
+        <service
+            android:name=".MusicFlowOfflineDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync">
+            <intent-filter>
+                <action android:name="androidx.media3.exoplayer.downloadService.action.RESTART" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+        <service android:name=".MusicFlowMp4ExportService" android:exported="false"
+            android:foregroundServiceType="dataSync|mediaProcessing" />
+        <service android:name=".MusicFlowHlsShareService" android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <service android:name=".PlaybackService"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback">

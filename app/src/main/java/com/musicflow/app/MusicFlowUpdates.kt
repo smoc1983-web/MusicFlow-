@@ -35,24 +35,39 @@ internal object MusicFlowUpdates {
     internal const val TELEGRAM_URL = "https://t.me/+IryIQ5fkmOszZWRi"
     private const val MAX_SIZE = 150L * 1024L * 1024L
 
-    // Official updates are signed for com.musicflow.preview.
-    // A .vktest variant has another package name and a debug signing key.
+    // Never mix official and TEST feeds. Both channels use the same strict
+    // package/version/certificate verification before Android installer launch.
     private const val OFFICIAL_PACKAGE = "com.musicflow.preview"
+    private const val STABLE_TEST_PACKAGE = "com.musicflow.preview.dev"
+
+    internal enum class UpdateChannel { OFFICIAL, TEST, UNSUPPORTED }
+
+    internal fun channelForPackage(packageName: String): UpdateChannel = when (packageName) {
+        OFFICIAL_PACKAGE -> UpdateChannel.OFFICIAL
+        STABLE_TEST_PACKAGE -> UpdateChannel.TEST
+        else -> UpdateChannel.UNSUPPORTED
+    }
 
     fun supportsOfficialUpdates(context: Context): Boolean =
-        context.packageName == OFFICIAL_PACKAGE
+        channelForPackage(context.packageName) == UpdateChannel.OFFICIAL
 
-    fun updateChannelMessage(context: Context): String =
-        if (supportsOfficialUpdates(context)) {
-            "Официальный канал обновлений MusicFlow · проверка подписи включена."
-        } else {
-            "Эта тестовая сборка (${context.packageName}) установлена отдельно. " +
-                "Она не может обновиться официальным APK для $OFFICIAL_PACKAGE: " +
-                "идентификатор приложения и ключ подписи отличаются. " +
-                "Для дальнейших обновлений один раз установите официальную " +
-                "версию, подписанную постоянным ключом. " +
-                "Не удаляйте приложение с важными данными без резервной копии."
-        }
+    fun supportsUpdates(context: Context): Boolean =
+        channelForPackage(context.packageName) != UpdateChannel.UNSUPPORTED
+
+    fun updateChannelMessage(context: Context): String = when (channelForPackage(context.packageName)) {
+        UpdateChannel.OFFICIAL ->
+            "Официальный канал MusicFlow · проверка исходной подписи включена."
+        UpdateChannel.TEST ->
+            "Тестовый канал MusicFlow · проверка обновлений включена. " +
+                "Установка возможна только поверх той же тестовой версии с тем же сертификатом. " +
+                "Нельзя устанавливать официальный APK или тесты с другим ключом."
+        UpdateChannel.UNSUPPORTED ->
+            "Эта старая тестовая сборка (${context.packageName}) имеет отдельный пакет. " +
+                "Она не совместима с новым тестовым каналом $STABLE_TEST_PACKAGE " +
+                "и с официальным $OFFICIAL_PACKAGE. Для будущих обновлений " +
+                "установите новую MusicFlow TEST отдельно один раз. " +
+                "Не удаляйте старую сборку с важными данными без резервной копии."
+    }
 
     fun currentCode(context: Context): Long =
         PackageInfoCompat.getLongVersionCode(
@@ -79,6 +94,25 @@ internal object MusicFlowUpdates {
     internal fun isOfficialSavedRelease(tag: String, url: String): Boolean =
         isOfficialTag(tag) && url ==
             ASSET_PREFIX + tag + "/MusicFlow_${tag.removePrefix("v")}.apk"
+
+    /** Versioned TEST prereleases are strictly excluded from official updates. */
+    internal fun isTestTag(tag: String): Boolean =
+        Regex("""^v\d+\.\d+\.\d+-test$""").matches(tag)
+
+    internal fun isTestApkName(tag: String, name: String): Boolean =
+        isTestTag(tag) &&
+            name == "MusicFlow-TEST_${tag.removePrefix("v").removeSuffix("-test")}.apk"
+
+    internal fun isTestSavedRelease(tag: String, url: String): Boolean =
+        isTestTag(tag) && url ==
+            ASSET_PREFIX + tag + "/MusicFlow-TEST_${tag.removePrefix("v").removeSuffix("-test")}.apk"
+
+    internal fun isSavedReleaseForChannel(context: Context, tag: String, url: String): Boolean =
+        when (channelForPackage(context.packageName)) {
+            UpdateChannel.OFFICIAL -> isOfficialSavedRelease(tag, url)
+            UpdateChannel.TEST -> isTestSavedRelease(tag, url)
+            UpdateChannel.UNSUPPORTED -> false
+        }
 
     /** Side-effect-free selection used by the updater and regression tests. */
     internal fun parseOfficialReleases(response: String): MusicFlowUpdate? {
@@ -113,6 +147,63 @@ internal object MusicFlowUpdates {
         return options.maxByOrNull { it.versionCode }
     }
 
+
+    /** Only exact, published TEST prereleases belonging to com.musicflow.preview.dev. */
+    internal fun parseTestReleases(response: String): MusicFlowUpdate? {
+        val releases = JSONArray(response)
+        val options = mutableListOf<MusicFlowUpdate>()
+        for (i in 0 until releases.length()) {
+            val release = releases.optJSONObject(i) ?: continue
+            if (release.optBoolean("draft", true) ||
+                !release.optBoolean("prerelease", false)) continue
+            val tag = release.optString("tag_name")
+            val match = Regex("""^v(\d+)\.(\d+)\.(\d+)-test$""")
+                .matchEntire(tag) ?: continue
+            val major = match.groupValues[1].toLongOrNull() ?: continue
+            val minor = match.groupValues[2].toLongOrNull() ?: continue
+            val patch = match.groupValues[3].toLongOrNull() ?: continue
+            if (minor !in 0L..99L || patch !in 0L..99L || major > 100_000L) continue
+            val code = major * 10_000L + minor * 100L + patch
+            val assets = release.optJSONArray("assets") ?: continue
+            for (j in 0 until assets.length()) {
+                val asset = assets.optJSONObject(j) ?: continue
+                val name = asset.optString("name")
+                val size = asset.optLong("size", 0L)
+                val url = asset.optString("browser_download_url")
+                if (!isTestApkName(tag, name) ||
+                    size !in 1_000_000L..MAX_SIZE ||
+                    !isTestSavedRelease(tag, url)) continue
+                options += MusicFlowUpdate(tag, code, url, size,
+                    release.optString("body").take(600))
+            }
+        }
+        return options.maxByOrNull { it.versionCode }
+    }
+
+    /** The installed package chooses the feed. Never offer another package's APK. */
+    suspend fun latestRelease(context: Context): MusicFlowUpdate? = withContext(Dispatchers.IO) {
+        if (!supportsUpdates(context)) return@withContext null
+        val connection = (URL(API).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10_000
+            readTimeout = 15_000
+            setRequestProperty("Accept", "application/vnd.github+json")
+            setRequestProperty("User-Agent", "MusicFlow-Android")
+        }
+        try {
+            if (connection.responseCode != 200) {
+                throw IOException("Ошибка GitHub: HTTP " + connection.responseCode)
+            }
+            val response = connection.inputStream.bufferedReader().use { it.readText() }
+            when (channelForPackage(context.packageName)) {
+                UpdateChannel.OFFICIAL -> parseOfficialReleases(response)
+                UpdateChannel.TEST -> parseTestReleases(response)
+                UpdateChannel.UNSUPPORTED -> null
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     suspend fun latestRelease(): MusicFlowUpdate? = withContext(Dispatchers.IO) {
         val connection = (URL(API).openConnection() as HttpURLConnection).apply {
             connectTimeout = 10_000
@@ -136,7 +227,8 @@ internal object MusicFlowUpdates {
         update: MusicFlowUpdate,
         onProgress: suspend (Int) -> Unit
     ): Uri = withContext(Dispatchers.IO) {
-        if (!supportsOfficialUpdates(context)) {
+        if (!supportsUpdates(context) ||
+            !isSavedReleaseForChannel(context, update.version, update.downloadUrl)) {
             throw IOException(updateChannelMessage(context))
         }
         val folder = File(context.cacheDir, "updates").apply { mkdirs() }

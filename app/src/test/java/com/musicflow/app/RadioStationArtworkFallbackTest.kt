@@ -2,6 +2,16 @@ package com.musicflow.app
 import org.junit.Assert.*
 import org.junit.Test
 class RadioStationArtworkFallbackTest {
+ @Test fun allNineFallbackStylesChooseDeterministically() {
+  val stations = listOf("Радио Песни", "Европа плюс", "Наше Радио", "FM", "JAZZ",
+   "Камеди Радио", "Comedy", "Наше радио", "Дорожное", "Русское")
+  stations.forEach { name ->
+    val index = RadioStationArtworkFallback.artworkIndex(name)
+    assertTrue(index in 0..8)
+    assertEquals(index, RadioStationArtworkFallback.artworkIndex(name.uppercase()))
+  }
+ }
+
  @Test fun everyStationGetsReadableLettermarkEvenWithoutLogo() {
   assertEquals("РП", RadioStationArtworkFallback.initials("Радио Песни"))
   assertEquals("Е+", RadioStationArtworkFallback.initials("Европа плюс"))
