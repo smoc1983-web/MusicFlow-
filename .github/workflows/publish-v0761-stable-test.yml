@@ -1,0 +1,95 @@
+name: Publish stable MusicFlow 0.7.61 TEST
+on:
+  push:
+    branches: ["feature/musicflow-quality-sizes-v0761"]
+    paths:
+      - ".github/workflows/publish-v0761-stable-test.yml"
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: musicflow-stable-test-v0761-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify exact successful CI and unchanged source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source .github/release-assets/v0761-test/checksums.env
+          test "$SOURCE_SHA" = "37416a437753b17fc6853e89eec34f3a1beeb169"
+          test "$TEST_CERT_SHA" = "5b021afbd43d8c4fc1de501bd5e000c8d0286da573a700121ace77339f199835"
+          for run in "$SOURCE_RUN" "$EMULATOR_RUN" "$BUILD_RUN"; do
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" --jq '.conclusion')" = success
+            test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" --jq '.head_sha')" = "$SOURCE_SHA"
+          done
+          git diff --quiet "$SOURCE_SHA" HEAD -- app/ settings.gradle.kts build.gradle.kts gradle.properties
+          git fetch --no-tags origin main release/musicflow-test-0761-snapshot
+          test "$(git rev-parse origin/release/musicflow-test-0761-snapshot)" = "$TAG_TARGET_SHA"
+          test "$TAG_TARGET_SHA" = "2ac9d852a288fa27e1a264bd1347be21ae485541"
+          git diff --quiet "$SOURCE_SHA" "$TAG_TARGET_SHA" -- app/ settings.gradle.kts build.gradle.kts gradle.properties
+          git diff --quiet origin/main "$TAG_TARGET_SHA" -- .github/workflows/
+          if gh release view v0.7.61-test -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::TEST release already exists; refuse overwrite"
+            exit 1
+          fi
+          mkdir -p work/preflight work/signing out
+          gh run download "$SOURCE_RUN" -R "$GITHUB_REPOSITORY" -n "$SOURCE_ARTIFACT" -D work/preflight
+          echo "$UNSIGNED_SHA  work/preflight/$SOURCE_FILE" | sha256sum -c -
+      - name: Reconstruct the exact locally signed APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .github/release-assets/v0761-test/checksums.env
+          base64 -d .github/release-assets/v0761-test/signed-delta.b64 > work/signing/delta.zst
+          echo "$PATCH_SHA  work/signing/delta.zst" | sha256sum -c -
+          zstd -q -d --patch-from="work/preflight/$SOURCE_FILE" work/signing/delta.zst -o out/MusicFlow-TEST_0.7.61.apk
+          echo "$SIGNED_SHA  out/MusicFlow-TEST_0.7.61.apk" | sha256sum -c -
+          (cd out && sha256sum MusicFlow-TEST_0.7.61.apk > SHA256SUMS.txt)
+      - name: Check TEST certificate, APK signatures and package identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .github/release-assets/v0761-test/checksums.env
+          if ! test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"; then
+            sdkmanager "build-tools;36.0.0"
+          fi
+          APK=out/MusicFlow-TEST_0.7.61.apk
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c 4 "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > work/signing/verified.txt
+          grep -Fx 'Verified using v2 scheme (APK Signature Scheme v2): true' work/signing/verified.txt
+          grep -Fx 'Verified using v3 scheme (APK Signature Scheme v3): true' work/signing/verified.txt
+          test "$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' work/signing/verified.txt)" = "$TEST_CERT_SHA"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "name='com.musicflow.preview.dev' versionCode='761' versionName='0.7.61-dev'"
+      - name: Publish TEST prerelease and verify GitHub digest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source .github/release-assets/v0761-test/checksums.env
+          if git ls-remote --exit-code --tags origin refs/tags/v0.7.61-test >/dev/null; then
+            git fetch origin refs/tags/v0.7.61-test:refs/tags/v0.7.61-test
+            test "$(git rev-parse 'v0.7.61-test^{commit}')" = "$TAG_TARGET_SHA"
+          else
+            git tag v0.7.61-test "$TAG_TARGET_SHA"
+            git push origin refs/tags/v0.7.61-test
+          fi
+          gh release create v0.7.61-test out/MusicFlow-TEST_0.7.61.apk out/SHA256SUMS.txt -R "$GITHUB_REPOSITORY" --verify-tag --target "$TAG_TARGET_SHA" --prerelease --title "MusicFlow 0.7.61 TEST · загрузки и экспорт MP4" --notes "TEST 0.7.61-dev (761). Оценка размера качества видео, полноэкранный просмотр загруженного видео, прогресс и отмена экспорта MP4. Android UI радио и DASH прошли, Zaycev и Mail.ru достигли READY, Muzofond вернул HTTP 403. Реальное длинное скачивание и экспорт на смартфоне требуют проверки. Постоянная TEST подпись, основной канал не затронут."
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.7.61-test" --jq '.prerelease' | grep -Fx true
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.7.61-test" --jq '.assets[] | select(.name=="MusicFlow-TEST_0.7.61.apk") | .digest' | grep -Fx "sha256:$SIGNED_SHA"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.61-TEST-stable-signed
+          path: out/
+          if-no-files-found: error
+          retention-days: 30
