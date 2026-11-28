@@ -5,6 +5,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.Dispatchers
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
@@ -13,11 +14,14 @@ import kotlinx.coroutines.runBlocking
 
 /** One playback resolver for the main service and independent diagnostic player. */
 @OptIn(UnstableApi::class)
-internal fun musicPlaybackSourceFactory(context: Context): DefaultMediaSourceFactory {
+internal fun musicPlaybackSourceFactory(context: Context, useMusicCache: Boolean = true): DefaultMediaSourceFactory {
     val http = DefaultHttpDataSource.Factory()
         .setConnectTimeoutMs(TvPlaybackTuning.CONNECT_TIMEOUT_MS)
         .setReadTimeoutMs(TvPlaybackTuning.READ_TIMEOUT_MS)
-    val upstream = DefaultDataSource.Factory(context, http)
+    val transport = if (useMusicCache) DataSource.Factory {
+        MusicHttpCacheDataSource(context.applicationContext, http)
+    } else http
+    val upstream = DefaultDataSource.Factory(context, transport)
     val resolvedDataSource = ResolvingDataSource.Factory(upstream) { spec ->
         val host = spec.uri.host?.lowercase(Locale.ROOT).orEmpty()
         if (spec.uri.scheme == "chart") {

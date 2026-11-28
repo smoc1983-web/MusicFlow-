@@ -285,6 +285,7 @@ private fun MusicScreen(
     var sectionMenu by remember { mutableStateOf(false) }
     var showAppearanceMenu by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
+    var showMusicCacheDialog by remember { mutableStateOf(false) }
     var showDirectDownloadDialog by remember { mutableStateOf(false) }
     var showTrackQualityDialog by remember { mutableStateOf(false) }
     var trackSizes by remember { mutableStateOf<Map<String, Long?>>(emptyMap()) }
@@ -781,6 +782,10 @@ private fun MusicScreen(
                         showAppearanceMenu = false
                         MediaDownloads.openDownloads(context)
                     })
+                    DropdownMenuItem(text = { Text("Музыкальный кеш") }, onClick = {
+                        showAppearanceMenu = false
+                        showMusicCacheDialog = true
+                    })
                     DropdownMenuItem(text = { Text("Диагностика") }, onClick = {
                         showAppearanceMenu = false
                         tab = 4
@@ -1229,6 +1234,9 @@ private fun MusicScreen(
             }
         )
     }
+    }
+    if (showMusicCacheDialog) {
+        MusicHttpCacheDialog(onDismiss = { showMusicCacheDialog = false })
     }
     if (showAboutDialog) {
         MusicFlowAboutDialog(onDismiss = { showAboutDialog = false })

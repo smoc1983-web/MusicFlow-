@@ -50,7 +50,7 @@ internal suspend fun probeMusicSource(
         if (candidates.isEmpty()) return@withContext "Найдено: ${tracks.size}. Нет аудиопотоков"
         onProgress("Найдено: ${tracks.size}. Проверка аудио…")
         val probe = ExoPlayer.Builder(context.applicationContext)
-            .setMediaSourceFactory(musicPlaybackSourceFactory(context.applicationContext))
+            .setMediaSourceFactory(musicPlaybackSourceFactory(context.applicationContext), useMusicCache = false)
             .build()
         player = probe
         probe.volume = 0f
