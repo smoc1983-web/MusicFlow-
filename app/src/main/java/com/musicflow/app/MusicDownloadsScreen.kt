@@ -239,12 +239,7 @@ internal fun MusicDownloadsScreen(
     var loadError by remember { mutableStateOf<String?>(null) }
     var transferRates by remember { mutableStateOf<Map<String, DownloadSpeedSample>>(emptyMap()) }
     var pendingRemoval by remember { mutableStateOf<CleanupPrompt?>(null) }
-    var pendingExport by remember { mutableStateOf<LibraryFile.Cached?>(null) }
-    val exportState by MusicFlowMp4ExportService.state.collectAsState()
     val hlsState by MusicFlowHlsShareService.state.collectAsState()
-    val exporting = exportState.active
-    val exportTitle = exportState.title
-    val exportProgress = exportState.progress
     LaunchedEffect(hlsState.openRequested) {
         if (hlsState.openRequested) MusicFlowHlsShareService.takeOpenUrl()?.let { url ->
             onBeforePlayback()
@@ -265,8 +260,8 @@ internal fun MusicDownloadsScreen(
     val markedKeys = selectedKeys.intersect(validKeys)
 
     fun requestCleanup(scope: CleanupScope, keys: Set<String> = emptySet(), single: LibraryFile? = null) {
-        if (removing || exporting || hlsState.active) {
-            android.widget.Toast.makeText(context, "Сначала завершите экспорт или закройте локальный поток",
+        if (removing || hlsState.active) {
+            android.widget.Toast.makeText(context, "Сначала закройте локальный поток",
                 android.widget.Toast.LENGTH_SHORT).show()
             return
         }
@@ -355,7 +350,7 @@ internal fun MusicDownloadsScreen(
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Загрузки · ход скачивания", style = MaterialTheme.typography.titleLarge)
-        Text("Здесь видны текущие загрузки: процент выполнения, объём, скорость и оставшееся время (если сервер сообщил размер). Можно остановить, продолжить или открыть готовый файл. Обычные MP4/MP3 доступны другим плеерам; HLS/DASH хранятся внутри MusicFlow.",
+        Text("Здесь видны текущие загрузки: процент выполнения, объём, скорость и оставшееся время (если сервер сообщил размер). Можно остановить, продолжить или открыть готовый файл. Обычные MP4/MP3 доступны другим плеерам. HLS можно открыть в совместимом стороннем плеере без перекодировки; DASH доступен во встроенном плеере.",
             style = MaterialTheme.typography.bodySmall)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -418,7 +413,6 @@ internal fun MusicDownloadsScreen(
         }
         if (selectionMode) Text("Отмечено: ${markedKeys.size}. «Выбрать показанные» относится к текущему фильтру.",
             style = MaterialTheme.typography.bodySmall)
-        if (!exporting) exportState.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         if (hlsState.active) {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
@@ -433,49 +427,7 @@ internal fun MusicDownloadsScreen(
                 }
             }
         } else hlsState.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-        if (exporting) {
-            val progress = exportProgress
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Column(
-                    Modifier.fillMaxWidth().padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text("Экспорт MP4", style = MaterialTheme.typography.titleMedium)
-                    Text(exportTitle, style = MaterialTheme.typography.bodySmall,
-                        maxLines = 2)
-                    val phase = when (progress?.phase) {
-                        OfflineMp4ExportPhase.TRANSFORMING -> "Создание MP4"
-                        OfflineMp4ExportPhase.SAVING -> "Сохранение в «Фильмы/MusicFlow»"
-                        null -> "Подготовка экспорта"
-                    }
-                    val percent = progress?.percent
-                    Text(phase + (percent?.let { " · $it%" } ?: " · расчёт прогресса…"),
-                        style = MaterialTheme.typography.labelMedium)
-                    if (percent != null) {
-                        LinearProgressIndicator(
-                            progress = { percent.coerceIn(0, 100) / 100f },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    if (progress != null) {
-                        val bytes = humanBytes(progress.processedBytes)
-                        val total = progress.totalBytes?.takeIf { it > 0L }
-                            ?.let { " из " + humanBytes(it) }.orEmpty()
-                        Text((if (progress.phase == OfflineMp4ExportPhase.TRANSFORMING)
-                            "Создано временного MP4: " else "Скопировано: ") +
-                            bytes + total, style = MaterialTheme.typography.labelSmall)
-                    }
-                    TextButton(onClick = { MusicFlowMp4ExportService.cancel(context) }) {
-                        Icon(Icons.Filled.Close, contentDescription = null)
-                        Spacer(Modifier.width(5.dp))
-                        Text("Отменить экспорт")
-                    }
-                }
-            }
-        } else if (removing) {
+        if (removing) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
         if (loadError != null) Text(loadError!!, color = MaterialTheme.colorScheme.error)
@@ -519,19 +471,6 @@ internal fun MusicDownloadsScreen(
                                     },
                                     enabled = !hlsState.active && !removing
                                 ) { Text("Открыть HLS через другой плеер") }
-                            }
-                            if (file is LibraryFile.Cached && file.ready &&
-                                !file.isMusic && OfflineMp4ExportPolicy.allowed(
-                                    true,
-                                    OfflineDownloadRoute.classify(file.value.request.uri.toString()) ==
-                                        OfflineTransfer.ADAPTIVE_HLS,
-                                    file.value.request.keySetId != null,
-                                    android.os.Build.VERSION.SDK_INT
-                                )) {
-                                OutlinedButton(onClick = { pendingExport = file },
-                                    enabled = !exporting && !removing) {
-                                    Text("Экспорт MP4 в фоне")
-                                }
                             }
                             if (file.state == DownloadUiState.DOWNLOADING ||
                                 file.state == DownloadUiState.PAUSED_SYSTEM ||
@@ -602,34 +541,6 @@ internal fun MusicDownloadsScreen(
                 }
             }
         }
-    }
-    pendingExport?.let { file ->
-        AlertDialog(
-            onDismissRequest = { pendingExport = null },
-            title = { Text("Сохранить отдельный MP4?") },
-            text = {
-                Text("MusicFlow попытается преобразовать завершённый HLS из офлайн-кеша " +
-                    "в MP4 и сохранить в Фильмы/MusicFlow. Это потребует дополнительного " +
-                    "свободного места. Экспорт продолжится в фоне, прогресс и отмена доступны в уведомлении. " +
-                    "Не все видеокодеки совместимы; исходный кеш не удаляется.")
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    pendingExport = null
-                    try {
-                        MusicFlowMp4ExportService.start(context, file.value.request.id, file.title)
-                    } catch (error: Exception) {
-                        AppDiagnostics.failure("Downloads", "start offline export", error)
-                        android.widget.Toast.makeText(context,
-                            "Экспорт не запущен: ${error.message.orEmpty()}",
-                            android.widget.Toast.LENGTH_LONG).show()
-                    }
-                }) { Text("Экспортировать") }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingExport = null }) { Text("Отмена") }
-            }
-        )
     }
     pendingRemoval?.let { prompt ->
         AlertDialog(

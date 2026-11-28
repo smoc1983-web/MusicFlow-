@@ -14,7 +14,9 @@ assert '::zaycevTracks' in sources
 assert 'zaycev://track/' in source
 assert 'pages/search/tracks' in source
 assert 'track/filezmeta' in source and 'track/play/' in source
-assert 'ZaycevStreamResolver.resolve(spec.uri)' in playback
+resolver = (root/'MusicPlaybackSourceFactory.kt').read_text(encoding='utf-8')
+assert 'musicPlaybackSourceFactory(this)' in playback
+assert 'ZaycevStreamResolver.resolve(spec.uri)' in resolver
 assert 'probeAlbumStream' not in album
 assert 'id.startsWith("zaycev:")' in main
 assert 'resultListState.scrollToItem(0)' in main

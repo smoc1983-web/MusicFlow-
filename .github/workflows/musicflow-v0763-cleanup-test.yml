@@ -1,0 +1,127 @@
+name: MusicFlow TEST 0.7.63 offline playback cleanup preflight
+on:
+  push:
+    branches: ["feature/musicflow-cleanup-cache-updates-v0763"]
+    paths:
+      - "app/**"
+      - "settings.gradle.kts"
+      - ".github/workflows/musicflow-v0763-cleanup-test.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  kotlin-tests-and-test-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" || test -d "$ANDROID_HOME/platforms/android-36"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: ub-mode Kotlin regression + TEST debug and AndroidTest compilation
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Inspect exact TEST package, signature, video download and radio control wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+          root=Path("app/src/main/java/com/musicflow/app")
+          cinema=(root/"CinemaNativeInlinePlayer.kt").read_text()
+          mini=(root/"MainActivity.kt").read_text()
+          player=(root/"CompactGlassRadioDialog.kt").read_text()
+          cover=(root/"RadioStationArtwork.kt").read_text()
+          radio=(root/"RussianRadio.kt").read_text()
+          policy=(root/"CinemaDownloadQualityPolicy.kt").read_text()
+          gradle=Path("app/build.gradle.kts").read_text()
+          assert 'Качество скачивания видео' in cinema
+          assert 'DownloadSizeEstimate.choice(' in cinema
+          assert 'DownloadsProgressShortcut' in cinema
+          assert 'Загрузки — посмотреть ход скачивания' in cinema
+          assert 'if (!CinemaAudioPickerPolicy.canOpen(audioOptions.size)) return' in cinema
+          assert 'fun canOpen(trackCount: Int): Boolean = trackCount > 1' in (root/'CinemaAudioPickerPolicy.kt').read_text()
+          assert 'Загрузки · ход скачивания' in (root/'MusicDownloadsScreen.kt').read_text()
+          offline=(root/'MusicDownloadsScreen.kt').read_text()
+          assert 'Text("На весь экран")' in offline
+          assert 'SCREEN_ORIENTATION_SENSOR_LANDSCAPE' in offline
+          assert 'DialogProperties(' in offline and 'usePlatformDefaultWidth = !fullScreen' in offline
+          assert 'BackHandler(enabled = fullScreen)' in offline
+          assert 'FullscreenExit' in offline
+          assert 'OfflineMediaPlayerView(' in offline
+          for path in ['OfflineMp4Exporter.kt','MusicFlowMp4ExportService.kt']:
+              assert not (root/path).exists(), path
+          for path in Path('app/src').rglob('*.kt'):
+              assert not any(token in path.read_text() for token in ('OfflineMp4Export','OfflineMp4Progress','MusicFlowMp4ExportService','androidx.media3.transformer')), str(path)
+          manifest=Path('app/src/main/AndroidManifest.xml').read_text()
+          assert 'MusicFlowMp4ExportService' not in manifest and 'FOREGROUND_SERVICE_MEDIA_PROCESSING' not in manifest
+          assert 'media3-transformer' not in gradle
+          assert 'Открыть HLS через другой плеер' in offline
+          assert 'OfflineDownloads.snapshot(context)' in offline and 'loadDirectFiles(context)' in offline
+          assert 'OfflineDownloads.remove(' in offline and 'MediaDownloads.cancel(' in offline
+          assert 'onRelease = { it.player = null' in offline
+          assert 'DownloadSizeEstimate.choice(' in mini
+          assert (root/'DownloadSizeEstimate.kt').exists()
+          assert (root/'DirectFileSizeInspector.kt').exists()
+          assert 'withEstimates(' in (root/'HlsQuality.kt').read_text()
+          assert 'totalEstimatedBytes' in (root/'DashVideoQuality.kt').read_text()
+          assert 'HlsQualityInspector.inspect(streamUrl)' in cinema
+          assert 'DashVideoQualityInspector.inspect(streamUrl)' in cinema
+          assert 'dashStreamKeys = dashKeys' in cinema
+          assert 'hlsVariantIndex = hlsIndex' in cinema
+          assert 'CinemaDownloadQualityPolicy.hlsIndex' in cinema
+          assert 'preserveShuffle(' in mini
+          assert 'Предыдущая радиостанция' in mini and 'Следующая радиостанция' in mini
+          assert 'Включить случайный порядок' in mini
+          assert 'Предыдущая радиостанция' in player and 'Следующая радиостанция' in player
+          assert 'shuffleModeEnabled' in player
+          assert 'RadioStationArtwork(' in radio and 'RadioStationArtwork(' in mini
+          assert 'error = { placeholder() }' in cover
+          assert 'artworkResource(name)' in cover and 'painterResource(' in cover
+          art=list(Path('app/src/main/res/drawable-nodpi').glob('musicflow_radio_fallback_*.webp'))
+          assert len(art)==9, len(art)
+          assert all(3_000 <= p.stat().st_size <= 100_000 for p in art)
+
+          assert 'versionCode = 763' in gradle and 'versionName = "0.7.63"' in gradle
+          hls=(root/'MusicFlowHlsShareService.kt').read_text()
+          assert 'MusicFlowHlsShareService.start(' in offline
+          assert 'PlaceholderDataSource.FACTORY' in hls and 'setCacheWriteDataSinkFactory(null)' in hls
+          for cls, min_count in [
+              ("OfflineHlsBridgeTest",3),
+              ("CinemaDownloadQualityPolicyTest",4),
+              ("RadioQueuePolicyTest",4),
+              ("HlsQualityPolicyTest",7),
+              ("DownloadSizeEstimateTest",3),
+              ("SingleMusicSourceTest",2),
+              ("CinemaAudioPickerPolicyTest",2),
+              ("RadioStationArtworkFallbackTest",3),
+              ("WorldChartCoversTest",6),
+          ]:
+              matches=list(Path("app/build/test-results/testDebugUnitTest").glob("TEST-*"+cls+".xml"))
+              assert matches, "Test results missing "+cls
+              result=ET.parse(matches[0]).getroot()
+              assert int(result.get("tests","0"))>=min_count, (cls,result.attrib)
+              assert int(result.get("failures","0"))==0 and int(result.get("errors","0"))==0, (cls,result.attrib)
+          print("PASS: cinema quality, radio shuffle, fallback artwork, world chart regressions")
+          PY
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" |
+            grep -F "name='com.musicflow.preview.dev' versionCode='763' versionName='0.7.63-dev'"
+          mkdir -p out
+          cp "$APK" out/MusicFlow-0.7.63-TEST-cleanup-preflight.apk
+          (cd out && sha256sum MusicFlow-0.7.63-TEST-cleanup-preflight.apk > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.63-TEST-cleanup-preflight
+          path: out/
+          retention-days: 30
+          if-no-files-found: error
