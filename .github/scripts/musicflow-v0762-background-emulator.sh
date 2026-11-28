@@ -3,6 +3,9 @@
 # classified *nonpassing* network diagnostics. Never fake a source PASS.
 set -Eeuo pipefail
 mkdir -p emulator-evidence
+suite_group="${1:?offline, radio or live required}"
+case "$suite_group" in offline|radio|live) ;; *) exit 2 ;; esac
+printf '%s\n' "$suite_group" > emulator-evidence/suite.txt
 # Bound every adb call, including diagnostic collection, even after device loss.
 # Resolve adb outside the shell function so timeout invokes the executable.
 ADB_BIN="$(type -P adb)"
@@ -82,38 +85,50 @@ run_android_test() {
 }
 
 overall=0
-# These checks use bundled radio fixtures and synthetic DASH MPDs, no external
-# music providers; therefore network/DNS failures cannot hide Android defects.
-# Verify the release-specific HLS behavior first; later UI/device failures
-# must not erase its independent evidence or turn a failed gate green.
-run_android_test offline-hls com.musicflow.app.OfflineHlsCacheAndroidTest || overall=1
-run_android_test dash-quality com.musicflow.app.DashVideoQualityTest || overall=1
-run_android_test radio-ui \
-  'com.musicflow.app.MusicSourcesEmulatorTest#radioScreenAlwaysShowsArtworkAndPlayerNavigationControls' || overall=1
-
-# Live provider checks are not interchangeable with offline regressions.
-# Keep real asserts and require READY. The only exception to the release gate
-# is independently recorded DNS failure of *all three* provider lookups.
-adb shell getprop net.dns1 > emulator-evidence/dns-1.txt || true
-adb shell getprop net.dns2 > emulator-evidence/dns-2.txt || true
-if run_android_test live-sources \
-  'com.musicflow.app.MusicSourcesEmulatorTest#searchAndPlaybackOfAllThreeRegisteredSources'; then
-  echo "LIVE_SOURCE_STATUS=PASS_READY" | tee emulator-evidence/live-source-status.env
-else
-  report=emulator-evidence/source-probe-v0760.txt
-  if grep -Fq 'source=zaycev search=ERROR type=UnknownHostException' "$report" &&
-     grep -Fq 'source=muzofond search=ERROR type=UnknownHostException' "$report" &&
-     grep -Fq 'source=mailru search=ERROR type=UnknownHostException' "$report" &&
-     grep -Fq 'playback=SKIPPED: no playable candidates returned' "$report" &&
-     grep -Fq 'No provider returned a candidate:' emulator-evidence/live-sources.txt; then
-    echo "LIVE_SOURCE_STATUS=NOT_VERIFIED_DNS_BLOCKED" | tee emulator-evidence/live-source-status.env
-    echo "::warning::All three live source lookups failed DNS in Android emulator. No provider PASS claimed; requires a live device check."
-  else
-    echo "LIVE_SOURCE_STATUS=FAILED" | tee emulator-evidence/live-source-status.env
-    echo "::error::Provider failures were NOT exclusively DNS; gate remains failed."
-    overall=1
-  fi
-fi
+case "$suite_group" in
+  offline)
+    run_android_test offline-hls com.musicflow.app.OfflineHlsCacheAndroidTest || overall=1
+    run_android_test dash-quality com.musicflow.app.DashVideoQualityTest || overall=1
+    ;;
+  radio)
+    run_android_test radio-ui \
+      'com.musicflow.app.MusicSourcesEmulatorTest#radioScreenAlwaysShowsArtworkAndPlayerNavigationControls' || overall=1
+    ;;
+  live)
+    adb shell getprop net.dns1 > emulator-evidence/dns-1.txt || true
+    adb shell getprop net.dns2 > emulator-evidence/dns-2.txt || true
+    report=emulator-evidence/source-probe-v0760.txt
+    if run_android_test live-sources \
+      'com.musicflow.app.MusicSourcesEmulatorTest#searchAndPlaybackOfAllThreeRegisteredSources'; then
+      # An instrumentation PASS may only mean at least one provider reached READY.
+      # Preserve independent status instead of claiming all providers passed.
+      if [[ -s "$report" ]] && grep -Eq 'source=zaycev candidate=[0-9]+ playback=READY' "$report" &&
+        grep -Eq 'source=muzofond candidate=[0-9]+ playback=READY' "$report" &&
+        grep -Eq 'source=mailru candidate=[0-9]+ playback=READY' "$report"; then
+        echo "LIVE_SOURCE_STATUS=PASS_ALL_READY" | tee emulator-evidence/live-source-status.env
+      else
+        echo "LIVE_SOURCE_STATUS=PARTIAL_NOT_ALL_READY" | tee emulator-evidence/live-source-status.env
+        echo "::error::Not all three providers reached READY; inspect independent report"
+        overall=1
+      fi
+    elif [[ -s "$report" ]] &&
+       grep -Fq 'source=zaycev search=ERROR type=UnknownHostException' "$report" &&
+       grep -Fq 'source=muzofond search=ERROR type=UnknownHostException' "$report" &&
+       grep -Fq 'source=mailru search=ERROR type=UnknownHostException' "$report" &&
+       grep -Fq 'playback=SKIPPED: no playable candidates returned' "$report" &&
+       grep -Fq 'No provider returned a candidate:' emulator-evidence/live-sources.txt; then
+      echo "LIVE_SOURCE_STATUS=NOT_VERIFIED_DNS_BLOCKED" | tee emulator-evidence/live-source-status.env
+      echo "::warning::All three live source lookups failed DNS; no provider PASS claimed."
+    else
+      if ! adb get-state 2>/dev/null | grep -qx device; then
+        echo "LIVE_SOURCE_STATUS=NOT_VERIFIED_DEVICE_LOST" | tee emulator-evidence/live-source-status.env
+      else
+        echo "LIVE_SOURCE_STATUS=FAILED" | tee emulator-evidence/live-source-status.env
+      fi
+      overall=1
+    fi
+    ;;
+esac
 
 for item in source-probe-v0760.txt musicflow-radio-list-v0760.png musicflow-radio-player-v0760.png; do
   adb exec-out run-as com.musicflow.preview.dev cat "files/$item" \
@@ -125,4 +140,4 @@ if [[ "$overall" -ne 0 ]]; then
   echo "::error::Required offline Android gate or unclassified source test failed."
   exit 1
 fi
-echo "PASS: REQUIRED Android UI/DASH gate; see live-source-status.env for independent network result."
+echo "PASS: Android suite $suite_group; see suite evidence for exact results."
