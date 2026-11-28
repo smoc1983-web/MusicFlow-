@@ -256,6 +256,21 @@ class MusicSourcesEmulatorTest {
 
         val nowPlaying = By.text("Сейчас играет").pkg(app)
         navigate(By.descContains("Слушать").pkg(app), nowPlaying)
+        // Exercise an actual Activity recreation after station selection. A new
+        // composition must restore the selected radio tab and current player.
+        // Capture a live MainActivity on the main thread, not a stale UiObject.
+        main {
+            val activities = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED)
+            val activity = activities.filterIsInstance<MainActivity>().singleOrNull()
+                ?: error("MainActivity is not resumed before recreation")
+            activity.recreate()
+        }
+        assertTrue("Radio tab lost after Activity recreation",
+            device.wait(Until.hasObject(By.text("Популярные").pkg(app)), 70_000L))
+        assertTrue("Radio player lost after Activity recreation",
+            device.wait(Until.hasObject(nowPlaying), 70_000L))
+        record("radio_ui=recreation_retained_radio_and_player")
         val orderedMode = By.desc("Включён порядок по списку — переключить случайно").pkg(app)
         navigate(nowPlaying, orderedMode)
         assertTrue("Previous station absent in compact player",

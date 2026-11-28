@@ -281,7 +281,7 @@ private fun MusicScreen(
     var searchMode by remember { mutableStateOf(SearchMode.ALL) }
     var sortMode by remember { mutableStateOf(SortMode.RELEVANCE) }
     // Unified MusicFlow opens the usual music home. Cinema TEST v12 is available as "Кино".
-    var tab by remember { mutableIntStateOf(0) }
+    var tab by rememberSaveable { mutableIntStateOf(0) }
     var sectionMenu by remember { mutableStateOf(false) }
     var showAppearanceMenu by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }

@@ -15,7 +15,7 @@ permissions:
   contents: read
 jobs:
   instrumented-emulator:
-    runs-on: macos-15-intel
+    runs-on: ubuntu-24.04
     timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +26,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
+      - name: Require hardware acceleration (KVM)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -c /dev/kvm
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo udevadm settle
+          test -r /dev/kvm && test -w /dev/kvm
+          ls -l /dev/kvm
       - name: Compile TEST app and real Android instrumentation APK
         run: gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
       - name: Android 14 accelerated emulator - required radio/DASH and real provider diagnostic
@@ -37,6 +48,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           cores: 2
+          disable-linux-hw-accel: false
           ram-size: 3072M
           heap-size: 384M
           disk-size: 6G

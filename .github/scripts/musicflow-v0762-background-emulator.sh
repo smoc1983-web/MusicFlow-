@@ -35,6 +35,8 @@ install_checked app/build/outputs/apk/androidTest/debug/app-debug-androidTest.ap
 adb shell input keyevent KEYCODE_WAKEUP || true
 adb shell wm dismiss-keyguard || true
 adb shell dumpsys window > emulator-evidence/window-before-ui.txt || true
+# Record the actual emulator acceleration mode; never silently run a software AVD.
+"$ANDROID_HOME/emulator/emulator" -accel-check | tee emulator-evidence/acceleration.txt
 
 run_android_test() {
   local id="$1" suite="$2" result=0
