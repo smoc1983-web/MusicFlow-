@@ -50,7 +50,7 @@ internal fun MusicFlowAutoUpdate() {
     var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
-        if (!MusicFlowUpdates.supportsOfficialUpdates(context)) return@LaunchedEffect
+        if (!MusicFlowUpdates.supportsUpdates(context)) return@LaunchedEffect
         val installed = MusicFlowUpdates.currentCode(context)
         val saved = MusicFlowBackgroundUpdates.savedRelease(context)
             ?.takeIf { MusicFlowUpdatePolicy.isNewer(it.versionCode, installed) }
@@ -58,7 +58,7 @@ internal fun MusicFlowAutoUpdate() {
         val preferences = context.getSharedPreferences("musicflow_updates", Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
         try {
-            val latest = MusicFlowUpdates.latestRelease()
+            val latest = MusicFlowUpdates.latestRelease(context)
             if (latest != null && candidateAllowed(latest)) {
                 val snoozedVersion = preferences.getLong("snoozed_version", 0L)
                 val snoozedUntil = preferences.getLong("snoozed_until", 0L)
@@ -72,7 +72,7 @@ internal fun MusicFlowAutoUpdate() {
     }
 
     LaunchedEffect(Unit) {
-        if (!MusicFlowUpdates.supportsOfficialUpdates(context)) return@LaunchedEffect
+        if (!MusicFlowUpdates.supportsUpdates(context)) return@LaunchedEffect
         while (true) {
             try {
                 transfer = MusicFlowBackgroundUpdates.snapshot(context)

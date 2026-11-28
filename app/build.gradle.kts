@@ -12,8 +12,8 @@ android {
         minSdk = 26
         targetSdk = 35
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 752
-        versionName = "0.7.52"
+        versionCode = 761
+        versionName = "0.7.61"
     }
     // Signed releases use one persistent key stored in GitHub Actions secrets.
     // Local debug builds keep working when the release key is unavailable.
@@ -60,6 +60,7 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.8.0")
     implementation("androidx.media3:media3-exoplayer-hls:1.8.0")
     implementation("androidx.media3:media3-exoplayer-dash:1.8.0")
+    implementation("androidx.media3:media3-transformer:1.8.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("org.jsoup:jsoup:1.18.3")
     implementation("androidx.core:core:1.16.0")

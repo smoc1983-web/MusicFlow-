@@ -17,6 +17,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -24,6 +25,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.List
@@ -37,6 +40,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -64,7 +68,8 @@ import coil.compose.rememberAsyncImagePainter
 private data class CinemaVideoQuality(
     val label: String,
     val mediaGroup: androidx.media3.common.TrackGroup,
-    val trackIndex: Int
+    val trackIndex: Int,
+    val estimatedBytes: Long? = null
 )
 
 private data class CinemaAudioOption(
@@ -98,6 +103,16 @@ internal fun CinemaNativeInlinePlayer(
     var fullScreen by remember { mutableStateOf(false) }
     var enteredFullScreen by remember { mutableStateOf(false) }
     var seriesOpen by remember { mutableStateOf(false) }
+    var showDownloadsLibrary by remember { mutableStateOf(false) }
+    var showVideoDownloadQuality by remember(streamUrl) { mutableStateOf(false) }
+    var downloadInspecting by remember(streamUrl) { mutableStateOf(false) }
+    var downloadMessage by remember(streamUrl) { mutableStateOf("") }
+    var downloadHlsOptions by remember(streamUrl) { mutableStateOf<List<HlsQuality>>(emptyList()) }
+    var downloadDashOptions by remember(streamUrl) { mutableStateOf<List<DashVideoQuality>>(emptyList()) }
+    var downloadSelectedHls by remember(streamUrl) { mutableStateOf<Int?>(null) }
+    var downloadSelectedDash by remember(streamUrl) { mutableStateOf<Int?>(null) }
+    var downloadDirectSize by remember(streamUrl) { mutableStateOf<Long?>(null) }
+    val downloadType = remember(streamUrl) { OfflineDownloadRoute.classify(streamUrl) }
     var controllerVisible by remember { mutableStateOf(true) }
     var qualityOpen by remember { mutableStateOf(false) }
     var selectedQuality by remember(sourceKey, streamUrl) { mutableStateOf("Авто") }
@@ -239,6 +254,14 @@ internal fun CinemaNativeInlinePlayer(
     }
 
     val qualityOptions = remember(player, tracksVersion) {
+        val audioRates = player.currentTracks.groups
+            .filter { it.type == C.TRACK_TYPE_AUDIO }
+            .mapNotNull { group ->
+                (0 until group.length).firstOrNull { group.isTrackSelected(it) }
+                    ?.let { group.getTrackFormat(it).bitrate.toLong().takeIf { rate -> rate > 0L } }
+            }
+        val durationSeconds = player.duration
+            .takeIf { it > 0 && it != C.TIME_UNSET }?.toDouble()?.div(1000.0)
         buildList {
             for (group in player.currentTracks.groups) {
                 if (group.type != C.TRACK_TYPE_VIDEO) continue
@@ -247,7 +270,10 @@ internal fun CinemaNativeInlinePlayer(
                     val format = group.getTrackFormat(i)
                     if (format.height <= 0) continue
                     add(CinemaVideoQuality(
-                        format.height.toString() + "p", group.mediaTrackGroup, i
+                        format.height.toString() + "p", group.mediaTrackGroup, i,
+                        DownloadSizeEstimate.bytes(durationSeconds,
+                            format.bitrate.toLong().takeIf { it > 0L }
+                                ?.plus(audioRates.firstOrNull() ?: 0L))
                     ))
                 }
             }
@@ -310,10 +336,10 @@ internal fun CinemaNativeInlinePlayer(
 
     @Composable
     fun AudioPicker() {
+        if (!CinemaAudioPickerPolicy.canOpen(audioOptions.size)) return
         Box {
             TextButton(
                 onClick = { audioOpen = true },
-                enabled = CinemaAudioPickerPolicy.canOpen(audioOptions.size)
             ) {
                 Text(
                     "Озвучка: " + when {
@@ -347,6 +373,85 @@ internal fun CinemaNativeInlinePlayer(
     }
 
     @Composable
+    fun DownloadsProgressShortcut(tint: Color) {
+        Column(
+            modifier = Modifier.width(72.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            IconButton(onClick = { showDownloadsLibrary = true },
+                modifier = Modifier.size(38.dp)) {
+                Icon(Icons.Filled.FolderOpen,
+                    contentDescription = "Загрузки — посмотреть ход скачивания",
+                    tint = tint)
+            }
+            Text("Загрузки", color = tint,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1)
+            Text("прогресс", color = tint.copy(alpha = 0.78f),
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 9.sp),
+                maxLines = 1)
+        }
+    }
+
+    // Download settings are independent of the current video player's quality override:
+    // Media3's playback track index is not a valid HLS/DASH offline StreamKey.
+    LaunchedEffect(showVideoDownloadQuality, streamUrl) {
+        if (!showVideoDownloadQuality) return@LaunchedEffect
+        downloadInspecting = true
+        downloadHlsOptions = emptyList()
+        downloadDashOptions = emptyList()
+        downloadSelectedHls = null
+        downloadSelectedDash = null
+        downloadMessage = ""
+        try {
+            when (downloadType) {
+                OfflineTransfer.ADAPTIVE_HLS ->
+                    downloadHlsOptions = kotlinx.coroutines.withContext(
+                        kotlinx.coroutines.Dispatchers.IO
+                    ) {
+                        HlsQualityInspector.inspect(streamUrl)
+                    }
+                OfflineTransfer.ADAPTIVE_DASH ->
+                    downloadDashOptions = kotlinx.coroutines.withContext(
+                        kotlinx.coroutines.Dispatchers.IO
+                    ) {
+                        DashVideoQualityInspector.inspect(streamUrl)
+                    }
+                OfflineTransfer.DIRECT_FILE ->
+                    downloadDirectSize = kotlinx.coroutines.withContext(
+                        kotlinx.coroutines.Dispatchers.IO
+                    ) {
+                        runCatching {
+                            DirectFileSizeInspector.contentLength(streamUrl,
+                                DownloadHttpHeaders.validated(pageUrl.orEmpty(), ""))
+                        }.getOrNull()
+                    }
+                else -> Unit
+            }
+            downloadMessage = if (
+                downloadType == OfflineTransfer.ADAPTIVE_HLS && downloadHlsOptions.isEmpty() ||
+                downloadType == OfflineTransfer.ADAPTIVE_DASH && downloadDashOptions.isEmpty()
+            ) "В потоке нет доступного выбора качества. Будет скачан исходный вариант."
+            else CinemaDownloadQualityPolicy.notice(downloadType)
+        } catch (cancel: kotlinx.coroutines.CancellationException) {
+            throw cancel
+        } catch (failure: Exception) {
+            downloadMessage = "Не удалось получить список качеств: " +
+                (failure.message ?: "сеть недоступна") +
+                ". Можно оставить «Авто»."
+        } finally {
+            downloadInspecting = false
+        }
+    }
+
+    fun downloadCurrentMovie() {
+        // The same choice dialog is used from both compact and fullscreen cinema.
+        showDownloadsLibrary = false
+        showVideoDownloadQuality = true
+    }
+
+    @Composable
     fun VideoControls(modifier: Modifier) {
         Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -358,6 +463,10 @@ internal fun CinemaNativeInlinePlayer(
                         Icon(Icons.Filled.List, "Сезоны и серии", tint = Color.White)
                     }
                 }
+                IconButton(onClick = ::downloadCurrentMovie) {
+                    Icon(Icons.Filled.Download, "Скачать фильм", tint = Color.White)
+                }
+                DownloadsProgressShortcut(Color.White)
                 IconButton(onClick = { fullScreen = true }) {
                     Icon(Icons.Filled.Fullscreen, "На весь экран", tint = Color.White)
                 }
@@ -378,7 +487,8 @@ internal fun CinemaNativeInlinePlayer(
                         )
                         qualityOptions.forEach { option ->
                             DropdownMenuItem(
-                                text = { Text(option.label) },
+                                text = { Text(DownloadSizeEstimate.choice(
+                                    option.label, option.estimatedBytes)) },
                                 onClick = { selectQuality(option) }
                             )
                         }
@@ -464,7 +574,8 @@ internal fun CinemaNativeInlinePlayer(
                                 )
                                 qualityOptions.forEach { option ->
                                     DropdownMenuItem(
-                                        text = { Text(option.label) },
+                                        text = { Text(DownloadSizeEstimate.choice(
+                                        option.label, option.estimatedBytes)) },
                                         onClick = { selectQuality(option) }
                                     )
                                 }
@@ -472,6 +583,10 @@ internal fun CinemaNativeInlinePlayer(
                         }
                         AudioPicker()
                         PlayerEqualizerButton(tint = Color.White)
+                        IconButton(onClick = ::downloadCurrentMovie) {
+                            Icon(Icons.Filled.Download, "Скачать фильм", tint = Color.White)
+                        }
+                        DownloadsProgressShortcut(Color.White)
                         IconButton(onClick = ::collapseVideo) {
                             Icon(Icons.Filled.FullscreenExit, "Мини-плеер",
                                 tint = Color.White)
@@ -481,6 +596,133 @@ internal fun CinemaNativeInlinePlayer(
                                 tint = Color.White)
                         }
                     }
+                }
+            }
+        }
+    }
+
+    if (showVideoDownloadQuality) {
+        AlertDialog(
+            onDismissRequest = { showVideoDownloadQuality = false },
+            title = { Text("Качество скачивания видео") },
+            text = {
+                Column(
+                    modifier = Modifier.heightIn(max = 380.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(title, style = MaterialTheme.typography.titleSmall)
+                    if (downloadInspecting) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text(
+                        if (downloadMessage.isNotBlank()) downloadMessage
+                        else CinemaDownloadQualityPolicy.notice(downloadType),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    if (downloadType == OfflineTransfer.ADAPTIVE_HLS &&
+                        downloadHlsOptions.isNotEmpty()) {
+                        FilterChip(
+                            selected = downloadSelectedHls == null,
+                            onClick = { downloadSelectedHls = null },
+                            label = { Text("Авто") }
+                        )
+                        downloadHlsOptions.forEach { option ->
+                            FilterChip(
+                                selected = downloadSelectedHls == option.index,
+                                onClick = { downloadSelectedHls = option.index },
+                                enabled = !downloadInspecting && !option.externalAudio,
+                                label = { Text(DownloadSizeEstimate.choice(
+                                    option.label, option.estimatedBytes) +
+                                    if (option.externalAudio) " · отдельное аудио — Авто" else "") }
+                            )
+                        }
+                    }
+                    if (downloadType == OfflineTransfer.ADAPTIVE_DASH &&
+                        downloadDashOptions.isNotEmpty()) {
+                        FilterChip(
+                            selected = downloadSelectedDash == null,
+                            onClick = { downloadSelectedDash = null },
+                            label = { Text("Авто") }
+                        )
+                        downloadDashOptions.forEachIndexed { index, option ->
+                            FilterChip(
+                                selected = downloadSelectedDash == index,
+                                onClick = { downloadSelectedDash = index },
+                                enabled = !downloadInspecting,
+                                label = { Text(DownloadSizeEstimate.choice(
+                                    option.label, option.estimatedBytes)) }
+                            )
+                        }
+                    }
+                    if (downloadType == OfflineTransfer.ADAPTIVE_HLS ||
+                        downloadType == OfflineTransfer.ADAPTIVE_DASH) {
+                        Text("≈ — расчёт по длительности и битрейту. " +
+                            "При потоковой загрузке окончательный размер может отличаться.",
+                            style = MaterialTheme.typography.labelSmall)
+                    }
+                    if (downloadType == OfflineTransfer.DIRECT_FILE) {
+                        Text("Размер файла по данным сервера: " +
+                            DownloadSizeEstimate.format(downloadDirectSize, false),
+                            style = MaterialTheme.typography.bodySmall)
+                        Text("Прямой MP4/MKV уже закодирован в одном качестве. " +
+                            "Выбор 360p/720p/1080p возможен только при наличии " +
+                            "вариантов HLS/DASH или отдельных файлов.",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !downloadInspecting,
+                    onClick = {
+                        val hlsIndex = if (downloadType == OfflineTransfer.ADAPTIVE_HLS)
+                            CinemaDownloadQualityPolicy.hlsIndex(
+                                downloadHlsOptions, downloadSelectedHls
+                            ) else null
+                        val dashKeys = if (downloadType == OfflineTransfer.ADAPTIVE_DASH)
+                            downloadSelectedDash?.let { downloadDashOptions.getOrNull(it)?.streamKeys }
+                        else null
+                        val outcome = MediaDownloads.enqueue(
+                            context, streamUrl, title, DownloadMediaKind.VIDEO,
+                            referer = pageUrl, hlsVariantIndex = hlsIndex,
+                            dashStreamKeys = dashKeys
+                        )
+                        MediaDownloads.showResult(context, outcome)
+                        if (outcome is DownloadPlanResult.Accepted)
+                            showVideoDownloadQuality = false
+                    }
+                ) { Text("Скачать") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showVideoDownloadQuality = false }) {
+                    Text("Отмена")
+                }
+            }
+        )
+    }
+
+    if (showDownloadsLibrary) {
+        Dialog(onDismissRequest = { showDownloadsLibrary = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(0.96f).fillMaxHeight(0.88f),
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Column(Modifier.fillMaxSize()) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+                        horizontalArrangement = Arrangement.End) {
+                        IconButton(onClick = { showDownloadsLibrary = false }) {
+                            Icon(Icons.Filled.Close, "Вернуться к фильму")
+                        }
+                    }
+                    MusicDownloadsScreen(
+                        onAddLink = {
+                            showDownloadsLibrary = false
+                            downloadCurrentMovie()
+                        },
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        onBeforePlayback = { player.pause() }
+                    )
                 }
             }
         }
