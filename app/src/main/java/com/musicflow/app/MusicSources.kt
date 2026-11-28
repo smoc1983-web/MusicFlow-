@@ -77,6 +77,13 @@ private val providers = mapOf<String, suspend (String) -> List<Track>>(
     "mailru" to ::mailRuTracks
 )
 
+internal val diagnosticMusicSources: List<String> get() = providers.keys.toList()
+
+internal suspend fun searchDiagnosticMusic(source: String, query: String): List<Track> =
+    searchOneProvider(source, query, providers).filter {
+        it.id.substringBefore(':') == source && relevantMusic(it, query)
+    }
+
 internal suspend fun searchMusic(
     query: String,
     alternateQuery: String? = null,
