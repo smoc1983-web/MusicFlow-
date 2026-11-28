@@ -213,8 +213,8 @@ internal object OfflineMp4Exporter {
             task.transformer?.cancel()
             task.temp.delete()
         }
-        // The active copy loop notices cancelled and deletes its uncommitted URI.
-        task.finish(false, "Экспорт MP4 отменён")
+        // Keep the task alive during final copying until its pending MediaStore row is removed.
+        if (!task.saving) task.finish(false, "Экспорт MP4 отменён")
         return true
     }
 

@@ -240,9 +240,17 @@ internal fun MusicDownloadsScreen(
     var transferRates by remember { mutableStateOf<Map<String, DownloadSpeedSample>>(emptyMap()) }
     var pendingRemoval by remember { mutableStateOf<CleanupPrompt?>(null) }
     var pendingExport by remember { mutableStateOf<LibraryFile.Cached?>(null) }
-    var exporting by remember { mutableStateOf(false) }
-    var exportTitle by remember { mutableStateOf("") }
-    var exportProgress by remember { mutableStateOf<OfflineMp4ExportProgress?>(null) }
+    val exportState by MusicFlowMp4ExportService.state.collectAsState()
+    val hlsState by MusicFlowHlsShareService.state.collectAsState()
+    val exporting = exportState.active
+    val exportTitle = exportState.title
+    val exportProgress = exportState.progress
+    LaunchedEffect(hlsState.openRequested) {
+        if (hlsState.openRequested) MusicFlowHlsShareService.takeOpenUrl()?.let { url ->
+            onBeforePlayback()
+            openInOtherPlayer(context, Uri.parse(url), "application/vnd.apple.mpegurl")
+        }
+    }
     var selectedFilter by remember { mutableStateOf("Все") }
     var selectionMode by remember { mutableStateOf(false) }
     var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -257,7 +265,11 @@ internal fun MusicDownloadsScreen(
     val markedKeys = selectedKeys.intersect(validKeys)
 
     fun requestCleanup(scope: CleanupScope, keys: Set<String> = emptySet(), single: LibraryFile? = null) {
-        if (removing || exporting) return
+        if (removing || exporting || hlsState.active) {
+            android.widget.Toast.makeText(context, "Сначала завершите экспорт или закройте локальный поток",
+                android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
         val estimate = DownloadCleanupPolicy.plan(candidates, scope, keys)
         if (estimate.count == 0) return
         val title = when {
@@ -406,6 +418,21 @@ internal fun MusicDownloadsScreen(
         }
         if (selectionMode) Text("Отмечено: ${markedKeys.size}. «Выбрать показанные» относится к текущему фильтру.",
             style = MaterialTheme.typography.bodySmall)
+        if (!exporting) exportState.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        if (hlsState.active) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("Локальный HLS · " + hlsState.title)
+                    hlsState.url?.let { url ->
+                        TextButton(onClick = {
+                            onBeforePlayback()
+                            openInOtherPlayer(context, Uri.parse(url), "application/vnd.apple.mpegurl")
+                        }) { Text("Открыть в другом плеере") }
+                    } ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    TextButton(onClick = { MusicFlowHlsShareService.stop(context) }) { Text("Закрыть локальный поток") }
+                }
+            }
+        } else hlsState.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         if (exporting) {
             val progress = exportProgress
             Card(
@@ -441,7 +468,7 @@ internal fun MusicDownloadsScreen(
                             "Создано временного MP4: " else "Скопировано: ") +
                             bytes + total, style = MaterialTheme.typography.labelSmall)
                     }
-                    TextButton(onClick = { OfflineMp4Exporter.cancel() }) {
+                    TextButton(onClick = { MusicFlowMp4ExportService.cancel(context) }) {
                         Icon(Icons.Filled.Close, contentDescription = null)
                         Spacer(Modifier.width(5.dp))
                         Text("Отменить экспорт")
@@ -479,6 +506,21 @@ internal fun MusicDownloadsScreen(
                             }
                             Text(file.subtitle, style = MaterialTheme.typography.bodySmall)
                             if (file is LibraryFile.Cached && file.ready &&
+                                file.value.request.keySetId == null &&
+                                OfflineDownloadRoute.classify(file.value.request.uri.toString()) == OfflineTransfer.ADAPTIVE_HLS) {
+                                OutlinedButton(
+                                    onClick = {
+                                        try {
+                                            MusicFlowHlsShareService.start(context, file.value.request.id, file.title)
+                                        } catch (error: Exception) {
+                                            android.widget.Toast.makeText(context, error.message ?: "Не удалось открыть HLS",
+                                                android.widget.Toast.LENGTH_LONG).show()
+                                        }
+                                    },
+                                    enabled = !hlsState.active && !removing
+                                ) { Text("Открыть HLS через другой плеер") }
+                            }
+                            if (file is LibraryFile.Cached && file.ready &&
                                 !file.isMusic && OfflineMp4ExportPolicy.allowed(
                                     true,
                                     OfflineDownloadRoute.classify(file.value.request.uri.toString()) ==
@@ -488,7 +530,7 @@ internal fun MusicDownloadsScreen(
                                 )) {
                                 OutlinedButton(onClick = { pendingExport = file },
                                     enabled = !exporting && !removing) {
-                                    Text("Экспорт MP4")
+                                    Text("Экспорт MP4 в фоне")
                                 }
                             }
                             if (file.state == DownloadUiState.DOWNLOADING ||
@@ -568,28 +610,15 @@ internal fun MusicDownloadsScreen(
             text = {
                 Text("MusicFlow попытается преобразовать завершённый HLS из офлайн-кеша " +
                     "в MP4 и сохранить в Фильмы/MusicFlow. Это потребует дополнительного " +
-                    "свободного места. Не все видеокодеки совместимы; исходный кеш не удаляется.")
+                    "свободного места. Экспорт продолжится в фоне, прогресс и отмена доступны в уведомлении. " +
+                    "Не все видеокодеки совместимы; исходный кеш не удаляется.")
             },
             confirmButton = {
                 TextButton(onClick = {
                     pendingExport = null
                     try {
-                        exporting = true
-                        exportTitle = file.title
-                        exportProgress = null
-                        OfflineMp4Exporter.start(
-                            context, file.value,
-                            onProgress = { progress -> exportProgress = progress }
-                        ) { success, message ->
-                            exporting = false
-                            exportProgress = null
-                            android.widget.Toast.makeText(context, message,
-                                android.widget.Toast.LENGTH_LONG).show()
-                            refresh++
-                        }
+                        MusicFlowMp4ExportService.start(context, file.value.request.id, file.title)
                     } catch (error: Exception) {
-                        exporting = false
-                        exportProgress = null
                         AppDiagnostics.failure("Downloads", "start offline export", error)
                         android.widget.Toast.makeText(context,
                             "Экспорт не запущен: ${error.message.orEmpty()}",

@@ -8,6 +8,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- Keep CPU and Wi-Fi available while audio plays with screen off. -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
@@ -46,6 +47,10 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </service>
+        <service android:name=".MusicFlowMp4ExportService" android:exported="false"
+            android:foregroundServiceType="dataSync|mediaProcessing" />
+        <service android:name=".MusicFlowHlsShareService" android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <service android:name=".PlaybackService"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback">

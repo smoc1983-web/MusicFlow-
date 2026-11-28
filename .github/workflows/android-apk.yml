@@ -52,90 +52,90 @@ jobs:
       - name: Verify v0.7.11 Zaycev collection playback queue
         run: python3 scripts/verify_v0711.py
       - name: Verify v0.7.12 UI, cover and TV mini-player integration
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0712.py
       - name: Verify v0.7.13 TV floating player, themes and app icon
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0713.py
       - name: Verify v0.7.14 TV handoff and playback status
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0714.py
       - name: Verify v0.7.15 artwork, AudioBook themes, compact navigation and TV
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0715.py
       - name: Verify v0.7.16 high-resolution artwork, themed menus and playback
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0716.py
       - name: Verify v0.7.17 graphite launcher and themed mini-player
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0717.py
       - name: Verify v0.7.18 in-app updates, donation and Telegram navigation
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0718.py
       - name: Verify v0.7.19 banking support, in-app APK installer and icon
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0719.py
       - name: Verify v0.7.20 in-app updates and production UI labels
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0720.py
       - name: Verify v0.7.21 rounded menus and update compatibility wiring
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0721.py
       - name: Verify v0.7.22 stable signing and in-app updates
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0722.py
       # v0.7.24/25 used a WebView, which was intentionally removed.
       - name: Verify reliable in-app updates and official release contract
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0727.py
       - name: Verify retired-provider removal and security audit
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0729.py
       - name: Verify Russian radio, lyrics and persistent playback
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0730.py
       - name: Verify SimpMusic-inspired features and ub-mode wiring
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0731.py
       - name: Verify listening analytics and history source wiring (ub-mode)
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0732.py
       - name: Verify deferred playback, swipe minimize and screen-off background soak wiring
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0733.py
       - name: Verify 0.7.34 radio label and version metadata
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0734.py
       - name: Verify 0.7.37 top tracks navigation and player cleanup
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0735.py
       - name: Verify 0.7.37 Russia and worldwide charts on home
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0736.py
       - name: Verify 0.7.37 chart next/previous queue and safe lazy resolution
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0737.py
       - name: Verify 0.7.38 Telegram invite and channel entry point
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0738.py
       - name: Verify persistent background APK transfer and safe installer handoff
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0738_background.py
       - name: Verify 0.7.38 artwork transitions and next-track cover prefetch
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0738_artwork.py
       - name: Verify 0.7.39 Russian radio catalog recovery
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0739_radio.py
       - name: Verify 0.7.40 TV layouts and external plugin schema
-        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name != 'feature/musicflow-quality-sizes-v0761' && github.ref_name != 'feature/musicflow-background-export-hls-v0762'
         run: python3 scripts/verify_v0740_tv.py
       - name: Run ub-mode Kotlin behavior tests
         run: gradle --no-daemon :app:testDebugUnitTest
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Verify TEST 0.7.61 navigation and built APK
-        if: github.ref_name == 'feature/musicflow-quality-sizes-v0761'
+        if: github.ref_name == 'feature/musicflow-quality-sizes-v0761' || github.ref_name == 'feature/musicflow-background-export-hls-v0762'
         shell: bash
         run: |
           set -euo pipefail
@@ -155,7 +155,11 @@ jobs:
           tools="$ANDROID_HOME/build-tools/36.0.0"
           "$tools/apksigner" verify "$apk"
           "$tools/aapt" dump badging "$apk" > "$RUNNER_TEMP/musicflow-apk-badging.txt"
-          grep -F "name='com.musicflow.preview.dev' versionCode='761' versionName='0.7.61-dev'" "$RUNNER_TEMP/musicflow-apk-badging.txt"
+          if [[ "$GITHUB_REF_NAME" == "feature/musicflow-background-export-hls-v0762" ]]; then
+            grep -F "name='com.musicflow.preview.dev' versionCode='762' versionName='0.7.62-dev'" "$RUNNER_TEMP/musicflow-apk-badging.txt"
+          else
+            grep -F "name='com.musicflow.preview.dev' versionCode='761' versionName='0.7.61-dev'" "$RUNNER_TEMP/musicflow-apk-badging.txt"
+          fi
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
