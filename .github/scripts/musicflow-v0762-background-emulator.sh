@@ -3,6 +3,10 @@
 # classified *nonpassing* network diagnostics. Never fake a source PASS.
 set -Eeuo pipefail
 mkdir -p emulator-evidence
+# Bound every adb call, including diagnostic collection, even after device loss.
+# Resolve adb outside the shell function so timeout invokes the executable.
+ADB_BIN="$(type -P adb)"
+adb() { timeout --kill-after=5s 40s "$ADB_BIN" "$@"; }
 adb wait-for-device
 adb shell getprop sys.boot_completed | tee emulator-evidence/boot.txt
 for attempt in $(seq 1 60); do
@@ -41,13 +45,26 @@ adb shell dumpsys window > emulator-evidence/window-before-ui.txt || true
 run_android_test() {
   local id="$1" suite="$2" result=0
   printf 'Starting Android instrumentation: %s\n' "$suite"
+  if ! adb get-state > "emulator-evidence/$id-device-before.txt" 2>&1 ||
+     ! grep -qx device "emulator-evidence/$id-device-before.txt"; then
+    echo "::error::ADB device unavailable before $id"
+    return 1
+  fi
   adb logcat -c || true
-  set +e
-  adb shell am instrument -w -r -e class "$suite" \
+  # Radio navigation has multiple explicit waits; allow up to 8 minutes,
+  # not the entire CI job. Live sources also get a bounded host-side deadline.
+  if timeout --kill-after=10s 480s "$ADB_BIN" shell am instrument -w -r -e class "$suite" \
     com.musicflow.preview.dev.test/androidx.test.runner.AndroidJUnitRunner \
-    > "emulator-evidence/$id.txt" 2>&1
-  result=$?
-  set -e
+    > "emulator-evidence/$id.txt" 2>&1; then
+    result=0
+  else
+    result=$?
+  fi
+  printf '%s\n' "$result" > "emulator-evidence/$id-exit-code.txt"
+  if [[ "$result" -eq 124 || "$result" -eq 137 ]]; then
+    echo "::error::Instrumentation $id exceeded host deadline"
+    adb get-state > "emulator-evidence/$id-device-after.txt" 2>&1 || true
+  fi
   tail -n 110 "emulator-evidence/$id.txt" || true
   adb logcat -d -v threadtime > "emulator-evidence/$id.logcat.txt" || true
   if [[ "$id" == "live-sources" ]]; then
@@ -67,10 +84,12 @@ run_android_test() {
 overall=0
 # These checks use bundled radio fixtures and synthetic DASH MPDs, no external
 # music providers; therefore network/DNS failures cannot hide Android defects.
+# Verify the release-specific HLS behavior first; later UI/device failures
+# must not erase its independent evidence or turn a failed gate green.
+run_android_test offline-hls com.musicflow.app.OfflineHlsCacheAndroidTest || overall=1
+run_android_test dash-quality com.musicflow.app.DashVideoQualityTest || overall=1
 run_android_test radio-ui \
   'com.musicflow.app.MusicSourcesEmulatorTest#radioScreenAlwaysShowsArtworkAndPlayerNavigationControls' || overall=1
-run_android_test dash-quality com.musicflow.app.DashVideoQualityTest || overall=1
-run_android_test offline-hls com.musicflow.app.OfflineHlsCacheAndroidTest || overall=1
 
 # Live provider checks are not interchangeable with offline regressions.
 # Keep real asserts and require READY. The only exception to the release gate

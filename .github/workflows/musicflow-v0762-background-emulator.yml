@@ -53,6 +53,7 @@ jobs:
           heap-size: 384M
           disk-size: 6G
           disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -feature -Vulkan
           emulator-boot-timeout: 600
           script: bash .github/scripts/musicflow-v0762-background-emulator.sh
       - name: Upload source statuses and radio screenshots even on failure
