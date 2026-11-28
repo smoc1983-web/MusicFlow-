@@ -31,6 +31,10 @@ sleep 45
 adb shell cat /proc/pressure/cpu > emulator-evidence/cpu-after.txt || true
 install_checked app/build/outputs/apk/debug/app-debug.apk
 install_checked app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+# Disposable AVD: explicitly unlock before exercising the actual UI.
+adb shell input keyevent KEYCODE_WAKEUP || true
+adb shell wm dismiss-keyguard || true
+adb shell dumpsys window > emulator-evidence/window-before-ui.txt || true
 
 run_android_test() {
   local id="$1" suite="$2" result=0

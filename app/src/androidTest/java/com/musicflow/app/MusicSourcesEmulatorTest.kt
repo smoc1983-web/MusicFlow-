@@ -176,6 +176,38 @@ class MusicSourcesEmulatorTest {
         assertTrue("All available audio streams failed Media3 READY: see source-probe", ready >= 1)
     }
 
+    private fun activateAccessibilityControl(text: String?, description: String?): Boolean {
+        if (text.isNullOrBlank() && description.isNullOrBlank()) return false
+        val automation = instrumentation.uiAutomation
+        fun activate(node: android.view.accessibility.AccessibilityNodeInfo): Boolean {
+            if (node.packageName?.toString() != context.packageName) return false
+            val sameText = !text.isNullOrBlank() && node.text?.toString() == text
+            val sameDescription = !description.isNullOrBlank() &&
+                node.contentDescription?.toString() == description
+            if ((sameText || sameDescription) && node.isVisibleToUser && node.isEnabled) {
+                var target: android.view.accessibility.AccessibilityNodeInfo? = node
+                while (target != null && target.packageName?.toString() == context.packageName) {
+                    if (target.isVisibleToUser && target.isEnabled &&
+                        target.actionList.any { it.id == android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK }) {
+                        if (target.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)) {
+                            record("radio_ui=accessibility_click")
+                            return true
+                        }
+                    }
+                    target = target.parent
+                }
+            }
+            for (index in 0 until node.childCount) {
+                val child = node.getChild(index) ?: continue
+                if (activate(child)) return true
+            }
+            return false
+        }
+        val root = automation.rootInActiveWindow
+        if (root != null && activate(root)) return true
+        return automation.windows.any { window -> window.root?.let { activate(it) } == true }
+    }
+
     // A coordinate click can return normally even when Android drops the touch
     // during cold boot. Only the destination UI acknowledges a transition.
     private fun navigate(control: BySelector, destination: BySelector) {
@@ -186,7 +218,12 @@ class MusicSourcesEmulatorTest {
                 if (device.currentPackageName == context.packageName) {
                     val button = device.findObject(control)
                     if (button != null && button.isEnabled) {
-                        button.click()
+                        // Accessibility activation invokes the actual UI action without
+                        // depending on the failing emulator touch dispatcher.
+                        val text = button.text
+                        val description = button.contentDescription
+                        val activated = activateAccessibilityControl(text, description)
+                        if (!activated) button.click()
                         if (device.wait(Until.hasObject(destination), 5_000L)) return
                     }
                 }
