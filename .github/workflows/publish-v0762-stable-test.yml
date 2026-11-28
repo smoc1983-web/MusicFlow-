@@ -1,0 +1,102 @@
+name: Publish stable MusicFlow 0.7.62 TEST
+on:
+  push:
+    branches: ["feature/musicflow-background-export-hls-v0762"]
+    paths:
+      - ".github/workflows/publish-v0762-stable-test.yml"
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: musicflow-stable-test-v0762-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify exact successful CI and unchanged source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source .github/release-assets/v0762-test/checksums.env
+          test "$SOURCE_SHA" = "bbd24d5855dbed9936ffc7933cf19d1d64a3eecf"
+          test "$TEST_CERT_SHA" = "5b021afbd43d8c4fc1de501bd5e000c8d0286da573a700121ace77339f199835"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN" --jq '.conclusion')" = success
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN" --jq '.head_sha')" = "$SOURCE_SHA"
+          # Owner explicitly authorized TEST-only manual acceptance despite known failures.
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$EMULATOR_RUN" --jq '.head_sha')" = "$SOURCE_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$EMULATOR_RUN" --jq '.conclusion')" = failure
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$EMULATOR_RUN/jobs" --jq '.jobs[] | select(.name=="Android offline") | .conclusion')" = success
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$EMULATOR_RUN/jobs" --jq '.jobs[] | select(.name=="Android radio") | .conclusion')" = success
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$EMULATOR_RUN/jobs" --jq '.jobs[] | select(.name=="Android live") | .conclusion')" = failure
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN" --jq '.head_sha')" = "$SOURCE_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN" --jq '.conclusion')" = failure
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/jobs/140970472994" --jq '.steps[] | select(.name=="Verify v0.7.9 Zaycev native playback and UI fixes") | .conclusion')" = failure
+          git diff --quiet "$SOURCE_SHA" HEAD -- app/ settings.gradle.kts build.gradle.kts gradle.properties
+          git fetch --no-tags origin main release/musicflow-test-0762-snapshot
+          test "$(git rev-parse origin/release/musicflow-test-0762-snapshot)" = "$TAG_TARGET_SHA"
+          test "$TAG_TARGET_SHA" = "6cc3698a9fb3c16dfff74d39b07102b7e7b236e3"
+          git diff --quiet "$SOURCE_SHA" "$TAG_TARGET_SHA" -- app/ settings.gradle.kts build.gradle.kts gradle.properties
+          git diff --quiet origin/main "$TAG_TARGET_SHA" -- .github/workflows/
+          if gh release view v0.7.62-test -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::TEST release already exists; refuse overwrite"
+            exit 1
+          fi
+          mkdir -p work/preflight work/signing out
+          gh run download "$SOURCE_RUN" -R "$GITHUB_REPOSITORY" -n "$SOURCE_ARTIFACT" -D work/preflight
+          echo "$UNSIGNED_SHA  work/preflight/$SOURCE_FILE" | sha256sum -c -
+      - name: Reconstruct the exact locally signed APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .github/release-assets/v0762-test/checksums.env
+          base64 -d .github/release-assets/v0762-test/signed-delta.b64 > work/signing/delta.zst
+          echo "$PATCH_SHA  work/signing/delta.zst" | sha256sum -c -
+          zstd -q -d --patch-from="work/preflight/$SOURCE_FILE" work/signing/delta.zst -o out/MusicFlow-TEST_0.7.62.apk
+          echo "$SIGNED_SHA  out/MusicFlow-TEST_0.7.62.apk" | sha256sum -c -
+          (cd out && sha256sum MusicFlow-TEST_0.7.62.apk > SHA256SUMS.txt)
+      - name: Check TEST certificate, APK signatures and package identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .github/release-assets/v0762-test/checksums.env
+          if ! test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"; then
+            sdkmanager "build-tools;36.0.0"
+          fi
+          APK=out/MusicFlow-TEST_0.7.62.apk
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c 4 "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > work/signing/verified.txt
+          grep -Fx 'Verified using v2 scheme (APK Signature Scheme v2): true' work/signing/verified.txt
+          grep -Fx 'Verified using v3 scheme (APK Signature Scheme v3): true' work/signing/verified.txt
+          test "$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' work/signing/verified.txt)" = "$TEST_CERT_SHA"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "name='com.musicflow.preview.dev' versionCode='762' versionName='0.7.62-dev'"
+      - name: Publish TEST prerelease and verify GitHub digest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source .github/release-assets/v0762-test/checksums.env
+          if git ls-remote --exit-code --tags origin refs/tags/v0.7.62-test >/dev/null; then
+            git fetch origin refs/tags/v0.7.62-test:refs/tags/v0.7.62-test
+            test "$(git rev-parse 'v0.7.62-test^{commit}')" = "$TAG_TARGET_SHA"
+          else
+            git tag v0.7.62-test "$TAG_TARGET_SHA"
+            git push origin refs/tags/v0.7.62-test
+          fi
+          gh release create v0.7.62-test out/MusicFlow-TEST_0.7.62.apk out/SHA256SUMS.txt -R "$GITHUB_REPOSITORY" --verify-tag --target "$TAG_TARGET_SHA" --prerelease --title "MusicFlow 0.7.62 TEST · ручная проверка" --notes "TEST 0.7.62-dev (762). Фоновый экспорт MP4, локальное HLS во внешнем плеере, отдельная диагностика источников музыки. По явному запросу владельца выпущено для ручной приёмки: preflight/JUnit, Android offline и radio SUCCESS; live FAILED (Muzofond HTTP403; Zaycev и Mail.ru READY), обычный workflow FAILED на устаревшем статическом assert расположения resolver. Общий CI не GREEN. Проверка на телефоне обязательна. Постоянный TEST сертификат; официальный канал не изменён."
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.7.62-test" --jq '.prerelease' | grep -Fx true
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.7.62-test" --jq '.assets[] | select(.name=="MusicFlow-TEST_0.7.62.apk") | .digest' | grep -Fx "sha256:$SIGNED_SHA"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlow-0.7.62-TEST-stable-signed
+          path: out/
+          if-no-files-found: error
+          retention-days: 30
