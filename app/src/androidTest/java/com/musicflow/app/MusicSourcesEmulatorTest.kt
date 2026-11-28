@@ -18,6 +18,7 @@ import androidx.media3.common.Player
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
@@ -158,33 +159,25 @@ class MusicSourcesEmulatorTest {
         assertTrue("All available audio streams failed Media3 READY: see source-probe", ready >= 1)
     }
 
-    private fun waitForVisible(label: String, durationMs: Long): androidx.test.uiautomator.UiObject2? {
-        val expires = SystemClock.elapsedRealtime() + durationMs
-        while (SystemClock.elapsedRealtime() < expires) {
-            // OS services sometimes crash on a cold virtual device. Dismiss
-            // their dialog, but still require the real MusicFlow UI to render.
-            for (labelToDismiss in listOf("Close app", "Закрыть приложение", "Закрыть")) {
-                try { device.findObject(By.text(labelToDismiss))?.click() }
-                catch (_: StaleObjectException) { /* Re-query on next poll. */ }
-            }
-            try { device.findObject(By.text(label))?.let { return it } }
-            catch (_: StaleObjectException) { /* Compose replaced the node. */ }
-            Thread.sleep(1200L)
-        }
-        return null
-    }
-
-    private fun clickFresh(selector: androidx.test.uiautomator.BySelector, timeoutMs: Long, last: Boolean = false) {
-        val deadline = SystemClock.elapsedRealtime() + timeoutMs
+    // A coordinate click can return normally even when Android drops the touch
+    // during cold boot. Only the destination UI acknowledges a transition.
+    private fun navigate(control: BySelector, destination: BySelector) {
+        val deadline = SystemClock.elapsedRealtime() + 95_000L
         while (SystemClock.elapsedRealtime() < deadline) {
+            if (device.hasObject(destination)) return
             try {
-                val nodes = device.findObjects(selector)
-                val node = if (last) nodes.lastOrNull() else nodes.firstOrNull()
-                if (node != null) { node.click(); return }
-            } catch (_: StaleObjectException) { /* Re-query after recomposition. */ }
-            Thread.sleep(350L)
+                if (device.currentPackageName == context.packageName) {
+                    val button = device.findObject(control)
+                    if (button != null && button.isEnabled) {
+                        button.click()
+                        if (device.wait(Until.hasObject(destination), 5_000L)) return
+                    }
+                }
+            } catch (_: StaleObjectException) { /* Re-read the active window. */ }
+            SystemClock.sleep(350L)
         }
-        fail("Unable to click visible control: " + selector)
+        fail("Radio navigation timed out: $control -> $destination, foreground=" +
+            device.currentPackageName)
     }
 
     @Test fun radioScreenAlwaysShowsArtworkAndPlayerNavigationControls() {
@@ -197,40 +190,24 @@ class MusicSourcesEmulatorTest {
             "am start -n com.musicflow.preview.dev/com.musicflow.app.MainActivity"
         )
         record("radio_ui=launch " + launch.take(110).replace('\n', ' '))
-        val tab = waitForVisible("Музыка", 95_000)
-        assertNotNull("MusicFlow navigation not visible after real Activity launch", tab)
-        clickFresh(By.text("Музыка"), 12_000)
-        assertNotNull("Radio dropdown item absent",
-            waitForVisible("Радио", 30_000))
-        clickFresh(By.text("Радио"), 12_000)
-        assertNotNull("Radio list not loaded",
-            waitForVisible("Популярные", 70_000))
+        val app = context.packageName
+        val radio = By.text("Радио").pkg(app)
+        navigate(By.text("Музыка").pkg(app), radio)
+        navigate(radio, By.text("Популярные").pkg(app))
+        assertTrue("No station logo or local artwork visible",
+            device.wait(Until.hasObject(By.desc(java.util.regex.Pattern.compile(
+                ".*(Обложка-заглушка радиостанции|Логотип станции:).*",
+                java.util.regex.Pattern.DOTALL)).pkg(app)), 70_000L))
         device.takeScreenshot(File(context.filesDir, "musicflow-radio-list-v0760.png"))
-        val play = device.wait(Until.findObject(By.desc("Слушать")), 12_000)
-        assertNotNull("No stations with play control", play)
-        clickFresh(By.desc("Слушать"), 12_000)
-        Thread.sleep(1200L)
-        // The mini-player contains the now-active station title and opens
-        // the compact player on tap. Prefer its last matching title.
-        val list = device.findObjects(By.clazz("android.widget.TextView"))
-        val repeated = list.groupBy { it.text }.filter { (name, rows) ->
-            name.isNotBlank() && rows.size > 1 &&
-                name !in setOf("Радио", "Популярные")
-        }
-        val selected = repeated.values.firstOrNull()?.lastOrNull()
-        if (selected != null) selected.click()
-        else {
-            // If the row is not yet measured, use the mini-player's visible text.
-            val fallback = bundled.firstOrNull { device.hasObject(By.text(it.name)) }
-            assertNotNull("No active radio mini player", fallback)
-            clickFresh(By.text(fallback!!.name), 12_000, last = true)
-        }
-        assertNotNull("Previous station is not present in compact player",
-            device.wait(Until.findObject(By.desc("Предыдущая радиостанция")), 12_000))
-        assertNotNull("Next station is not present in compact player",
-            device.findObject(By.desc("Следующая радиостанция")))
-        assertNotNull("Shuffle toggle absent",
-            device.findObject(By.desc("Включён порядок по списку — переключить случайно")))
+
+        val nowPlaying = By.text("Сейчас играет").pkg(app)
+        navigate(By.descContains("Слушать").pkg(app), nowPlaying)
+        val orderedMode = By.desc("Включён порядок по списку — переключить случайно").pkg(app)
+        navigate(nowPlaying, orderedMode)
+        assertTrue("Previous station absent in compact player",
+            device.hasObject(By.desc("Предыдущая радиостанция").pkg(app)))
+        assertTrue("Next station absent in compact player",
+            device.hasObject(By.desc("Следующая радиостанция").pkg(app)))
         device.takeScreenshot(File(context.filesDir, "musicflow-radio-player-v0760.png"))
         record("radio_ui=PASS bundled=${bundled.size} previous_next_shuffle=VISIBLE covers=LOGO_OR_LOCAL_TILE")
     }

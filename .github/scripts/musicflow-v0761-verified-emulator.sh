@@ -21,6 +21,9 @@ install_checked() {
   done
   return 1
 }
+# This disposable AVD has no user to answer system crash/ANR dialogs.
+# Instrumentation failures and crashes still fail run_android_test below.
+adb shell settings put global hide_error_dialogs 1
 install_checked app/build/outputs/apk/debug/app-debug.apk
 install_checked app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 
