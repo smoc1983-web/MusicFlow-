@@ -18,6 +18,15 @@ internal object UpdateDialogGate {
             state.candidateCode > state.installedCode &&
             state.candidateCode != state.ignoredCode
 
+    const val CHECK_INTERVAL_MS = 6L * 60 * 60 * 1000
+    const val SNOOZE_INTERVAL_MS = 24L * 60 * 60 * 1000
+
+    fun dueForCheck(now: Long, lastSuccess: Long): Boolean =
+        lastSuccess <= 0L || now < lastSuccess || now - lastSuccess >= CHECK_INTERVAL_MS
+
+    fun snoozed(code: Long, snoozedCode: Long, until: Long, now: Long): Boolean =
+        code == snoozedCode && now < until
+
     fun onConfirm(state: State): State =
         state.copy(ignoredCode = state.candidateCode ?: 0L, dismissed = true)
 }

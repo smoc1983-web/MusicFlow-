@@ -179,8 +179,8 @@ class MainActivity : ComponentActivity() {
                                     .putString("ui_theme", selected.name).apply()
                             }
                         )
-                        // Update manager stays off for this differently signed test package.
-                        if (packageName == "com.musicflow.preview") MusicFlowAutoUpdate()
+                        // Official and stable TEST packages have isolated, verified update feeds.
+                        if (MusicFlowUpdates.supportsUpdates(this@MainActivity)) MusicFlowAutoUpdate()
                         }
                     }
                 }

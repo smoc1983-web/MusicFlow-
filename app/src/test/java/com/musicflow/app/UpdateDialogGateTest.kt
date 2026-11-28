@@ -20,6 +20,22 @@ class UpdateDialogGateTest {
         assertFalse(UpdateDialogGate.visible(UpdateDialogGate.State(744,745,745,false)))
     }
 
+    @Test fun laterExpiresAndDoesNotHideNewerRelease() {
+        val now = 100_000_000L
+        val until = now + UpdateDialogGate.SNOOZE_INTERVAL_MS
+        assertTrue(UpdateDialogGate.snoozed(764,764,until,now))
+        assertFalse(UpdateDialogGate.snoozed(764,764,until,until))
+        assertFalse(UpdateDialogGate.snoozed(765,764,until,now))
+    }
+
+    @Test fun networkCheckThrottlesOnlyAfterSuccessAndHandlesClockReset() {
+        val now = 100_000_000L
+        assertTrue(UpdateDialogGate.dueForCheck(now,0))
+        assertFalse(UpdateDialogGate.dueForCheck(now+1,now))
+        assertTrue(UpdateDialogGate.dueForCheck(now+UpdateDialogGate.CHECK_INTERVAL_MS,now))
+        assertTrue(UpdateDialogGate.dueForCheck(now-1,now))
+    }
+
     @Test fun aNewerReleaseAfterDismissedOldOneAppears() {
         assertTrue(UpdateDialogGate.visible(UpdateDialogGate.State(744,746,745,false)))
     }

@@ -10,6 +10,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /**
@@ -36,36 +37,51 @@ internal fun MusicFlowAutoUpdate() {
     var available by remember { mutableStateOf<MusicFlowUpdate?>(null) }
     var working by remember { mutableStateOf(false) }
     var hidden by remember { mutableStateOf(false) }
-    fun candidateAllowed(candidate: MusicFlowUpdate?): Boolean =
-        UpdateDialogGate.visible(UpdateDialogGate.State(
-            installedCode = MusicFlowUpdates.currentCode(context),
-            candidateCode = candidate?.versionCode,
-            ignoredCode = announcementPreferences.getLong("ignored_code", 0L),
-            dismissed = hidden
-        ))
+
     var transfer by remember {
         mutableStateOf(MusicFlowBackgroundUpdates.Snapshot(
             MusicFlowBackgroundUpdates.Phase.IDLE))
     }
     var error by remember { mutableStateOf<String?>(null) }
 
+    fun candidateAllowed(candidate: MusicFlowUpdate?): Boolean {
+        val code = candidate?.versionCode ?: return false
+        val p = announcementPreferences
+        val savedCode = MusicFlowBackgroundUpdates.savedRelease(context)?.versionCode
+        val completed = code == savedCode &&
+            transfer.phase == MusicFlowBackgroundUpdates.Phase.DOWNLOADED
+        val snoozed = UpdateDialogGate.snoozed(code,
+            p.getLong("snoozed_version", 0L), p.getLong("snoozed_until", 0L),
+            System.currentTimeMillis())
+        // Legacy "Later" persisted ignored_code forever. Only honor that marker
+        // for an active accepted transfer; a completed APK may be installed on next launch.
+        val ignored = if (code == savedCode && !completed &&
+            p.getLong("snoozed_version", 0L) != code) p.getLong("ignored_code", 0L) else 0L
+        return !snoozed && UpdateDialogGate.visible(UpdateDialogGate.State(
+            MusicFlowUpdates.currentCode(context), code, ignored, hidden))
+    }
+
+    fun later(update: MusicFlowUpdate) {
+        announcementPreferences.edit()
+            .putLong("snoozed_version", update.versionCode)
+            .putLong("snoozed_until", System.currentTimeMillis() + UpdateDialogGate.SNOOZE_INTERVAL_MS)
+            .remove("ignored_code").apply()
+        hidden = true
+        available = null
+    }
+
     LaunchedEffect(Unit) {
         if (!MusicFlowUpdates.supportsUpdates(context)) return@LaunchedEffect
-        val installed = MusicFlowUpdates.currentCode(context)
-        val saved = MusicFlowBackgroundUpdates.savedRelease(context)
-            ?.takeIf { MusicFlowUpdatePolicy.isNewer(it.versionCode, installed) }
-        if (candidateAllowed(saved)) available = saved
-        val preferences = context.getSharedPreferences("musicflow_updates", Context.MODE_PRIVATE)
+        val p = announcementPreferences
         val now = System.currentTimeMillis()
+        if (!UpdateDialogGate.dueForCheck(now, p.getLong("last_successful_check_v2", 0L)))
+            return@LaunchedEffect
         try {
             val latest = MusicFlowUpdates.latestRelease(context)
-            if (latest != null && candidateAllowed(latest)) {
-                val snoozedVersion = preferences.getLong("snoozed_version", 0L)
-                val snoozedUntil = preferences.getLong("snoozed_until", 0L)
-                if (saved != null || latest.versionCode != snoozedVersion || now >= snoozedUntil) {
-                    available = latest
-                }
-            }
+            p.edit().putLong("last_successful_check_v2", System.currentTimeMillis()).apply()
+            if (latest != null && candidateAllowed(latest)) available = latest
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (failure: Exception) {
             AppDiagnostics.failure("Updates", "automatic update check", failure)
         }
@@ -82,6 +98,8 @@ internal fun MusicFlowAutoUpdate() {
                     transfer.phase != MusicFlowBackgroundUpdates.Phase.IDLE) {
                     available = saved
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (failure: Exception) {
                 AppDiagnostics.failure("Updates", "background download status", failure)
             }
@@ -105,7 +123,7 @@ internal fun MusicFlowAutoUpdate() {
 
         AlertDialog(
             onDismissRequest = {
-                if (!working) { hidden = true; available = null }
+                if (!working) later(update)
             },
             containerColor = palette.surface,
             shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
@@ -118,10 +136,6 @@ internal fun MusicFlowAutoUpdate() {
                         color = palette.muted)
                     Text("Размер: " + (update.bytes / 1_048_576) + " МБ",
                         color = palette.muted)
-                    if (update.notes.isNotBlank()) {
-                        Text(update.notes.take(250), color = palette.foreground,
-                            style = MaterialTheme.typography.bodySmall)
-                    }
                     if (loading) {
                         LinearProgressIndicator(progress = { progress / 100f },
                             modifier = Modifier.fillMaxWidth(), color = palette.accent)
@@ -153,7 +167,8 @@ internal fun MusicFlowAutoUpdate() {
                         hidden = nextState.dismissed
                         available = null
                         announcementPreferences.edit()
-                            .putLong("ignored_code", nextState.ignoredCode).apply()
+                            .putLong("ignored_code", nextState.ignoredCode)
+                            .remove("snoozed_version").remove("snoozed_until").apply()
                         working = true
                         error = null
                         scope.launch {
@@ -188,24 +203,16 @@ internal fun MusicFlowAutoUpdate() {
                         working -> "Проверка…"
                         loading -> "Загружается…"
                         downloaded -> "Проверить и установить"
-                        else -> "Скачать обновление"
+                        else -> "Обновить"
                     })
                 }
             },
             dismissButton = {
                 TextButton(enabled = !working, onClick = {
-                    if (!loading) {
-                        context.getSharedPreferences("musicflow_updates", Context.MODE_PRIVATE)
-                            .edit()
-                            .putLong("snoozed_version", update.versionCode)
-                            .putLong("snoozed_until",
-                                System.currentTimeMillis() + 24L * 60L * 60L * 1000L)
-                            .apply()
-                    }
-                    announcementPreferences.edit()
-                        .putLong("ignored_code", update.versionCode).apply()
-                    hidden = true
-                    available = null
+                    if (loading) {
+                        hidden = true
+                        available = null
+                    } else later(update)
                 }) {
                     Text(if (loading) "Скачать в фоне" else "Позже", color = palette.accent)
                 }
