@@ -24,6 +24,11 @@ install_checked() {
 # This disposable AVD has no user to answer system crash/ANR dialogs.
 # Instrumentation failures and crashes still fail run_android_test below.
 adb shell settings put global hide_error_dialogs 1
+# boot_completed does not mean system_server and launcher are quiescent.
+# Capture baseline, allow cold-boot services to settle before installation.
+adb shell cat /proc/pressure/cpu > emulator-evidence/cpu-before.txt || true
+sleep 45
+adb shell cat /proc/pressure/cpu > emulator-evidence/cpu-after.txt || true
 install_checked app/build/outputs/apk/debug/app-debug.apk
 install_checked app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 
@@ -39,6 +44,11 @@ run_android_test() {
   set -e
   tail -n 110 "emulator-evidence/$id.txt" || true
   adb logcat -d -v threadtime > "emulator-evidence/$id.logcat.txt" || true
+  if [[ "$id" == "live-sources" ]]; then
+    adb exec-out run-as com.musicflow.preview.dev cat files/source-probe-v0760.txt \
+      > emulator-evidence/source-probe-v0760.txt 2>/dev/null || true
+    cat emulator-evidence/source-probe-v0760.txt
+  fi
   if [[ "$result" -ne 0 ]] ||
      ! grep -Eq 'OK \([1-9][0-9]* tests?\)' "emulator-evidence/$id.txt" ||
      grep -Eq 'Process crashed|FAILURES!!!|INSTRUMENTATION_FAILED' "emulator-evidence/$id.txt"; then
@@ -64,10 +74,12 @@ if run_android_test live-sources \
   'com.musicflow.app.MusicSourcesEmulatorTest#searchAndPlaybackOfAllThreeRegisteredSources'; then
   echo "LIVE_SOURCE_STATUS=PASS_READY" | tee emulator-evidence/live-source-status.env
 else
-  report=emulator-evidence/live-sources.txt
-  if grep -Fq 'zaycev=ERROR type=UnknownHostException' "$report" &&
-     grep -Fq 'muzofond=ERROR type=UnknownHostException' "$report" &&
-     grep -Fq 'mailru=ERROR type=UnknownHostException' "$report"; then
+  report=emulator-evidence/source-probe-v0760.txt
+  if grep -Fq 'source=zaycev search=ERROR type=UnknownHostException' "$report" &&
+     grep -Fq 'source=muzofond search=ERROR type=UnknownHostException' "$report" &&
+     grep -Fq 'source=mailru search=ERROR type=UnknownHostException' "$report" &&
+     grep -Fq 'playback=SKIPPED: no playable candidates returned' "$report" &&
+     grep -Fq 'No provider returned a candidate:' emulator-evidence/live-sources.txt; then
     echo "LIVE_SOURCE_STATUS=NOT_VERIFIED_DNS_BLOCKED" | tee emulator-evidence/live-source-status.env
     echo "::warning::All three live source lookups failed DNS in Android emulator. No provider PASS claimed; requires a live device check."
   else

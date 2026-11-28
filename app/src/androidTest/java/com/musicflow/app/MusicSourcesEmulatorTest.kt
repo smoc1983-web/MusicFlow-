@@ -63,21 +63,24 @@ class MusicSourcesEmulatorTest {
     /** Direct player avoids starting the service during slow AVD JIT compilation. */
     private fun newProbePlayer(): ExoPlayer {
         val http = DefaultHttpDataSource.Factory()
-            .setConnectTimeoutMs(9_000).setReadTimeoutMs(12_000)
+            .setConnectTimeoutMs(TvPlaybackTuning.CONNECT_TIMEOUT_MS)
+            .setReadTimeoutMs(TvPlaybackTuning.READ_TIMEOUT_MS)
         val upstream = DefaultDataSource.Factory(context, http)
         val resolved = ResolvingDataSource.Factory(upstream) { spec ->
-            if (spec.uri.scheme == "zaycev") {
-                spec.withUri(ZaycevStreamResolver.resolve(spec.uri))
-                    .withAdditionalHeaders(mapOf("Referer" to "https://zaycev.net/"))
-            } else {
-                val host = spec.uri.host.orEmpty().lowercase()
-                val referer = when {
-                    host.endsWith("muzofond.fm") -> "https://muzofond.fm/"
-                    host.endsWith("moosic.my.mail.ru") -> "https://my.mail.ru/music/"
-                    else -> null
-                }
-                if (referer == null) spec
-                else spec.withAdditionalHeaders(mapOf("Referer" to referer))
+            val host = spec.uri.host.orEmpty().lowercase(java.util.Locale.ROOT)
+            val agent = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 Chrome/130.0.0.0 Mobile Safari/537.36"
+            fun matches(domain: String) = host == domain || host.endsWith(".$domain")
+            when {
+                spec.uri.scheme == "zaycev" -> spec.withUri(ZaycevStreamResolver.resolve(spec.uri))
+                    .withAdditionalHeaders(mapOf("Referer" to "https://zaycev.net/", "User-Agent" to agent))
+                matches("zaycev.net") -> spec.withAdditionalHeaders(mapOf("Referer" to "https://zaycev.net/"))
+                matches("muzofond.fm") -> spec.withAdditionalHeaders(mapOf(
+                    "Referer" to "https://muzofond.fm/", "User-Agent" to agent,
+                    "Accept-Language" to "ru-RU,ru;q=0.9"))
+                matches("moosic.my.mail.ru") -> spec.withAdditionalHeaders(mapOf(
+                    "Referer" to "https://my.mail.ru/music/", "User-Agent" to agent,
+                    "Accept-Language" to "ru-RU,ru;q=0.9"))
+                else -> spec
             }
         }
         return main {
@@ -101,10 +104,18 @@ class MusicSourcesEmulatorTest {
                 player.prepare()
                 player.play()
             }
-            val deadline = SystemClock.elapsedRealtime() + 20_000L
+            val deadline = SystemClock.elapsedRealtime() + 45_000L
             while (SystemClock.elapsedRealtime() < deadline) {
                 val error = main { player.playerError }
-                if (error != null) return "PLAYBACK_ERROR_" + error.errorCodeName
+                if (error != null) {
+                    val causes = generateSequence<Throwable>(error) { it.cause }
+                        .take(8).joinToString(">") { cause ->
+                            val type = cause.javaClass.simpleName
+                            if (cause is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)
+                                "$type(HTTP ${cause.responseCode})" else type
+                        }
+                    return "PLAYBACK_ERROR_" + error.errorCodeName + " causes=" + causes
+                }
                 if (main { player.playbackState == Player.STATE_READY }) return "READY"
                 Thread.sleep(350L)
             }
@@ -121,17 +132,18 @@ class MusicSourcesEmulatorTest {
             "mailru" to suspend { mailRuTracks("Queen") }
         )
         // Search first: record every provider before initializing any playback engine.
-        val playable = mutableListOf<Pair<String, Track>>()
+        val playable = mutableListOf<Pair<String, List<Track>>>()
         val status = mutableMapOf<String, String>()
         for ((name, search) in providers) {
             val output = try {
                 val result = runBlocking { withTimeout(28_000L) { search() } }
-                val first = result.firstOrNull {
+                val candidates = result.asSequence().filter {
                     it.stream.isNotBlank() && it.title.isNotBlank()
-                }
-                if (first != null) {
-                    playable += name to first
-                    "FOUND results=" + result.size + " scheme=" + first.stream.substringBefore(':')
+                }.distinctBy { it.stream }.take(3).toList()
+                if (candidates.isNotEmpty()) {
+                    playable += name to candidates
+                    "FOUND results=" + result.size + " candidates=" + candidates.size +
+                        " scheme=" + candidates.first().stream.substringBefore(':')
                 } else "EMPTY results=" + result.size
             } catch (error: Exception) {
                 "ERROR type=" + error.javaClass.simpleName +
@@ -148,10 +160,15 @@ class MusicSourcesEmulatorTest {
         val player = newProbePlayer()
         var ready = 0
         try {
-            for ((source, track) in playable) {
-                val result = checkPlayable(track, player)
-                record("source=" + source + " playback=" + result)
-                if (result == "READY") ready++
+            for ((source, candidates) in playable) {
+                for ((index, track) in candidates.withIndex()) {
+                    val result = checkPlayable(track, player)
+                    record("source=" + source + " candidate=" + (index + 1) + " playback=" + result)
+                    if (result == "READY") {
+                        ready++
+                        break
+                    }
+                }
             }
         } finally {
             main { player.release() }
