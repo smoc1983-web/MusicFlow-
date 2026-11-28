@@ -465,3 +465,7 @@
 ### 2026-11-28 — Запуск проверки исправленного radio-ui по запросу владельца
 
 Ветка feature/musicflow-quality-sizes-v0761, исходная ревизия 99b1b522. Запрошена сборка debug и instrumentation APK и проверка на Android 14 после исправления навигации радио. В название запуска добавлен номер проверки. Результат отслеживается в [GitHub Actions](https://github.com/smoc1983-web/MusicFlow-/actions/workflows/musicflow-v0761-size-emulator.yml). На момент записи итог неизвестен.
+
+### 2026-11-28 — Обычная debug-сборка TEST 0.7.61
+
+[Build 46100003565](https://github.com/smoc1983-web/MusicFlow-/actions/runs/46100003565) остановился до Gradle на verify_v0712.py: устаревшая проверка ожидала закрытие списка сразу за пунктом «ТВ». Локальный запуск исторических скриптов выявил также ожидания точной версии 0.7.40, прежних тем и старой схемы каталога радио. В android-apk.yml проверки снимка 0.7.40 оставлены для прежних веток. Для feature/musicflow-quality-sizes-v0761 добавлены проверка семи пунктов меню, подписи debug APK и точного applicationId/versionCode/versionName. Остались общие ранние проверки, Kotlin unit tests, сборка и выгрузка MusicFlow-apk. Локально проверен контракт меню и git diff --check. Отдельный Android-прогон 46100003536 к этому моменту ещё выполнялся.
