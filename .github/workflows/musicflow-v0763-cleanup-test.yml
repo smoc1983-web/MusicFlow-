@@ -10,33 +10,6 @@ on:
 permissions:
   contents: read
 jobs:
-  cancel-superseded-owner-request:
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    permissions:
-      actions: write
-      contents: read
-    steps:
-      - name: Cancel only superseded runs explicitly requested by owner
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          for id in 46147739541 46147739559; do
-            info="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id")"
-            test "$(jq -r '.head_sha' <<<"$info")" = da557873c12c46d64210cfc44585827c5167cd05
-            test "$(jq -r '.head_branch' <<<"$info")" = "feature/musicflow-cleanup-cache-updates-v0763"
-            if [[ "$(jq -r '.status' <<<"$info")" == completed ]]; then
-              echo "Run $id already completed: $(jq -r '.conclusion' <<<"$info")"
-            else
-              if gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$id/cancel"; then
-                echo "Cancellation requested for superseded run $id"
-              else
-                echo "::warning::Cancellation request failed for $id; inspect exact status"
-              fi
-            fi
-          done
   kotlin-tests-and-test-apk:
     runs-on: ubuntu-latest
     timeout-minutes: 45
