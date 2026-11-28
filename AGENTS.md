@@ -26,3 +26,7 @@ Installed copies for Codex and other agents: `.agents/skills/ub-mode/SKILL.md` a
 - Source branches and commit IDs.
 - Which CRAP, duplication and mutation tools ran, or why they could not.
 - Explicit note that **ub-mode** was applied.
+
+## Быстрый вход в проект
+
+Начинай с конца DEVELOPMENT_JOURNAL.md в рабочей ветке. Для TEST 0.7.61 рабочая ветка — feature/musicflow-quality-sizes-v0761. Для других версий уточняй ветку по последней записи соответствующего канала. Сначала смотри список изменённых путей и нужный экран, тест или workflow. Исторические ветки, двоичные патчи и материалы подписи открывай только для задач, которым они нужны. Записывай в журнал ветки также незавершённые наработки, фактические проверки и оставшиеся вопросы.
